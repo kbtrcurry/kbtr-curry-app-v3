@@ -1,11 +1,16 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
 import type { Session } from '@supabase/supabase-js'
 import { supabase } from './supabase'
+import { GMAIL_SCOPE } from './gmail'
 
 type AuthCtx = {
   session: Session | null
   loading: boolean
   loginWithGoogle: () => Promise<void>
+  /** Googleが返したアクセストークン（Gmail読み取り用。約1時間有効。無ければ null） */
+  gmailToken: string | null
+  /** Gmailの読み取りを許可してログインし直す（許可後にこの画面へ戻る） */
+  connectGmail: () => Promise<void>
   logout: () => Promise<void>
 }
 
@@ -33,12 +38,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     })
   }
 
+  const connectGmail = async () => {
+    await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: { redirectTo: window.location.origin + import.meta.env.BASE_URL, scopes: GMAIL_SCOPE },
+    })
+  }
+
   const logout = async () => {
     await supabase.auth.signOut()
   }
 
   return (
-    <Ctx.Provider value={{ session, loading, loginWithGoogle, logout }}>{children}</Ctx.Provider>
+    <Ctx.Provider
+      value={{ session, loading, loginWithGoogle, gmailToken: session?.provider_token ?? null, connectGmail, logout }}
+    >{children}</Ctx.Provider>
   )
 }
 

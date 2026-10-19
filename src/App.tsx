@@ -29,6 +29,7 @@ import TaxPage from './pages/TaxPage'
 import AdsPage from './pages/AdsPage'
 import ImportPage from './pages/ImportPage'
 import DataPage from './pages/DataPage'
+import { GmailReturnRedirect } from './components/GmailReturnRedirect'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -154,6 +155,7 @@ export default function App() {
       <AuthProvider>
         <BrowserRouter basename="/kbtr-curry-app-v3">
           <Preloader />
+          <GmailReturnRedirect />
           <BackHandlerProvider>
             <Layout>
               <div className="mx-auto w-full max-w-screen-sm lg:max-w-3xl">

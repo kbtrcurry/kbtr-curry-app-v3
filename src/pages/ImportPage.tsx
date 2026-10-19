@@ -31,6 +31,7 @@ import { uuidV5 } from '../lib/ads'
 import { useStoredState } from '../lib/persistState'
 import AmazonMailTab from './AmazonMailTab'
 import CardTab from './CardTab'
+import MailUpdateCard from './MailUpdateCard'
 import CardSettlementSection from './CardSettlementSection'
 
 const yen = (n: number) => `¥${Math.round(n).toLocaleString()}`
@@ -62,6 +63,7 @@ export default function ImportPage() {
       <h1 className="text-xl font-bold text-amber-800 flex items-center gap-2">
         <FileUp className="w-5 h-5" /> 取り込み
       </h1>
+      <MailUpdateCard />
       <div className="flex gap-1.5 overflow-x-auto">
         {(
           [

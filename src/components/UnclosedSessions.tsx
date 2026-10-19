@@ -67,7 +67,7 @@ function CloseForm({ s }: { s: UnclosedSession }) {
     <div className="bg-white rounded-xl border border-amber-200 p-3">
       <div className="flex items-center justify-between gap-2">
         <p className="text-sm text-stone-800">
-          <b>{s.session_date}</b>　会計{s.receipts}件・売上 {yen(s.sales)}
+          <b>{s.session_date}</b> ・会計{s.receipts}件・売上 {yen(s.sales)}
         </p>
         {!open && (
           <button onClick={() => setOpen(true)} className="text-xs font-bold text-[#faf9f5] bg-amber-700 rounded-lg px-3 py-1.5 shrink-0">

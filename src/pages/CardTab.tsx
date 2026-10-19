@@ -1,3 +1,4 @@
+import { CardPayableSummary } from '../components/CardPayableSummary'
 import { useMemo, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { CreditCard, Check } from 'lucide-react'
@@ -16,6 +17,9 @@ import {
   type MerchantRule,
 } from '../lib/cardCharges'
 import { uuidV5 } from '../lib/ads'
+import { SegAcctSelect, DefaultSegAcct } from '../components/SegAcctSelect'
+import { removeManualDuplicatesFor, removedMessage, useCardCycle } from '../lib/importBooking'
+import { withdrawalDate } from '../lib/cardPayable'
 import { useStoredState } from '../lib/persistState'
 
 const yen = (n: number) => `¥${Math.round(n).toLocaleString()}`
@@ -33,6 +37,10 @@ export default function CardTab() {
   const [rules, setRules] = useStoredState<MerchantRule[]>('kbtr_v3_card_rules', DEFAULT_MERCHANT_RULES)
   const [checked, setChecked] = useState<Record<string, boolean>>({})
   const [acctOverride, setAcctOverride] = useState<Record<string, string>>({})
+  const [segOverride, setSegOverride] = useState<Record<string, string>>({})
+  const [defaultSeg, setDefaultSeg] = useState('')
+  const [defaultAcct, setDefaultAcct] = useState('')
+  const [cycle] = useCardCycle()
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
   const [newRule, setNewRule] = useState({ pattern: '', accountCode: '518' })
@@ -49,8 +57,10 @@ export default function CardTab() {
   const accountIdOf = (c: CardChargeRow): string => {
     if (acctOverride[c.id]) return acctOverride[c.id]
     const code = suggestAccountCode(c.merchant, rules)
-    return (code && accountByCode.get(code)?.id) || ''
+    return (code && accountByCode.get(code)?.id) || defaultAcct
   }
+  const commonSeg = segments.find((s) => s.code === 'common') ?? segments[0]
+  const segIdOf = (c: CardChargeRow): string => segOverride[c.id] || defaultSeg || commonSeg?.id || ''
   // ルールに合うものは初期状態でチェック済み。それ以外は自分で選ぶ
   const isChecked = (c: CardChargeRow) => checked[c.id] ?? suggestAccountCode(c.merchant, rules) !== null
   const selected = rest.filter((c) => isChecked(c))
@@ -60,24 +70,25 @@ export default function CardTab() {
   const refresh = () => qc.invalidateQueries({ queryKey: ['card_charges'] })
 
   const register = async () => {
-    const seg = segments.find((s) => s.code === 'common') ?? segments[0]
-    if (!seg) return
     setBusy(true)
     setMessage(null)
     const done: string[] = []
     const failed: string[] = []
+    const sourceIds: string[] = []
     for (const c of selected) {
       try {
+        const id = await uuidV5(cardChargeSourceName(c))
         await recordExpense({
-          id: await uuidV5(cardChargeSourceName(c)),
+          id,
           entryDate: chargeDate(c),
-          segmentId: seg.id,
+          segmentId: segIdOf(c),
           accountId: accountIdOf(c),
           amount: c.amount,
           paymentMethod: 'card',
           memo: `カード: ${c.merchant}`.slice(0, 200),
         })
         done.push(c.id)
+        sourceIds.push(id)
       } catch (e) {
         failed.push(`${c.merchant.slice(0, 16)}: ${e instanceof Error ? e.message : '失敗'}`)
       }
@@ -87,11 +98,17 @@ export default function CardTab() {
     } catch (e) {
       failed.push(`状態の更新に失敗: ${e instanceof Error ? e.message : ''}`)
     }
+    let removed = ''
+    try {
+      removed = removedMessage(await removeManualDuplicatesFor(sourceIds, selected.map(chargeDate)))
+    } catch (e) {
+      failed.push(`重複の確認に失敗: ${e instanceof Error ? e.message : ''}`)
+    }
     invalidateJournal()
     void refresh()
     setChecked({})
     setBusy(false)
-    setMessage(`${done.length}件を経費に登録しました${failed.length ? `。失敗 ${failed.length}件: ${failed.join(' / ')}` : ''}`)
+    setMessage(`${done.length}件を経費に登録しました${removed}${failed.length ? `。失敗 ${failed.length}件: ${failed.join(' / ')}` : ''}`)
   }
 
   const mark = async (rows: CardChargeRow[], status: 'ignored' | 'matched' | 'pending') => {
@@ -114,44 +131,62 @@ export default function CardTab() {
   const ignored = charges.filter((c) => c.status === 'ignored')
   const bookedCount = charges.filter((c) => c.status === 'booked').length
 
+  const md = (d: string) => `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}`
   const row = (c: CardChargeRow) => (
-    <div key={c.id} className="px-3 py-2 flex items-center gap-2 text-sm">
-      <input
-        type="checkbox"
-        checked={isChecked(c)}
-        onChange={(e) => setChecked((m) => ({ ...m, [c.id]: e.target.checked }))}
-        className="w-4 h-4 accent-amber-700 shrink-0"
-        aria-label="経費として登録する"
-      />
-      <div className="min-w-0 flex-1">
-        <p className="text-xs text-stone-400">{dateTime(c)}</p>
-        <p className="truncate text-stone-800">{c.merchant}</p>
+    <div key={c.id} className="px-3 py-2 space-y-1.5 text-sm">
+      <div className="flex items-center gap-2">
+        <input
+          type="checkbox"
+          checked={isChecked(c)}
+          onChange={(e) => setChecked((m) => ({ ...m, [c.id]: e.target.checked }))}
+          className="w-4 h-4 accent-amber-700 shrink-0"
+          aria-label="経費として登録する"
+        />
+        <div className="min-w-0 flex-1">
+          <p className="text-xs text-stone-400">
+            {dateTime(c)} ・ 引き落とし予定 {md(withdrawalDate(chargeDate(c), cycle))}
+          </p>
+          <p className="truncate text-stone-800">{c.merchant}</p>
+        </div>
+        <span className="font-bold text-stone-900 shrink-0 text-right">{yen(c.amount)}</span>
       </div>
-      <select
-        value={accountIdOf(c)}
-        onChange={(e) => setAcctOverride((m) => ({ ...m, [c.id]: e.target.value }))}
-        className="border border-stone-300 rounded px-1.5 py-1 text-xs bg-white w-24 shrink-0"
-        aria-label="勘定科目"
-      >
-        <option value="">科目を選ぶ</option>
-        {accounts.map((a) => (
-          <option key={a.id} value={a.id}>
-            {a.name}
-          </option>
-        ))}
-      </select>
-      <span className="font-bold text-stone-900 shrink-0 w-16 text-right">{yen(c.amount)}</span>
+      {isChecked(c) && (
+        <div className="pl-6">
+          <SegAcctSelect
+            segments={segments}
+            accounts={accounts}
+            segmentId={segIdOf(c)}
+            accountId={accountIdOf(c)}
+            onSegment={(id) => setSegOverride((m) => ({ ...m, [c.id]: id }))}
+            onAccount={(id) => setAcctOverride((m) => ({ ...m, [c.id]: id }))}
+          />
+        </div>
+      )}
     </div>
   )
 
   return (
     <div className="space-y-4">
       <p className="text-sm text-stone-600">
-        三井住友カードの「ご利用のお知らせ」メールから取り込まれた利用です。事業で使ったものだけチェックして、科目を選んで経費に登録します（カード払い＝未払金。引き落としは銀行CSVの取り込みで精算）。
+        三井住友カードの「ご利用のお知らせ」メールから取り込まれた利用です。事業で使ったものだけチェックして、事業区分と科目を選んで経費に登録します。カード払いは利用日に経費になり、実際にお金が出るのは引き落とし日です（未払金として残り、銀行CSVの取り込みで精算）。同じ日・同じ金額の手入力の仕訳があれば、手入力のほうを消します。
       </p>
       <p className="text-xs text-stone-400 flex items-center gap-1">
         <CreditCard className="w-3.5 h-3.5" /> 毎日の定期実行で新しい利用が追加されます。このメールは承認の通知で、請求の確定ではありません。
       </p>
+
+      <CardPayableSummary />
+
+      {rest.length > 0 && (
+        <DefaultSegAcct
+          segments={segments}
+          accounts={accounts}
+          segmentId={defaultSeg || commonSeg?.id || ''}
+          accountId={defaultAcct}
+          onSegment={setDefaultSeg}
+          onAccount={setDefaultAcct}
+          accountPlaceholder="科目（店名ルール優先）"
+        />
+      )}
 
       {isLoading && <Spinner />}
       {!isLoading && pending.length === 0 && (

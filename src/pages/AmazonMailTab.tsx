@@ -11,6 +11,9 @@ import {
   type AmazonOrderRow,
 } from '../lib/amazonMail'
 import { uuidV5 } from '../lib/ads'
+import { SegAcctSelect, DefaultSegAcct } from '../components/SegAcctSelect'
+import { removeManualDuplicatesFor, removedMessage, useCardCycle } from '../lib/importBooking'
+import { withdrawalDate } from '../lib/cardPayable'
 
 const yen = (n: number) => `¥${Math.round(n).toLocaleString()}`
 
@@ -24,6 +27,10 @@ export default function AmazonMailTab() {
 
   const [picked, setPicked] = useState<Set<string>>(new Set())
   const [accountId, setAccountId] = useState('')
+  const [defaultSeg, setDefaultSeg] = useState('')
+  const [segOverride, setSegOverride] = useState<Record<string, string>>({})
+  const [acctOverride, setAcctOverride] = useState<Record<string, string>>({})
+  const [cycle] = useCardCycle()
   const [share, setShare] = useState('100')
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
@@ -35,6 +42,9 @@ export default function AmazonMailTab() {
   const defaultAccount = accounts.find((a) => a.code === '518') ?? accounts[0]
   const acctId = accountId || defaultAccount?.id || ''
   const sharePct = Number(share)
+  const commonSeg = segments.find((s) => s.code === 'common') ?? segments[0]
+  const segIdOf = (o: AmazonOrderRow) => segOverride[o.id] || defaultSeg || commonSeg?.id || ''
+  const acctOf = (o: AmazonOrderRow) => acctOverride[o.id] || acctId
   const selected = pending.filter((o) => picked.has(o.id))
   const selectedTotal = selected.reduce((s, o) => s + businessAmount(o.amount, sharePct), 0)
 
@@ -48,26 +58,28 @@ export default function AmazonMailTab() {
     })
 
   const register = async () => {
-    const seg = segments.find((s) => s.code === 'common') ?? segments[0]
-    if (!seg || !acctId) return
+    if (selected.some((o) => !segIdOf(o) || !acctOf(o))) return
     setBusy(true)
     setMessage(null)
     const done: string[] = []
     const failed: string[] = []
+    const sourceIds: string[] = []
     for (const o of selected) {
       const amount = businessAmount(o.amount, sharePct)
       if (amount <= 0) continue
       try {
+        const id = await uuidV5(amazonMailSourceName(o))
         await recordExpense({
-          id: await uuidV5(amazonMailSourceName(o)),
+          id,
           entryDate: o.ordered_on,
-          segmentId: seg.id,
-          accountId: acctId,
+          segmentId: segIdOf(o),
+          accountId: acctOf(o),
           amount,
           paymentMethod: 'card',
           memo: `Amazon: ${o.title}${o.quantity > 1 ? ` ×${o.quantity}` : ''}（${o.order_id}）${sharePct < 100 ? ` 事業${sharePct}%` : ''}`.slice(0, 200),
         })
         done.push(o.id)
+        sourceIds.push(id)
       } catch (e) {
         failed.push(`${o.title.slice(0, 20)}: ${e instanceof Error ? e.message : '失敗'}`)
       }
@@ -77,11 +89,17 @@ export default function AmazonMailTab() {
     } catch (e) {
       failed.push(`状態の更新に失敗: ${e instanceof Error ? e.message : ''}`)
     }
+    let removed = ''
+    try {
+      removed = removedMessage(await removeManualDuplicatesFor(sourceIds, selected.map((o) => o.ordered_on)))
+    } catch (e) {
+      failed.push(`重複の確認に失敗: ${e instanceof Error ? e.message : ''}`)
+    }
     invalidateJournal()
     void refresh()
     setPicked(new Set())
     setBusy(false)
-    setMessage(`${done.length}件を経費に登録しました${failed.length ? `。失敗 ${failed.length}件: ${failed.join(' / ')}` : ''}`)
+    setMessage(`${done.length}件を経費に登録しました${removed}${failed.length ? `。失敗 ${failed.length}件: ${failed.join(' / ')}` : ''}`)
   }
 
   const setStatus = async (rows: AmazonOrderRow[], status: 'ignored' | 'pending') => {
@@ -117,21 +135,15 @@ export default function AmazonMailTab() {
 
       {pending.length > 0 && (
         <section className="space-y-2">
+          <DefaultSegAcct
+            segments={segments}
+            accounts={accounts}
+            segmentId={defaultSeg || commonSeg?.id || ''}
+            accountId={acctId}
+            onSegment={setDefaultSeg}
+            onAccount={setAccountId}
+          />
           <div className="grid grid-cols-2 gap-2">
-            <label className="text-xs text-stone-500">
-              勘定科目
-              <select
-                value={acctId}
-                onChange={(e) => setAccountId(e.target.value)}
-                className="mt-1 w-full border border-stone-300 rounded-lg px-2 py-2 text-sm bg-white text-stone-800"
-              >
-                {accounts.map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.name}
-                  </option>
-                ))}
-              </select>
-            </label>
             <label className="text-xs text-stone-500">
               事業で使った割合（%）
               <input
@@ -148,22 +160,36 @@ export default function AmazonMailTab() {
 
           <div className="bg-white border border-stone-200 rounded-xl divide-y divide-stone-100">
             {pending.map((o) => (
-              <label key={o.id} className="px-3 py-2 flex items-center gap-2 text-sm">
-                <input
-                  type="checkbox"
-                  checked={picked.has(o.id)}
-                  onChange={(e) => toggle(o.id, e.target.checked)}
-                  className="w-4 h-4 accent-amber-700 shrink-0"
-                />
-                <div className="min-w-0 flex-1">
-                  <p className="text-xs text-stone-400">
-                    {o.ordered_on}
-                    {o.quantity > 1 && ` ・ ${o.quantity}点`}
-                  </p>
-                  <p className="truncate text-stone-800">{o.title}</p>
-                </div>
-                <span className="font-bold text-stone-900 shrink-0">{yen(o.amount)}</span>
-              </label>
+              <div key={o.id} className="px-3 py-2 space-y-1.5 text-sm">
+                <label className="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    checked={picked.has(o.id)}
+                    onChange={(e) => toggle(o.id, e.target.checked)}
+                    className="w-4 h-4 accent-amber-700 shrink-0"
+                  />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs text-stone-400">
+                      {o.ordered_on}
+                      {o.quantity > 1 && ` ・ ${o.quantity}点`} ・ 引き落とし予定 {withdrawalDate(o.ordered_on, cycle).slice(5).replace('-', '/')}
+                    </p>
+                    <p className="truncate text-stone-800">{o.title}</p>
+                  </div>
+                  <span className="font-bold text-stone-900 shrink-0">{yen(o.amount)}</span>
+                </label>
+                {picked.has(o.id) && (
+                  <div className="pl-6">
+                    <SegAcctSelect
+                      segments={segments}
+                      accounts={accounts}
+                      segmentId={segIdOf(o)}
+                      accountId={acctOf(o)}
+                      onSegment={(id) => setSegOverride((m) => ({ ...m, [o.id]: id }))}
+                      onAccount={(id) => setAcctOverride((m) => ({ ...m, [o.id]: id }))}
+                    />
+                  </div>
+                )}
+              </div>
             ))}
           </div>
 

@@ -12,6 +12,7 @@ import {
   useInvalidateJournal,
   recordExpense,
   recordPlatformRevenue,
+  useRevenueAccounts,
 } from '../lib/accounting'
 import {
   detectBankColumns,
@@ -30,6 +31,9 @@ import {
   type AmazonColumns,
 } from '../lib/amazonImport'
 import { uuidV5 } from '../lib/ads'
+import { SegAcctSelect, DefaultSegAcct } from '../components/SegAcctSelect'
+import { removeManualDuplicatesFor, removedMessage, useCardCycle } from '../lib/importBooking'
+import { withdrawalDate } from '../lib/cardPayable'
 import { useStoredState } from '../lib/persistState'
 import AmazonMailTab from './AmazonMailTab'
 import CardTab from './CardTab'
@@ -209,10 +213,14 @@ function ColumnMapper({
 
 // ---------- 銀行の入金 → プラットフォーム収益 ----------
 
-const SEGMENT_LABEL: Record<BankRule['segment'], string> = { youtube: 'YouTube', note: 'note', amazon: 'Amazonアソシエイト' }
 
 function BankTab() {
   const { data: segments = [] } = useSegments()
+  const { data: revenueAccounts = [] } = useRevenueAccounts()
+  const [acctOverride, setAcctOverride] = useState<Record<number, string>>({})
+  const segName = (code: string) => segments.find((s) => s.code === code)?.name ?? code
+  const salesAcct = revenueAccounts.find((a) => a.code === '401')?.id ?? ''
+  const acctOf = (i: number) => acctOverride[i] || salesAcct
   const invalidate = useInvalidateJournal()
   const [rules, setRules] = useStoredState<BankRule[]>('kbtr_v3_bank_rules', DEFAULT_BANK_RULES)
   const [rows, setRows] = useState<string[][] | null>(null)
@@ -223,7 +231,7 @@ function BankTab() {
   const [registered, setRegistered] = useState<Set<string>>(new Set())
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState<string | null>(null)
-  const [newRule, setNewRule] = useState<{ pattern: string; segment: BankRule['segment'] }>({ pattern: '', segment: 'youtube' })
+  const [newRule, setNewRule] = useState<BankRule>({ pattern: '', segment: 'youtube' })
   const [reload, setReload] = useState(0)
 
   const txns = useMemo(() => (rows && cols ? parseBankRows(rows, cols) : []), [rows, cols])
@@ -275,6 +283,7 @@ function BankTab() {
     setMessage(null)
     let ok = 0
     const failed: string[] = []
+    const sourceIds: string[] = []
     for (const i of targets) {
       const t = deposits[i]
       const seg = segments.find((s) => s.code === segOf(i))
@@ -290,22 +299,30 @@ function BankTab() {
           gross: t.deposit,
           fee: 0,
           memo: `銀行入金 ${t.description}`,
+          ...(acctOf(i) && acctOf(i) !== salesAcct ? { revenueAccountId: acctOf(i) } : {}),
         })
         ok++
+        sourceIds.push(ids[i])
       } catch (e) {
         failed.push(`${t.date} ${t.description}: ${e instanceof Error ? e.message : '失敗'}`)
       }
     }
+    let removed = ''
+    try {
+      removed = removedMessage(await removeManualDuplicatesFor(sourceIds, targets.map((i) => deposits[i].date)))
+    } catch (e) {
+      failed.push(`重複の確認に失敗: ${e instanceof Error ? e.message : ''}`)
+    }
     invalidate()
     setReload((n) => n + 1)
     setBusy(false)
-    setMessage(`${ok}件を登録しました${failed.length ? `。失敗 ${failed.length}件: ${failed.join(' / ')}` : ''}`)
+    setMessage(`${ok}件を登録しました${removed}${failed.length ? `。失敗 ${failed.length}件: ${failed.join(' / ')}` : ''}`)
   }
 
   return (
     <div className="space-y-4">
       <p className="text-sm text-stone-600">
-        ネットバンクの入出金明細CSVを選ぶと、摘要から YouTube / note / Amazonアソシエイト の入金を見つけて収益として登録します。入金だけが対象です。
+        ネットバンクの入出金明細CSVを選ぶと、摘要から YouTube / note / Amazonアソシエイト などの入金を見つけて収益として登録します。行ごとに事業区分と科目（売上高・雑収入など）を選べます。同じ日・同じ金額の手入力の収益があれば、手入力のほうを消します。
       </p>
       <FilePicker onRows={load} />
 
@@ -341,29 +358,49 @@ function BankTab() {
             {deposits.map((t, i) => {
               const done = !!ids[i] && registered.has(ids[i])
               return (
-                <div key={i} className="px-3 py-2 flex items-center gap-2 text-sm">
-                  <div className="min-w-0 flex-1">
-                    <p className="text-xs text-stone-400">{t.date}</p>
-                    <p className="truncate text-stone-800">{t.description || '（摘要なし）'}</p>
+                <div key={i} className="px-3 py-2 space-y-1.5 text-sm">
+                  <div className="flex items-center gap-2">
+                    <div className="min-w-0 flex-1">
+                      <p className="text-xs text-stone-400">{t.date}</p>
+                      <p className="truncate text-stone-800">{t.description || '（摘要なし）'}</p>
+                    </div>
+                    <span className="font-bold text-stone-900 shrink-0">{yen(t.deposit)}</span>
+                    {done && (
+                      <span className="text-xs text-green-700 flex items-center gap-0.5 shrink-0">
+                        <Check className="w-3 h-3" />登録済み
+                      </span>
+                    )}
                   </div>
-                  <span className="font-bold text-stone-900 shrink-0">{yen(t.deposit)}</span>
-                  {done ? (
-                    <span className="text-xs text-green-700 flex items-center gap-0.5 shrink-0 w-24 justify-end">
-                      <Check className="w-3 h-3" />登録済み
-                    </span>
-                  ) : (
-                    <select
-                      value={segOf(i)}
-                      onChange={(e) => setOverride((o) => ({ ...o, [i]: e.target.value }))}
-                      className="border border-stone-300 rounded px-1.5 py-1 text-xs bg-white w-24 shrink-0"
-                    >
-                      <option value="">対象外</option>
-                      {(Object.keys(SEGMENT_LABEL) as BankRule['segment'][]).map((k) => (
-                        <option key={k} value={k}>
-                          {SEGMENT_LABEL[k]}
-                        </option>
-                      ))}
-                    </select>
+                  {!done && (
+                    <div className="flex gap-1.5">
+                      <select
+                        value={segOf(i)}
+                        onChange={(e) => setOverride((o) => ({ ...o, [i]: e.target.value }))}
+                        className="border border-stone-300 rounded px-1.5 py-1 text-xs bg-white flex-1 min-w-0"
+                        aria-label="事業区分"
+                      >
+                        <option value="">対象外（登録しない）</option>
+                        {segments.map((sg) => (
+                          <option key={sg.id} value={sg.code}>
+                            {sg.name}
+                          </option>
+                        ))}
+                      </select>
+                      {segOf(i) !== '' && (
+                        <select
+                          value={acctOf(i)}
+                          onChange={(e) => setAcctOverride((o) => ({ ...o, [i]: e.target.value }))}
+                          className="border border-stone-300 rounded px-1.5 py-1 text-xs bg-white flex-1 min-w-0"
+                          aria-label="勘定科目"
+                        >
+                          {revenueAccounts.map((a) => (
+                            <option key={a.id} value={a.id}>
+                              {a.name}
+                            </option>
+                          ))}
+                        </select>
+                      )}
+                    </div>
                   )}
                 </div>
               )
@@ -393,7 +430,7 @@ function BankTab() {
           {rules.map((r, i) => (
             <div key={i} className="flex items-center gap-2 text-sm">
               <span className="flex-1 truncate">{r.pattern}</span>
-              <span className="text-xs text-stone-500">{SEGMENT_LABEL[r.segment]}</span>
+              <span className="text-xs text-stone-500">{segName(r.segment)}</span>
               <button onClick={() => setRules((rs) => rs.filter((_, j) => j !== i))} className="text-red-400 text-xs">
                 削除
               </button>
@@ -408,12 +445,12 @@ function BankTab() {
             />
             <select
               value={newRule.segment}
-              onChange={(e) => setNewRule((n) => ({ ...n, segment: e.target.value as BankRule['segment'] }))}
+              onChange={(e) => setNewRule((n) => ({ ...n, segment: e.target.value }))}
               className="border border-stone-300 rounded px-1.5 py-1 text-xs bg-white"
             >
-              {(Object.keys(SEGMENT_LABEL) as BankRule['segment'][]).map((k) => (
-                <option key={k} value={k}>
-                  {SEGMENT_LABEL[k]}
+              {segments.map((sg) => (
+                <option key={sg.id} value={sg.code}>
+                  {sg.name}
                 </option>
               ))}
             </select>
@@ -446,6 +483,10 @@ function AmazonTab() {
   const [cols, setCols] = useState<AmazonColumns | null>(null)
   const [picked, setPicked] = useState<Set<number>>(new Set())
   const [accountId, setAccountId] = useState('')
+  const [defaultSeg, setDefaultSeg] = useState('')
+  const [segOverride, setSegOverride] = useState<Record<number, string>>({})
+  const [acctOverride, setAcctOverride] = useState<Record<number, string>>({})
+  const [cycle] = useCardCycle()
   const [share, setShare] = useState('100')
   const [search, setSearch] = useState('')
   const [ids, setIds] = useState<string[]>([])
@@ -458,6 +499,9 @@ function AmazonTab() {
   const defaultAccount = accounts.find((a) => a.code === '518') ?? accounts[0]
   const acctId = accountId || defaultAccount?.id || ''
   const sharePct = Number(share)
+  const commonSeg = segments.find((s) => s.code === 'common') ?? segments[0]
+  const segIdOf = (i: number) => segOverride[i] || defaultSeg || commonSeg?.id || ''
+  const acctOf = (i: number) => acctOverride[i] || acctId
 
   useEffect(() => {
     let cancelled = false
@@ -492,12 +536,12 @@ function AmazonTab() {
   const selectedTotal = selected.reduce((s, i) => s + businessAmount(items[i].amount, sharePct), 0)
 
   const register = async () => {
-    const seg = segments.find((s) => s.code === 'common') ?? segments[0]
-    if (!seg || !acctId) return
+    if (selected.some((i) => !segIdOf(i) || !acctOf(i))) return
     setBusy(true)
     setMessage(null)
     let ok = 0
     const failed: string[] = []
+    const sourceIds: string[] = []
     for (const i of selected) {
       const it = items[i]
       const amount = businessAmount(it.amount, sharePct)
@@ -506,22 +550,29 @@ function AmazonTab() {
         await recordExpense({
           id: ids[i],
           entryDate: it.date,
-          segmentId: seg.id,
-          accountId: acctId,
+          segmentId: segIdOf(i),
+          accountId: acctOf(i),
           amount,
           paymentMethod: 'card',
           memo: `Amazon: ${it.title}${it.orderId ? `（${it.orderId}）` : ''}${sharePct < 100 ? ` 事業${sharePct}%` : ''}`.slice(0, 200),
         })
         ok++
+        sourceIds.push(ids[i])
       } catch (e) {
         failed.push(`${it.title.slice(0, 20)}: ${e instanceof Error ? e.message : '失敗'}`)
       }
+    }
+    let removed = ''
+    try {
+      removed = removedMessage(await removeManualDuplicatesFor(sourceIds, selected.map((i) => items[i].date)))
+    } catch (e) {
+      failed.push(`重複の確認に失敗: ${e instanceof Error ? e.message : ''}`)
     }
     invalidate()
     setPicked(new Set())
     setReload((n) => n + 1)
     setBusy(false)
-    setMessage(`${ok}件を経費に登録しました${failed.length ? `。失敗 ${failed.length}件: ${failed.join(' / ')}` : ''}`)
+    setMessage(`${ok}件を経費に登録しました${removed}${failed.length ? `。失敗 ${failed.length}件: ${failed.join(' / ')}` : ''}`)
   }
 
   return (
@@ -551,21 +602,15 @@ function AmazonTab() {
           <p className="text-xs text-stone-500">
             {fileName}: {items.length}件
           </p>
+          <DefaultSegAcct
+            segments={segments}
+            accounts={accounts}
+            segmentId={defaultSeg || commonSeg?.id || ''}
+            accountId={acctId}
+            onSegment={setDefaultSeg}
+            onAccount={setAccountId}
+          />
           <div className="grid grid-cols-2 gap-2">
-            <label className="text-xs text-stone-500">
-              勘定科目
-              <select
-                value={acctId}
-                onChange={(e) => setAccountId(e.target.value)}
-                className="mt-1 w-full border border-stone-300 rounded-lg px-2 py-2 text-sm bg-white text-stone-800"
-              >
-                {accounts.map((a) => (
-                  <option key={a.id} value={a.id}>
-                    {a.name}
-                  </option>
-                ))}
-              </select>
-            </label>
             <label className="text-xs text-stone-500">
               事業で使った割合（%）
               <input
@@ -590,7 +635,8 @@ function AmazonTab() {
             {visible.map(({ it, i }) => {
               const done = !!ids[i] && registered.has(ids[i])
               return (
-                <label key={i} className={`px-3 py-2 flex items-center gap-2 text-sm ${done ? 'opacity-50' : ''}`}>
+                <div key={i} className={`px-3 py-2 space-y-1.5 text-sm ${done ? 'opacity-50' : ''}`}>
+                <label className="flex items-center gap-2">
                   <input
                     type="checkbox"
                     checked={picked.has(i)}
@@ -606,7 +652,9 @@ function AmazonTab() {
                     className="w-4 h-4 accent-amber-700 shrink-0"
                   />
                   <div className="min-w-0 flex-1">
-                    <p className="text-xs text-stone-400">{it.date}</p>
+                    <p className="text-xs text-stone-400">
+                      {it.date} ・ 引き落とし予定 {withdrawalDate(it.date, cycle).slice(5).replace('-', '/')}
+                    </p>
                     <p className="truncate text-stone-800">{it.title}</p>
                   </div>
                   <span className="font-bold text-stone-900 shrink-0">{yen(it.amount)}</span>
@@ -616,6 +664,19 @@ function AmazonTab() {
                     </span>
                   )}
                 </label>
+                {picked.has(i) && !done && (
+                  <div className="pl-6">
+                    <SegAcctSelect
+                      segments={segments}
+                      accounts={accounts}
+                      segmentId={segIdOf(i)}
+                      accountId={acctOf(i)}
+                      onSegment={(id) => setSegOverride((m) => ({ ...m, [i]: id }))}
+                      onAccount={(id) => setAcctOverride((m) => ({ ...m, [i]: id }))}
+                    />
+                  </div>
+                )}
+                </div>
               )
             })}
             {visible.length === 0 && <p className="px-3 py-4 text-sm text-stone-400">該当する商品がありません</p>}

@@ -53,6 +53,9 @@ export async function fetchAccounts(type?: AccountType): Promise<Account[]> {
   if (error) throw error
   return data ?? []
 }
+export function useRevenueAccounts() {
+  return useQuery({ queryKey: ['accounts', 'revenue'], queryFn: () => fetchAccounts('revenue'), staleTime: 5 * 60_000 })
+}
 export function useExpenseAccounts() {
   return useQuery({ queryKey: ['accounts', 'expense'], queryFn: () => fetchAccounts('expense'), staleTime: 5 * 60_000 })
 }
@@ -131,6 +134,8 @@ export type RecordPlatformRevenueParams = {
   gross: number
   fee: number
   memo?: string
+  /** 貸方の収益科目（省略時は売上高 401） */
+  revenueAccountId?: string
 }
 
 export async function recordPlatformRevenue(params: RecordPlatformRevenueParams): Promise<string> {
@@ -142,6 +147,8 @@ export async function recordPlatformRevenue(params: RecordPlatformRevenueParams)
     p_gross: params.gross,
     p_fee: params.fee,
     p_memo: params.memo ?? '',
+    // 科目を選んだときだけ送る（7引数版。migration 11）
+    ...(params.revenueAccountId ? { p_revenue_account_id: params.revenueAccountId } : {}),
   })
   if (error) throw error
   return id
@@ -183,6 +190,7 @@ export function revenueFormFromEntry(e: JournalEntry): {
   gross: number
   fee: number
   memo: string
+  revenueAccountId: string
 } {
   const fee = e.journal_lines
     .filter((l) => l.side === 'debit' && l.accounts.code === '521')
@@ -193,6 +201,8 @@ export function revenueFormFromEntry(e: JournalEntry): {
     gross: entryTotal(e, 'credit'),
     fee,
     memo: e.description,
+    // 収益の科目（直すときに売上高へ戻らないよう、元の科目を引き継ぐ）
+    revenueAccountId: e.journal_lines.find((l) => l.side === 'credit' && l.accounts.type === 'revenue')?.account_id ?? '',
   }
 }
 

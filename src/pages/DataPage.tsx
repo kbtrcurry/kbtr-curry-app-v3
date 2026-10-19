@@ -485,6 +485,7 @@ export default function DataPage() {
               gross,
               fee,
               memo: v.memo,
+              revenueAccountId: f.revenueAccountId || undefined,
             })
             invalidateJournal()
           }}

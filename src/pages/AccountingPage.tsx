@@ -1,3 +1,6 @@
+import { CardPayableSummary } from '../components/CardPayableSummary'
+import { useCardPayables } from '../lib/importBooking'
+import { manualDuplicates } from '../lib/cardPayable'
 import { useSearchParams } from 'react-router-dom'
 import { useMemo, useState } from 'react'
 import { Wallet, Trash2, Check, AlertTriangle, Pencil } from 'lucide-react'
@@ -493,6 +496,7 @@ function RevenueTab({
         gross: grossNum,
         fee: feeNum,
         memo,
+        ...(editing ? { revenueAccountId: revenueFormFromEntry(editing).revenueAccountId || undefined } : {}),
       })
       setEditing(null)
       setGross('')
@@ -674,6 +678,10 @@ function RevenueTab({
 
 function LedgerTab({ entries, onSaved }: { entries: JournalEntry[]; onSaved: () => void }) {
   const [confirmTarget, setConfirmTarget] = useState<JournalEntry | null>(null)
+  const { byEntry } = useCardPayables()
+  // 取り込んだ仕訳と同じ日・同じ金額の手入力（消す候補）
+  const dupOf = useMemo(() => new Map(manualDuplicates(entries).map((p) => [p.manual.id, p.imported])), [entries])
+  const md = (d: string) => `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}`
 
   const remove = async (entryId: string) => {
     await deleteJournalEntry(entryId)
@@ -682,15 +690,30 @@ function LedgerTab({ entries, onSaved }: { entries: JournalEntry[]; onSaved: () 
 
   return (
     <div className="space-y-2">
+      <CardPayableSummary />
+      {dupOf.size > 0 && (
+        <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+          取り込んだ仕訳と同じ日・同じ金額の手入力が {dupOf.size}件あります（黄色の枠）。二重になっているので、手入力のほうを削除してください。
+        </p>
+      )}
       {entries.length === 0 && <p className="text-center text-stone-400 text-sm py-4">この月の仕訳はまだありません</p>}
       {entries.map((e) => (
-        <div key={e.id} className="bg-white border border-stone-200 rounded-xl px-3 py-2.5">
+        <div
+          key={e.id}
+          className={`bg-white border rounded-xl px-3 py-2.5 ${dupOf.has(e.id) ? 'border-amber-400 bg-amber-50' : 'border-stone-200'}`}
+        >
           <div className="flex items-center justify-between gap-2 mb-1.5">
             <div className="flex items-center gap-2 min-w-0">
               <span className="text-xs text-stone-400 shrink-0">{e.entry_date}</span>
               <span className="text-xs text-stone-500 shrink-0">{e.segments.name}</span>
               <SourceBadge sourceType={e.source_type} />
               {isReceivableEntry(e) && <span className="text-xs text-amber-700 shrink-0">入金予定</span>}
+              {byEntry.get(e.id) &&
+                (byEntry.get(e.id)!.settled ? (
+                  <span className="text-xs text-green-700 shrink-0">カード・引き落とし済み</span>
+                ) : (
+                  <span className="text-xs text-sky-700 shrink-0">カード・{md(byEntry.get(e.id)!.due)}引き落とし予定</span>
+                ))}
             </div>
             {e.source_type !== 'pos_close' && !isReceivableEntry(e) && (
               <button onClick={() => setConfirmTarget(e)} className="text-red-400 shrink-0" title="削除">
@@ -699,6 +722,17 @@ function LedgerTab({ entries, onSaved }: { entries: JournalEntry[]; onSaved: () 
             )}
           </div>
           {e.description && <p className="text-sm text-stone-600 mb-1">{e.description}</p>}
+          {dupOf.has(e.id) && (
+            <div className="flex items-center justify-between gap-2 mb-1">
+              <p className="text-xs text-amber-800">取り込み「{dupOf.get(e.id)!.description}」と重複（手入力）</p>
+              <button
+                onClick={() => setConfirmTarget(e)}
+                className="text-xs font-bold text-[#faf9f5] bg-amber-700 rounded-lg px-2.5 py-1 shrink-0"
+              >
+                手入力を削除
+              </button>
+            </div>
+          )}
           <div className="space-y-0.5">
             {e.journal_lines.map((l) => (
               <div key={l.id} className="flex items-center justify-between text-sm">

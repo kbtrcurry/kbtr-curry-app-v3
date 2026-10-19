@@ -72,7 +72,8 @@ export function parseBankRows(rows: string[][], cols: BankColumns): BankTxn[] {
   return out
 }
 
-export type BankRule = { pattern: string; segment: 'youtube' | 'note' | 'amazon' }
+// segment は事業区分のコード（youtube・note・amazon のほか、自分で追加した区分も可）
+export type BankRule = { pattern: string; segment: string }
 
 // 摘要は半角カナ(ﾉｰﾄ)のことが多いので NFKC で揃えてから、大文字小文字を無視して部分一致する
 export const DEFAULT_BANK_RULES: BankRule[] = [

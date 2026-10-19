@@ -1,3 +1,4 @@
+import YearTab from './analysis/YearTab'
 import { useMemo, useState } from 'react'
 import { Receipt, Check, AlertTriangle } from 'lucide-react'
 import { useAuth } from '../lib/auth'
@@ -18,13 +19,14 @@ import {
   type AccountSummaryRow,
 } from '../lib/exports'
 
-type Tab = 'journal' | 'ledger' | 'cash' | 'summary' | 'check'
+type Tab = 'journal' | 'ledger' | 'cash' | 'summary' | 'monthly' | 'check'
 
 const TABS: { key: Tab; label: string }[] = [
   { key: 'journal', label: '仕訳帳' },
   { key: 'ledger', label: '総勘定元帳' },
   { key: 'cash', label: '現金出納帳' },
   { key: 'summary', label: '科目別集計' },
+  { key: 'monthly', label: '月別の表（CSV）' },
   { key: 'check', label: '年次チェック' },
 ]
 
@@ -115,6 +117,7 @@ export default function TaxPage() {
       {!isLoading && tab === 'ledger' && <LedgerTab entries={entries} accounts={accounts} year={year} />}
       {!isLoading && tab === 'cash' && <CashTab entries={entries} accounts={accounts} year={year} />}
       {!isLoading && tab === 'summary' && <SummaryTab entries={entries} accounts={accounts} year={year} />}
+      {tab === 'monthly' && <YearTab year={String(year)} />}
       {!isLoading && tab === 'check' && <CheckTab entries={entries} accounts={accounts} segments={segments} year={year} />}
     </div>
   )

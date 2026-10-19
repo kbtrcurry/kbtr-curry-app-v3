@@ -1,82 +1,43 @@
 import { useMemo, useState } from 'react'
 import type { ReactNode } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { Pencil, Trash2, Plus, BarChart3 } from 'lucide-react'
+import { Pencil, Trash2, Plus, History } from 'lucide-react'
 import { useAuth } from '../lib/auth'
 import { Spinner } from '../components/Spinner'
+import { UnclosedSessions } from '../components/UnclosedSessions'
 import { ConfirmModal } from '../components/ConfirmModal'
 import { Modal } from '../components/Modal'
 import {
   useClosedSessions,
   useReceiptLines,
   salesBySession,
-  daysAgoStr,
-  monthOf,
   deleteSessionCascade,
   replaceSessionLines,
   updateSalesSession,
   type ClosedSession,
   type EditableLine,
 } from '../lib/analytics'
-import {
-  useAllRecipeIngredients,
-  useAllMenuComponents,
-  useAllMenus,
-  useRecipes,
-  groupRecipeIngredientsByRecipe,
-  menuCost,
-  perServingCost,
-} from '../lib/masterData'
-import { usePersistedState, useStoredState } from '../lib/persistState'
+import { useAllMenus } from '../lib/masterData'
 import { useSegments } from '../lib/accounting'
-import {
-  foodCostTone,
-  salesPerHourTone,
-  salesPerLaborHour,
-  projectMonthEnd,
-  TONE_TEXT_CLASS,
-  type Tone,
-} from '../lib/kpi'
 
 const yen = (n: number) => `¥${Math.round(n).toLocaleString()}`
 
-type SumPeriod = 'month' | '4w' | '3m' | '6m' | '1y'
-const SUM_PERIODS: { key: SumPeriod; label: string; days: number | null }[] = [
-  { key: 'month', label: '今月', days: null },
-  { key: '4w', label: '過去4週', days: 28 },
-  { key: '3m', label: '過去3ヶ月', days: 90 },
-  { key: '6m', label: '過去半年', days: 180 },
-  { key: '1y', label: '過去1年', days: 365 },
-]
-const thisMonth = () => {
-  const d = new Date()
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
-}
-
 const peopleOf = (s: ClosedSession) => (s.people > 0 ? s.people : s.groups)
 
-export default function DashboardPage() {
+export default function HistoryPage() {
   const { session: authSession, loading: authLoading, loginWithGoogle } = useAuth()
   const { data: sessions = [], isLoading: sessionsLoading } = useClosedSessions()
   const { data: lines = [], isLoading: linesLoading } = useReceiptLines()
-  const { data: allRecipeIngredients = [] } = useAllRecipeIngredients()
-  const { data: menuComponents = [] } = useAllMenuComponents()
-  const { data: recipes = [] } = useRecipes()
   const { data: allMenus = [] } = useAllMenus()
   const { data: segments = [] } = useSegments()
   const queryClient = useQueryClient()
   const menuIdByName = useMemo(() => new Map(allMenus.map((m) => [m.name, m.id])), [allMenus])
 
-  const [sumPeriod, setSumPeriod] = useState<SumPeriod>('month')
   const [openId, setOpenId] = useState<string | null>(null)
 
-  // 取り置き特典に使うレシピは設定タブで選択する（同じキーをここでも読むだけ）
-  const [toriokiRecipeId] = usePersistedState('kbtr_v3_torioki_recipe', '')
   const [busy, setBusy] = useState(false)
   const [confirmDeleteSession, setConfirmDeleteSession] = useState<ClosedSession | null>(null)
   const [editSessionId, setEditSessionId] = useState<string | null>(null)
-  // 今月あと何回営業する予定か（着地見込みの計算用。端末ごとに保存）
-  const [remainingSessions, setRemainingSessions] = useStoredState<number>('kbtr_v3_remaining_sessions', 0)
   const [editForm, setEditForm] = useState({
     date: '',
     segmentId: '',
@@ -91,27 +52,12 @@ export default function DashboardPage() {
   const [menuEditId, setMenuEditId] = useState<string | null>(null)
   const [menuEditRows, setMenuEditRows] = useState<{ name: string; qty: string; price: string }[]>([])
 
-  const recipeIngredientsByRecipe = groupRecipeIngredientsByRecipe(allRecipeIngredients)
 
   const invalidateAnalytics = () =>
     Promise.all([
       queryClient.invalidateQueries({ queryKey: ['analytics', 'sessions'] }),
       queryClient.invalidateQueries({ queryKey: ['analytics', 'receipt_lines'] }),
     ])
-
-  // 取り置き特典の一食原価（税込・理論値）。選択レシピが無ければ0
-  const toriokiCostPerServing = useMemo(() => {
-    if (!toriokiRecipeId) return 0
-    const r = recipes.find((x) => x.id === toriokiRecipeId)
-    if (!r) return 0
-    return perServingCost(r, recipeIngredientsByRecipe[toriokiRecipeId] ?? [])
-  }, [toriokiRecipeId, recipes, recipeIngredientsByRecipe])
-
-  const uzuraCostBySession = useMemo(() => {
-    const map: Record<string, number> = {}
-    for (const s of sessions) map[s.id] = Math.round((s.reserved_people || 0) * toriokiCostPerServing)
-    return map
-  }, [sessions, toriokiCostPerServing])
 
   const startEdit = (s: ClosedSession) => {
     setEditSessionId(s.id)
@@ -203,67 +149,9 @@ export default function DashboardPage() {
     }
   }
 
-  // メニューID → 一食原価（税込・理論値）
-  const costByMenuId = useMemo(() => {
-    const map: Record<string, number> = {}
-    const byMenu: Record<string, typeof menuComponents> = {}
-    for (const c of menuComponents) {
-      if (!byMenu[c.menu_id]) byMenu[c.menu_id] = []
-      byMenu[c.menu_id].push(c)
-    }
-    for (const [menuId, comps] of Object.entries(byMenu)) {
-      map[menuId] = menuCost(comps, recipeIngredientsByRecipe)
-    }
-    return map
-  }, [menuComponents, recipeIngredientsByRecipe])
-
   const salesMap = useMemo(() => salesBySession(lines), [lines])
-  const foodCostBySession = useMemo(() => {
-    const map: Record<string, number> = {}
-    for (const l of lines) {
-      const cost = l.menu_id ? (costByMenuId[l.menu_id] ?? 0) * l.qty : 0
-      map[l.session_id] = (map[l.session_id] ?? 0) + cost
-    }
-    return map
-  }, [lines, costByMenuId])
-
-  const tm = thisMonth()
-  const periodMeta = SUM_PERIODS.find((p) => p.key === sumPeriod) ?? SUM_PERIODS[0]
-  const cutoff = periodMeta.days != null ? daysAgoStr(periodMeta.days) : null
-  const inPeriod = (date: string) => (cutoff != null ? date >= cutoff : monthOf(date) === tm)
-
-  const pSessions = sessions.filter((s) => inPeriod(s.session_date))
-  const pSales = pSessions.reduce((a, s) => a + (salesMap[s.id] ?? 0), 0)
-  const pFoodCost = pSessions.reduce((a, s) => a + (foodCostBySession[s.id] ?? 0), 0)
-  const pFee = pSessions.reduce((a, s) => a + s.rent, 0)
-  const pOther = pSessions.reduce((a, s) => a + s.other_cost, 0)
-  const pUzura = pSessions.reduce((a, s) => a + (uzuraCostBySession[s.id] ?? 0), 0)
-  const pPeople = pSessions.reduce((a, s) => a + peopleOf(s), 0)
-  const pProfit = pSales - pFoodCost - pFee - pOther - pUzura
-  const pRate = pSales > 0 ? (pFoodCost / pSales) * 100 : null
-  const avgTicket = pPeople > 0 ? pSales / pPeople : null
-  // 人時売上: 労働時間を入力済みの営業だけで集計（未入力の営業は売上も除く）
-  const laborSessions = pSessions.filter((s) => (s.labor_hours ?? 0) > 0)
-  const pLaborHours = laborSessions.reduce((a, s) => a + (s.labor_hours ?? 0), 0)
-  const pPerHour = salesPerLaborHour(
-    laborSessions.reduce((a, s) => a + (salesMap[s.id] ?? 0), 0),
-    pLaborHours,
-  )
-  const rateTone = foodCostTone(pRate)
-  const perHourTone = salesPerHourTone(pPerHour)
-  const projection =
-    sumPeriod === 'month'
-      ? projectMonthEnd(
-          pSessions.map((s) => salesMap[s.id] ?? 0),
-          remainingSessions,
-        )
-      : null
-  const totalSales = sessions.reduce((a, s) => a + (salesMap[s.id] ?? 0), 0)
-
   const sortedSessions = [...sessions].sort((a, b) => b.session_date.localeCompare(a.session_date))
-  const recentMax = Math.max(1, ...sortedSessions.map((s) => salesMap[s.id] ?? 0))
-  const last8 = sortedSessions.slice(0, 8).reverse()
-
+  const recentMax = Math.max(1, ...sortedSessions.map((x) => salesMap[x.id] ?? 0))
   const linesBySession = useMemo(() => {
     const map: Record<string, typeof lines> = {}
     for (const l of lines) {
@@ -277,8 +165,8 @@ export default function DashboardPage() {
   if (!authSession) {
     return (
       <div className="p-6 flex flex-col items-center justify-center min-h-[70svh] gap-6">
-        <BarChart3 className="w-16 h-16 text-amber-700" strokeWidth={1.5} />
-        <h1 className="text-xl font-bold text-amber-800">ダッシュボード</h1>
+        <History className="w-16 h-16 text-amber-700" strokeWidth={1.5} />
+        <h1 className="text-xl font-bold text-amber-800">営業履歴</h1>
         <button
           onClick={() => void loginWithGoogle()}
           className="bg-amber-700 text-[#faf9f5] px-6 py-3 rounded-xl font-semibold shadow active:scale-95 transition-transform"
@@ -296,9 +184,11 @@ export default function DashboardPage() {
     <div className="p-4 pb-24 max-w-2xl mx-auto">
       <div className="flex items-center justify-between mb-3">
         <h1 className="text-xl font-bold text-amber-800 flex items-center gap-2">
-          <BarChart3 className="w-5 h-5" /> ダッシュボード
+          <History className="w-5 h-5" /> 営業履歴
         </h1>
       </div>
+
+      <UnclosedSessions />
 
       {loading && <Spinner />}
 
@@ -311,102 +201,11 @@ export default function DashboardPage() {
 
       {hasData && (
         <>
-          <div className="flex gap-1.5 mb-3 overflow-x-auto">
-                {SUM_PERIODS.map((p) => (
-                  <button
-                    key={p.key}
-                    onClick={() => setSumPeriod(p.key)}
-                    className={`px-3 py-1.5 rounded-full text-xs font-semibold shrink-0 ${
-                      sumPeriod === p.key ? 'bg-amber-700 text-[#faf9f5]' : 'bg-stone-100 text-stone-600'
-                    }`}
-                  >
-                    {p.label}
-                  </button>
-                ))}
-              </div>
-
-              <div className="rounded-2xl border border-stone-200 bg-gradient-to-b from-stone-50 to-white p-5 mb-4">
-                <p className="text-xs text-stone-500 mb-0.5">{periodMeta.label}の推定利益（理論原価ベース）</p>
-                <p className={`text-4xl font-extrabold leading-tight ${pProfit >= 0 ? 'text-green-700' : 'text-red-600'}`}>
-                  {yen(pProfit)}
-                </p>
-                <div className="grid grid-cols-3 gap-3 mt-4">
-                  <HeroStat label="売上" value={yen(pSales)} />
-                  <HeroStat
-                    label="原価率(理論)"
-                    value={pRate != null ? `${pRate.toFixed(1)}%` : '—'}
-                    accent
-                    tone={rateTone}
-                  />
-                  <HeroStat label="客単価" value={avgTicket != null ? yen(avgTicket) : '—'} />
-                </div>
-                {pPerHour != null && (
-                  <div className="grid grid-cols-3 gap-3 mt-3">
-                    <HeroStat label="人時売上" value={yen(pPerHour)} tone={perHourTone} />
-                    <HeroStat label="総労働時間" value={`${pLaborHours}h`} />
-                  </div>
-                )}
-                {projection && (
-                  <div className="mt-4 rounded-xl bg-stone-100 px-3 py-2.5">
-                    <p className="text-xs text-stone-500">今月の着地見込み</p>
-                    <p className="text-2xl font-extrabold text-stone-900">{yen(projection.projected)}</p>
-                    <div className="flex items-center gap-2 mt-1 text-xs text-stone-500">
-                      <span>1営業平均 {yen(projection.avgPerSession)} ／ 残り予定</span>
-                      <input
-                        type="number"
-                        inputMode="numeric"
-                        min={0}
-                        value={remainingSessions}
-                        onChange={(e) => setRemainingSessions(Math.max(0, Number(e.target.value) || 0))}
-                        className="w-14 border border-stone-300 rounded-md px-2 py-1 text-stone-800 bg-white"
-                        aria-label="今月の残り営業予定回数"
-                      />
-                      <span>回</span>
-                    </div>
-                  </div>
-                )}
-                <p className="text-xs text-stone-400 mt-3">
-                  原価率の目安: <span className="text-green-700">30%以下</span> /{' '}
-                  <span className="text-amber-600">35%以下</span> / <span className="text-red-600">超過</span>
-                </p>
-                <p className="text-xs text-stone-400 mt-3">累計売上 {yen(totalSales)}</p>
-                <p className="text-xs text-stone-400 mt-1">※実費ベースの実際の利益は「会計」タブのP&amp;Lを参照</p>
-              </div>
-
-              {last8.length > 0 && (
-                <Section title="売上・推定利益の推移（直近8回）">
-                  <LineChart
-                    data={last8.map((s) => ({
-                      label: s.session_date.slice(5).replace('-', '/'),
-                      sales: salesMap[s.id] ?? 0,
-                      profit:
-                        (salesMap[s.id] ?? 0) -
-                        (foodCostBySession[s.id] ?? 0) -
-                        s.rent -
-                        s.other_cost -
-                        (uzuraCostBySession[s.id] ?? 0),
-                    }))}
-                  />
-                  <div className="flex gap-4 justify-center text-xs mt-1">
-                    <span className="text-stone-500">
-                      <span style={{ color: '#d9824f' }}>●</span> 売上
-                    </span>
-                    <span className="text-stone-500">
-                      <span style={{ color: '#6bcf8c' }}>●</span> 推定利益
-                    </span>
-                  </div>
-                </Section>
-              )}
-
-              <Section title="営業履歴">
+              <Section title="タップで開いて、売上の明細・場所代・日付などを直せます">
                 <div className="space-y-2">
                   {sortedSessions.map((s) => {
                     const open = openId === s.id
                     const sales = salesMap[s.id] ?? 0
-                    const foodCost = foodCostBySession[s.id] ?? 0
-                    const uzura = uzuraCostBySession[s.id] ?? 0
-                    const profit = sales - foodCost - s.rent - s.other_cost - uzura
-                    const rate = sales > 0 ? (foodCost / sales) * 100 : null
                     const ppl = peopleOf(s)
                     const dayLines = linesBySession[s.id] ?? []
                     const menuAgg: Record<string, { qty: number; amount: number }> = {}
@@ -429,7 +228,7 @@ export default function DashboardPage() {
                                   売上 <b className="text-stone-900">{yen(sales)}</b>
                                 </span>
                                 <span>
-                                  推定利益 <b className="text-green-700">{yen(profit)}</b>
+                                  {ppl}人・{s.segments?.name ?? ''}
                                 </span>
                               </div>
                               <div className="h-1.5 bg-stone-100 rounded overflow-hidden">
@@ -444,12 +243,9 @@ export default function DashboardPage() {
                           <div className="px-3 pb-3 pt-1 border-t border-stone-100 text-sm">
                             <div className="grid grid-cols-2 gap-x-4 gap-y-1 my-2">
                               <Row label="売上" value={yen(sales)} />
-                              <Row label="食材原価（理論）" value={yen(foodCost)} />
                               <Row label="場所代" value={yen(s.rent)} />
                               {s.other_cost > 0 && <Row label="その他経費" value={yen(s.other_cost)} />}
-                              {uzura > 0 && <Row label="取り置き原価" value={yen(uzura)} />}
-                              <Row label="推定利益" value={yen(profit)} accent />
-                              <Row label="原価率（理論）" value={rate != null ? `${rate.toFixed(1)}%` : '—'} />
+                              {s.reserved_people > 0 && <Row label="取り置き" value={`${s.reserved_people}人`} />}
                               {s.groups > 0 && <Row label="組数 / 客数" value={`${s.groups}組 / ${ppl}人`} />}
                               {ppl > 0 && <Row label="客単価" value={yen(sales / ppl)} />}
                               <Row label="事業区分" value={s.segments?.name ?? '—'} />
@@ -457,7 +253,7 @@ export default function DashboardPage() {
                             {s.memo && <p className="text-stone-500 mb-2">メモ: {s.memo}</p>}
                             <div className="bg-stone-50 rounded-lg p-2 mb-2">
                               <div className="flex items-center justify-between mb-1">
-                                <p className="text-xs text-stone-400">メニュー別</p>
+                                <p className="text-xs text-stone-400">メニュー別（利益は「分析」の営業タブで見られます）</p>
                                 <button
                                   onClick={() => startMenuEdit(s, lines)}
                                   className="text-xs text-amber-700 font-semibold active:opacity-70 flex items-center gap-1"
@@ -724,26 +520,6 @@ export default function DashboardPage() {
   )
 }
 
-function HeroStat({
-  label,
-  value,
-  accent,
-  tone,
-}: {
-  label: string
-  value: string
-  accent?: boolean
-  tone?: Tone | null
-}) {
-  const color = tone ? TONE_TEXT_CLASS[tone] : accent ? 'text-amber-800' : 'text-stone-900'
-  return (
-    <div>
-      <p className="text-xs text-stone-500">{label}</p>
-      <p className={`text-lg font-bold ${color}`}>{value}</p>
-    </div>
-  )
-}
-
 function Row({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
   return (
     <div className="flex justify-between">
@@ -761,42 +537,5 @@ function Section({ title, children }: { title: string; children: ReactNode }) {
       </div>
       {children}
     </div>
-  )
-}
-
-function LineChart({ data }: { data: { label: string; sales: number; profit: number }[] }) {
-  const W = 320
-  const H = 170
-  const padL = 10
-  const padR = 10
-  const padT = 14
-  const padB = 26
-  const n = data.length
-  const plotW = W - padL - padR
-  const plotH = H - padT - padB
-  const sales = data.map((d) => d.sales)
-  const profit = data.map((d) => d.profit)
-  const maxV = Math.max(1, ...sales, ...profit, 0)
-  const minV = Math.min(0, ...profit)
-  const range = maxV - minV || 1
-  const x = (i: number) => (n <= 1 ? padL + plotW / 2 : padL + (i * plotW) / (n - 1))
-  const y = (v: number) => padT + (1 - (v - minV) / range) * plotH
-  const poly = (arr: number[]) => arr.map((v, i) => `${x(i)},${y(v)}`).join(' ')
-  const zeroY = y(0)
-  return (
-    <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto">
-      <line x1={padL} x2={W - padR} y1={zeroY} y2={zeroY} stroke="#3a3733" strokeWidth="1" />
-      <polyline fill="none" stroke="#d9824f" strokeWidth="2" points={poly(sales)} />
-      <polyline fill="none" stroke="#6bcf8c" strokeWidth="2" points={poly(profit)} />
-      {data.map((d, i) => (
-        <g key={i}>
-          <circle cx={x(i)} cy={y(d.sales)} r="2.5" fill="#d9824f" />
-          <circle cx={x(i)} cy={y(d.profit)} r="2.5" fill="#6bcf8c" />
-          <text x={x(i)} y={H - 8} fontSize="10" textAnchor="middle" fill="#918b81">
-            {d.label}
-          </text>
-        </g>
-      ))}
-    </svg>
   )
 }

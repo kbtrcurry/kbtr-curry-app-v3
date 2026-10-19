@@ -1,16 +1,13 @@
 import { useMemo } from 'react'
-import { ChevronLeft, ChevronRight, Download } from 'lucide-react'
+import { Download } from 'lucide-react'
 import { Card, HBarList } from '../../components/charts'
 import { Spinner } from '../../components/Spinner'
-import { currentYearMonth, useJournalEntries } from '../../lib/accounting'
-import { useStoredState } from '../../lib/persistState'
+import { useJournalEntries } from '../../lib/accounting'
 import { yearCsv, yearTable } from '../../lib/planning'
 import { yen } from '../../lib/format'
 
-// 年間サマリー: 科目別の年間合計と月別の表。CSVで税理士に渡せる。
-export default function YearTab() {
-  const thisYear = currentYearMonth().slice(0, 4)
-  const [year, setYear] = useStoredState('kbtr_v3_year', thisYear)
+// 年間サマリー: 科目別の年間合計と月別の表。CSVで税理士に渡せる。（申告ページの「月別の表」タブ）
+export default function YearTab({ year }: { year: string }) {
   const entries = useJournalEntries({ from: `${year}-01-01`, to: `${year}-12-31` })
   const t = useMemo(() => yearTable(entries.data ?? [], year), [entries.data, year])
   const rev = t.revenue.reduce((a, r) => a + r.total, 0)
@@ -25,20 +22,6 @@ export default function YearTab() {
   }
   return (
     <div className="space-y-3">
-      <div className="flex items-center gap-2">
-        <button onClick={() => setYear(String(Number(year) - 1))} className="p-2 rounded-lg bg-stone-100" aria-label="前の年">
-          <ChevronLeft className="w-5 h-5" />
-        </button>
-        <p className="flex-1 text-center font-bold text-stone-700">{year}年（1〜12月）</p>
-        <button
-          onClick={() => setYear(String(Number(year) + 1))}
-          disabled={year >= thisYear}
-          className="p-2 rounded-lg bg-stone-100 disabled:opacity-30"
-          aria-label="次の年"
-        >
-          <ChevronRight className="w-5 h-5" />
-        </button>
-      </div>
       {entries.isLoading ? (
         <Spinner />
       ) : (

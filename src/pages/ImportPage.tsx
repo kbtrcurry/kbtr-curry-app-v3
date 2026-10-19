@@ -1,3 +1,5 @@
+import { useSearchParams } from 'react-router-dom'
+import { markBankImported } from '../lib/todos'
 import { useEffect, useMemo, useState } from 'react'
 import { FileUp, Check } from 'lucide-react'
 import { useAuth } from '../lib/auth'
@@ -40,7 +42,9 @@ type Tab = 'card' | 'mail' | 'bank' | 'amazon'
 
 export default function ImportPage() {
   const { session: authSession, loading: authLoading, loginWithGoogle } = useAuth()
-  const [tab, setTab] = useState<Tab>('card')
+  const [params] = useSearchParams()
+  const q = params.get('tab')
+  const [tab, setTab] = useState<Tab>(q === 'mail' || q === 'bank' || q === 'amazon' ? q : 'card')
 
   if (authLoading) return <Spinner />
   if (!authSession) {
@@ -226,6 +230,12 @@ function BankTab() {
   // 入金だけが対象（元の並びのまま、登録用の通し番号は txns 内の位置ではなく内容から決まる）
   const deposits = useMemo(() => txns.filter((t) => t.deposit > 0), [txns])
   const withdrawalCount = txns.length - deposits.length
+
+  // ホームの「やること」用に、取り込んだ明細の最終日を覚えておく
+  useEffect(() => {
+    const last = txns.reduce((m, t) => (t.date > m ? t.date : m), '')
+    if (last) markBankImported(last)
+  }, [txns])
 
   useEffect(() => {
     let cancelled = false

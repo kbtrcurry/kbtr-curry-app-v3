@@ -133,7 +133,7 @@ export default function SessionsTab({ stats, prevSummary, weekday, segments }: S
 function HistoryLink() {
   return (
     <Link
-      to="/dashboard"
+      to="/history"
       className="flex items-center justify-center gap-1.5 py-3 rounded-xl border border-stone-300 text-sm text-stone-600 font-semibold bg-white"
     >
       <History className="w-4 h-4" /> 営業履歴を見る・直す

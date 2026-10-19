@@ -1,26 +1,28 @@
 import type { ReactNode } from 'react'
-import { lazy, Suspense, useEffect } from 'react'
-import { BrowserRouter, NavLink, Route, Routes } from 'react-router-dom'
+import { lazy, Suspense, useEffect, useState } from 'react'
+import { BrowserRouter, Navigate, NavLink, Route, Routes } from 'react-router-dom'
 import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query'
 import { useRegisterSW } from 'virtual:pwa-register/react'
 import {
   ShoppingCart,
   Wallet,
   BarChart3,
-  Carrot,
   BookOpen,
   UtensilsCrossed,
-  Receipt,
-  Settings,
+  Home,
+  ChefHat,
+  Menu as MenuIcon,
   type LucideIcon,
 } from 'lucide-react'
 import { AuthProvider, useAuth } from './lib/auth'
 import { BackHandlerProvider } from './lib/backHandler'
 import { preloadAll } from './lib/preload'
-import SetupCheckPage from './pages/SetupCheckPage'
+import MorePage from './pages/MorePage'
+import HomePage from './pages/HomePage'
+import ToolsPage from './pages/ToolsPage'
 import PosPage from './pages/PosPage'
 import AccountingPage from './pages/AccountingPage'
-import DashboardPage from './pages/DashboardPage'
+import HistoryPage from './pages/HistoryPage'
 import AnalysisPage from './pages/AnalysisPage'
 import SegmentsPage from './pages/SegmentsPage'
 import { settleDueReceivables } from './lib/receivables'
@@ -46,19 +48,41 @@ const AnalysisDemo = import.meta.env.DEV ? lazy(() => import('./pages/AnalysisDe
 
 type NavItem = { to: string; label: string; icon: LucideIcon }
 
-// デスクトップのサイドバーは全項目を表示。モバイルのボトムナビは頻度の高いものだけ（残りは設定タブ内のハブから）
-const NAV_ITEMS: NavItem[] = [
+// iPad（幅768px以上）はサイドバー。レジを先頭に置き、起動画面もレジ。
+// iPhone は下のメニュー。レジは使わないので「その他」の中に置き、起動画面は「やること」。
+const SIDE_NAV: NavItem[] = [
   { to: '/', label: 'レジ', icon: ShoppingCart },
-  { to: '/accounting', label: '会計', icon: Wallet },
+  { to: '/home', label: 'やること', icon: Home },
+  { to: '/prep', label: '仕込み', icon: ChefHat },
   { to: '/analysis', label: '分析', icon: BarChart3 },
-  { to: '/ingredients', label: '食材', icon: Carrot },
+  { to: '/accounting', label: '会計', icon: Wallet },
   { to: '/recipes', label: 'レシピ', icon: BookOpen },
   { to: '/menus', label: 'メニュー', icon: UtensilsCrossed },
-  { to: '/tax', label: '申告', icon: Receipt },
-  { to: '/setup', label: '設定', icon: Settings },
+  { to: '/more', label: 'その他', icon: MenuIcon },
 ]
-const BOTTOM_NAV_PATHS = new Set(['/', '/accounting', '/analysis', '/setup'])
-const BOTTOM_NAV = NAV_ITEMS.filter((item) => BOTTOM_NAV_PATHS.has(item.to))
+const BOTTOM_NAV: NavItem[] = [
+  { to: '/', label: 'ホーム', icon: Home },
+  { to: '/prep', label: '仕込み', icon: ChefHat },
+  { to: '/analysis', label: '分析', icon: BarChart3 },
+  { to: '/more', label: 'その他', icon: MenuIcon },
+]
+
+const WIDE_QUERY = '(min-width: 768px)'
+function useIsWide(): boolean {
+  const [wide, setWide] = useState(() => typeof window !== 'undefined' && window.matchMedia(WIDE_QUERY).matches)
+  useEffect(() => {
+    const mq = window.matchMedia(WIDE_QUERY)
+    const on = () => setWide(mq.matches)
+    mq.addEventListener('change', on)
+    return () => mq.removeEventListener('change', on)
+  }, [])
+  return wide
+}
+
+// 起動画面: iPad はレジ、iPhone は「やること」
+function StartPage() {
+  return useIsWide() ? <PosPage /> : <HomePage />
+}
 
 // 入金予定日が来た「入金予定」を、アプリを開いたとき（と、日付が変わって戻ってきたとき）に自動で入金へ反映する
 function AutoSettle() {
@@ -144,7 +168,7 @@ function Layout({ children }: { children: ReactNode }) {
           <span className="text-xs font-normal text-stone-400">v{__APP_VERSION__}</span>
         </div>
         <nav className="flex-1 px-2 space-y-1 overflow-y-auto">
-          {NAV_ITEMS.map((item) => (
+          {SIDE_NAV.map((item) => (
             <NavLink
               key={item.to}
               to={item.to}
@@ -200,7 +224,12 @@ export default function App() {
             <Layout>
               <div className="mx-auto w-full max-w-screen-sm lg:max-w-3xl">
                 <Routes>
-                  <Route path="/" element={<PosPage />} />
+                  <Route path="/" element={<StartPage />} />
+                  <Route path="/home" element={<HomePage />} />
+                  <Route path="/pos" element={<PosPage />} />
+                  <Route path="/history" element={<HistoryPage />} />
+                  <Route path="/tools" element={<ToolsPage />} />
+                  <Route path="/more" element={<MorePage />} />
                   <Route path="/accounting" element={<AccountingPage />} />
                   <Route path="/analysis" element={<AnalysisPage />} />
                   <Route path="/segments" element={<SegmentsPage />} />
@@ -214,7 +243,7 @@ export default function App() {
                       }
                     />
                   )}
-                  <Route path="/dashboard" element={<DashboardPage />} />
+                  <Route path="/dashboard" element={<Navigate to="/history" replace />} />
                   <Route path="/ingredients" element={<IngredientsPage />} />
                   <Route path="/recipes" element={<RecipesPage />} />
                   <Route path="/menus" element={<MenuSettingsPage />} />
@@ -223,7 +252,7 @@ export default function App() {
                   <Route path="/ads" element={<AdsPage />} />
                   <Route path="/import" element={<ImportPage />} />
                   <Route path="/data" element={<DataPage />} />
-                  <Route path="/setup" element={<SetupCheckPage />} />
+                  <Route path="/setup" element={<Navigate to="/more" replace />} />
                 </Routes>
               </div>
             </Layout>

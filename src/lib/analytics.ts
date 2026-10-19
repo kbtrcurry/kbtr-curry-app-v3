@@ -178,3 +178,45 @@ export function daysAgoStr(days: number): string {
 export function monthOf(date: string): string {
   return date.slice(0, 7)
 }
+
+// ---------- 締め忘れの営業 ----------
+
+export type UnclosedSession = { id: string; session_date: string; sales: number; receipts: number }
+
+// 会計（レシート）があるのに締めていない、今日より前の営業
+export async function fetchUnclosedSessions(today: string): Promise<UnclosedSession[]> {
+  const { data, error } = await supabase
+    .from('sales_sessions')
+    .select('id, session_date, receipts!inner(total, voided)')
+    .eq('status', 'open')
+    .eq('receipts.voided', false)
+    .lt('session_date', today)
+    .order('session_date', { ascending: true })
+  if (error) throw error
+  return ((data ?? []) as unknown as { id: string; session_date: string; receipts: { total: number }[] }[]).map((s) => ({
+    id: s.id,
+    session_date: s.session_date,
+    sales: s.receipts.reduce((a, r) => a + r.total, 0),
+    receipts: s.receipts.length,
+  }))
+}
+export function useUnclosedSessions(today: string) {
+  return useQuery({ queryKey: ['analytics', 'unclosed', today], queryFn: () => fetchUnclosedSessions(today), staleTime: 60_000 })
+}
+
+// 過去の営業を後から締める（レジ締めと同じDB関数。売上・場所代などが会計に入る）
+export async function closePastSession(
+  id: string,
+  p: { rent: number; otherCost: number; groups: number; people: number; reservedPeople: number; memo: string },
+): Promise<void> {
+  const { error } = await supabase.rpc('close_session', {
+    p_session_id: id,
+    p_rent: p.rent,
+    p_other_cost: p.otherCost,
+    p_groups: p.groups,
+    p_people: p.people,
+    p_reserved_people: p.reservedPeople,
+    p_memo: p.memo,
+  })
+  if (error) throw error
+}

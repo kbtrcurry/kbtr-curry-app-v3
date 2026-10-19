@@ -56,7 +56,7 @@ type Tab = 'recipes' | 'ingredients' | 'sales' | 'accounting'
 const TABS: { key: Tab; label: string; to: string }[] = [
   { key: 'recipes', label: 'レシピ', to: '/recipes' },
   { key: 'ingredients', label: '食材', to: '/ingredients' },
-  { key: 'sales', label: '売上', to: '/dashboard' },
+  { key: 'sales', label: '売上', to: '/history' },
   { key: 'accounting', label: '会計', to: '/accounting' },
 ]
 

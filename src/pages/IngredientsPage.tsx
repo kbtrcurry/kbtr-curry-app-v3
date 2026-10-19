@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { Carrot, AlertTriangle, Check, Package, Pencil, Trash2 } from 'lucide-react'
+import { Carrot, Check, Package, Pencil, Trash2 } from 'lucide-react'
 import { useAuth } from '../lib/auth'
 import { useRegisterBack } from '../lib/backHandler'
 import { Spinner } from '../components/Spinner'
@@ -8,7 +8,6 @@ import {
   useIngredients,
   useInvalidateMasterData,
   ingredientPricePerG,
-  isLowStock,
   createIngredient,
   updateIngredient,
   recordIngredientPurchase,
@@ -46,7 +45,6 @@ export default function IngredientsPage() {
   const [cat, setCat] = useState<string | null>(RECENT_LABEL)
   const [recent, setRecent] = useState<string[]>(() => getRecent(RECENT_KEYS.ingredient))
   const [onlyUnset, setOnlyUnset] = useState(false)
-  const [onlyAlert, setOnlyAlert] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [edits, setEdits] = useState<Record<string, Partial<Record<FieldKey, string>>>>({})
   const [savingId, setSavingId] = useState<string | null>(null)
@@ -231,10 +229,8 @@ export default function IngredientsPage() {
   const filtered = byCategory
     .filter((x) => (search ? x.name.includes(search) : true))
     .filter((x) => (onlyUnset ? ingredientPricePerG(x) === null : true))
-    .filter((x) => (onlyAlert ? isLowStock(x) : true))
 
   const unsetCount = list.filter((x) => ingredientPricePerG(x) === null).length
-  const alertCount = list.filter(isLowStock).length
 
   if (authLoading) return <Spinner />
   if (!authSession) {
@@ -392,10 +388,6 @@ export default function IngredientsPage() {
           <input type="checkbox" checked={onlyUnset} onChange={(e) => setOnlyUnset(e.target.checked)} />
           単価未設定 ({unsetCount})
         </label>
-        <label className="flex items-center gap-1.5 text-stone-600">
-          <input type="checkbox" checked={onlyAlert} onChange={(e) => setOnlyAlert(e.target.checked)} />
-          在庫アラート ({alertCount})
-        </label>
         <span className="text-stone-400 ml-auto">全 {list.length} 件</span>
       </div>
 
@@ -407,7 +399,6 @@ export default function IngredientsPage() {
 
       <div className="grid gap-2 sm:grid-cols-2">
         {filtered.map((ing) => {
-          const alert = isLowStock(ing)
           const liveW = edits[ing.id]?.pack_weight_g !== undefined ? num(edits[ing.id]!.pack_weight_g) : ing.pack_weight_g
           const liveP = edits[ing.id]?.pack_price !== undefined ? num(edits[ing.id]!.pack_price) : ing.pack_price
           const perG = liveW && liveW > 0 && liveP !== null ? liveP / liveW : ingredientPricePerG(ing)
@@ -416,9 +407,7 @@ export default function IngredientsPage() {
             <div
               key={ing.id}
               className={`border rounded-xl px-3 py-2 ${
-                alert
-                  ? 'border-red-300 bg-red-50/50'
-                  : ingredientPricePerG(ing) === null
+                ingredientPricePerG(ing) === null
                     ? 'border-amber-200 bg-amber-50/40'
                     : 'border-stone-200'
               }`}
@@ -431,11 +420,6 @@ export default function IngredientsPage() {
                   </p>
                 </div>
                 <div className="flex items-center gap-1.5 shrink-0">
-                  {alert && (
-                    <span className="text-xs bg-red-100 text-red-700 font-bold px-2 py-0.5 rounded flex items-center gap-0.5">
-                      <AlertTriangle className="w-3 h-3" />在庫少
-                    </span>
-                  )}
                   <span className="w-4 text-center flex items-center justify-center">
                     {savingId === ing.id ? (
                       <span className="text-stone-400 text-xs">…</span>
@@ -458,10 +442,6 @@ export default function IngredientsPage() {
                 </span>
               </div>
 
-              <div className="grid grid-cols-2 gap-2 mt-2">
-                {renderField(ing, 'stock_g', '在庫', 'g')}
-                {renderField(ing, 'alert_threshold_g', 'アラート閾値', 'g')}
-              </div>
 
               <button
                 onClick={() => openPurchase(ing)}

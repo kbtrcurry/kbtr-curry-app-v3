@@ -1,6 +1,21 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Carrot, BookOpen, UtensilsCrossed, Receipt, ChevronRight, Settings, ChefHat, Megaphone, FileUp, Database, History, Tags } from 'lucide-react'
+import {
+  Carrot,
+  BookOpen,
+  UtensilsCrossed,
+  Receipt,
+  ChevronRight,
+  Megaphone,
+  FileUp,
+  Database,
+  History,
+  Tags,
+  ShoppingCart,
+  Wallet,
+  Target,
+  type LucideIcon,
+} from 'lucide-react'
 import { supabase, isSupabaseConfigured } from '../lib/supabase'
 import { useAuth } from '../lib/auth'
 import { usePersistedState } from '../lib/persistState'
@@ -13,20 +28,43 @@ import {
 
 type CheckState = { label: string; ok: boolean | null; detail?: string }
 
-const HUB_LINKS = [
-  { to: '/data', label: 'データ（検索・一覧）', icon: Database },
-  { to: '/dashboard', label: '営業履歴・編集', icon: History },
-  { to: '/segments', label: '事業区分（追加・編集）', icon: Tags },
-  { to: '/ingredients', label: '食材', icon: Carrot },
-  { to: '/recipes', label: 'レシピ', icon: BookOpen },
-  { to: '/menus', label: 'メニュー', icon: UtensilsCrossed },
-  { to: '/prep', label: '仕込み', icon: ChefHat },
-  { to: '/ads', label: 'Meta広告', icon: Megaphone },
-  { to: '/import', label: 'CSV取り込み（銀行・Amazon）', icon: FileUp },
-  { to: '/tax', label: '申告', icon: Receipt },
+type HubLink = { to: string; label: string; icon: LucideIcon; note?: string }
+const HUB_GROUPS: { title: string; links: HubLink[] }[] = [
+  {
+    title: '営業',
+    links: [
+      { to: '/pos', label: 'レジ', icon: ShoppingCart },
+      { to: '/history', label: '営業履歴・編集', icon: History, note: '売上の明細・場所代・日付の直し' },
+    ],
+  },
+  {
+    title: 'お金',
+    links: [
+      { to: '/accounting', label: '会計', icon: Wallet, note: '経費入力・入金予定・仕訳' },
+      { to: '/import', label: '取り込み', icon: FileUp, note: 'カード・Amazon・銀行CSV' },
+      { to: '/tax', label: '申告', icon: Receipt, note: '仕訳帳・元帳・月別の表' },
+    ],
+  },
+  {
+    title: '仕込みの元データ',
+    links: [
+      { to: '/recipes', label: 'レシピ', icon: BookOpen },
+      { to: '/menus', label: 'メニュー', icon: UtensilsCrossed },
+      { to: '/ingredients', label: '食材の単価', icon: Carrot },
+    ],
+  },
+  {
+    title: '詳しく見る',
+    links: [
+      { to: '/ads', label: 'Meta広告の詳細', icon: Megaphone },
+      { to: '/tools', label: '目標・資金繰り', icon: Target },
+      { to: '/data', label: 'データ検索', icon: Database },
+      { to: '/segments', label: '事業区分', icon: Tags },
+    ],
+  },
 ]
 
-export default function SetupCheckPage() {
+export default function MorePage() {
   const { session, loading, loginWithGoogle, logout } = useAuth()
   const [checks, setChecks] = useState<CheckState[]>([])
 
@@ -62,25 +100,29 @@ export default function SetupCheckPage() {
   return (
     <div className="mx-auto max-w-md p-6 space-y-6">
       <header>
-        <h1 className="text-2xl font-bold text-stone-900 flex items-center gap-2">
-          <Settings className="w-6 h-6" /> 設定
-        </h1>
+        <h1 className="text-2xl font-bold text-stone-900">その他</h1>
         <p className="text-stone-500 text-sm mt-1">v{__APP_VERSION__}.{__BUILD_DATE__}</p>
       </header>
 
-      <section className="bg-white rounded-xl overflow-hidden divide-y divide-stone-100">
-        {HUB_LINKS.map((link) => (
-          <Link
-            key={link.to}
-            to={link.to}
-            className="flex items-center gap-3 px-4 py-3.5 active:bg-stone-50 transition-colors"
-          >
-            <link.icon className="w-5 h-5 text-amber-700 shrink-0" strokeWidth={2} />
-            <span className="flex-1 text-stone-800 font-medium">{link.label}</span>
-            <ChevronRight className="w-4 h-4 text-stone-300 shrink-0" />
-          </Link>
-        ))}
-      </section>
+      {HUB_GROUPS.map((g) => (
+        <section key={g.title}>
+          <h2 className="text-xs font-bold text-stone-500 px-1 mb-1.5">{g.title}</h2>
+          <div className="bg-white rounded-xl overflow-hidden divide-y divide-stone-100">
+            {g.links.map((link) => (
+              <Link key={link.to} to={link.to} className="flex items-center gap-3 px-4 py-3.5 active:bg-stone-50 transition-colors">
+                <link.icon className="w-5 h-5 text-amber-700 shrink-0" strokeWidth={2} />
+                <span className="flex-1 min-w-0">
+                  <span className="block text-stone-800 font-medium">{link.label}</span>
+                  {link.note && <span className="block text-xs text-stone-400">{link.note}</span>}
+                </span>
+                <ChevronRight className="w-4 h-4 text-stone-300 shrink-0" />
+              </Link>
+            ))}
+          </div>
+        </section>
+      ))}
+
+      <h2 className="text-xs font-bold text-stone-500 px-1 -mb-4">設定</h2>
 
       <section className="bg-white rounded-xl p-4 space-y-2">
         <h2 className="font-semibold text-stone-800">取り置き特典</h2>

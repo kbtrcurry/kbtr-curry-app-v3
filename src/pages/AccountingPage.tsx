@@ -1,3 +1,4 @@
+import { useSearchParams } from 'react-router-dom'
 import { useMemo, useState } from 'react'
 import { Wallet, Trash2, Check, AlertTriangle, Pencil } from 'lucide-react'
 import { useAuth } from '../lib/auth'
@@ -11,7 +12,6 @@ import {
   recordExpense,
   recordPlatformRevenue,
   deleteJournalEntry,
-  computeSegmentPnl,
   hasPlatformRevenueInMonth,
   entryTotal,
   isEditableEntry,
@@ -26,14 +26,13 @@ import {
 import { isReceivableEntry } from '../lib/receivables'
 import ReceivablesTab from './ReceivablesTab'
 
-type Tab = 'expense' | 'revenue' | 'receivable' | 'ledger' | 'pnl'
+type Tab = 'expense' | 'revenue' | 'receivable' | 'ledger'
 
 const TABS: { key: Tab; label: string }[] = [
   { key: 'expense', label: '経費入力' },
   { key: 'revenue', label: 'note/YouTube収入' },
   { key: 'receivable', label: '入金予定' },
   { key: 'ledger', label: '仕訳一覧' },
-  { key: 'pnl', label: 'セグメント別P&L' },
 ]
 
 const PLATFORM_SEGMENT_CODES = ['note', 'youtube', 'amazon']
@@ -95,7 +94,9 @@ function SourceBadge({ sourceType }: { sourceType: JournalEntry['source_type'] }
 
 export default function AccountingPage() {
   const { session: authSession, loading: authLoading, loginWithGoogle } = useAuth()
-  const [tab, setTab] = useState<Tab>('expense')
+  const [params] = useSearchParams()
+  const initialTab = TABS.find((t) => t.key === params.get('tab'))?.key ?? 'expense'
+  const [tab, setTab] = useState<Tab>(initialTab)
   const [yearMonth, setYearMonth] = useState(currentYearMonth())
   const range = useMemo(() => monthRange(yearMonth), [yearMonth])
 
@@ -106,7 +107,6 @@ export default function AccountingPage() {
 
   const expenseEntries = entries.filter((e) => e.source_type === 'expense')
   const revenueEntries = entries.filter((e) => e.source_type === 'platform_revenue')
-  const pnl = useMemo(() => computeSegmentPnl(entries), [entries])
   const platformSegments = segments.filter((s) => PLATFORM_SEGMENT_CODES.includes(s.code))
 
   if (authLoading) return <Spinner />
@@ -168,7 +168,6 @@ export default function AccountingPage() {
       )}
       {tab === 'receivable' && <ReceivablesTab />}
       {tab === 'ledger' && <LedgerTab entries={entries} onSaved={invalidateJournal} />}
-      {tab === 'pnl' && <PnlTab pnl={pnl} />}
     </div>
   )
 }
@@ -731,44 +730,3 @@ function LedgerTab({ entries, onSaved }: { entries: JournalEntry[]; onSaved: () 
 
 // ---------- セグメント別P&L ----------
 
-function PnlTab({ pnl }: { pnl: { segmentCode: string; segmentName: string; revenue: number; expense: number; profit: number }[] }) {
-  const total = pnl.reduce(
-    (acc, p) => ({ revenue: acc.revenue + p.revenue, expense: acc.expense + p.expense, profit: acc.profit + p.profit }),
-    { revenue: 0, expense: 0, profit: 0 },
-  )
-  const maxVal = Math.max(
-    1,
-    ...pnl.map((p) => p.revenue),
-    ...pnl.map((p) => p.expense),
-    ...pnl.map((p) => Math.abs(p.profit)),
-    total.revenue,
-    total.expense,
-    Math.abs(total.profit),
-  )
-
-  return (
-    <div className="space-y-2">
-      {pnl.length === 0 && <p className="text-center text-stone-400 text-sm py-4">この月のデータはまだありません</p>}
-      {pnl.map((p) => (
-        <div key={p.segmentCode} className="bg-white border border-stone-200 rounded-xl px-4 py-3">
-          <p className="font-bold text-stone-900 mb-2">{p.segmentName}</p>
-          <div className="space-y-1">
-            <BarRow label="売上" value={p.revenue} max={maxVal} color="#d9824f" />
-            <BarRow label="経費" value={p.expense} max={maxVal} color="#c96a40" />
-            <BarRow label="利益" value={p.profit} max={maxVal} color={p.profit >= 0 ? '#5cc07d' : '#ef8273'} />
-          </div>
-        </div>
-      ))}
-      {pnl.length > 0 && (
-        <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 mt-3">
-          <p className="font-bold text-amber-900 mb-2">全体合計</p>
-          <div className="space-y-1">
-            <BarRow label="売上" value={total.revenue} max={maxVal} color="#d9824f" />
-            <BarRow label="経費" value={total.expense} max={maxVal} color="#c96a40" />
-            <BarRow label="利益" value={total.profit} max={maxVal} color={total.profit >= 0 ? '#5cc07d' : '#ef8273'} />
-          </div>
-        </div>
-      )}
-    </div>
-  )
-}

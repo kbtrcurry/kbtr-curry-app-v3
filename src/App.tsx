@@ -28,6 +28,7 @@ import PrepPage from './pages/PrepPage'
 import TaxPage from './pages/TaxPage'
 import AdsPage from './pages/AdsPage'
 import ImportPage from './pages/ImportPage'
+import DataPage from './pages/DataPage'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -167,6 +168,7 @@ export default function App() {
                   <Route path="/tax" element={<TaxPage />} />
                   <Route path="/ads" element={<AdsPage />} />
                   <Route path="/import" element={<ImportPage />} />
+                  <Route path="/data" element={<DataPage />} />
                   <Route path="/setup" element={<SetupCheckPage />} />
                 </Routes>
               </div>

@@ -1,4 +1,6 @@
+import { useState } from 'react'
 import { Card } from '../../components/charts'
+import { priceSim } from '../../lib/planning'
 import { QUADRANT_LABEL, type MenuQuadrant, type MenuStat } from '../../lib/menuStats'
 import { percent, yen } from '../../lib/format'
 
@@ -44,6 +46,8 @@ export default function MenusTab({ menus }: { menus: MenuStat[] }) {
         )
       })}
 
+      <PriceSim menus={menus} />
+
       {unrated > 0 && (
         <Card title="原価が出せないメニュー">
           <p className="text-xs text-stone-400 mb-1">メニューにレシピが設定されていない、または手入力の品目です。</p>
@@ -57,6 +61,70 @@ export default function MenusTab({ menus }: { menus: MenuStat[] }) {
         </Card>
       )}
     </div>
+  )
+}
+
+function PriceSim({ menus }: { menus: MenuStat[] }) {
+  const rated = menus.filter((m) => m.cost != null && m.qty > 0)
+  const [key, setKey] = useState('')
+  const [price, setPrice] = useState('')
+  const m = rated.find((x) => x.key === key) ?? rated[0]
+  if (!m) return null
+  const cur = m.sales / m.qty
+  const cost = (m.cost as number) / m.qty
+  const np = Number(price) > 0 ? Number(price) : cur
+  const sim = priceSim(cur, cost, m.qty, np)
+  return (
+    <Card title="値付けシミュレーション">
+      <select
+        value={m.key}
+        onChange={(e) => {
+          setKey(e.target.value)
+          setPrice('')
+        }}
+        className="w-full border border-stone-300 rounded-lg px-3 py-2 bg-white text-sm"
+      >
+        {rated.map((x) => (
+          <option key={x.key} value={x.key}>
+            {x.name}
+          </option>
+        ))}
+      </select>
+      <p className="text-xs text-stone-500 mt-2">
+        いまの平均単価 {yen(cur)}・1食の原価 {yen(cost)}・1食の粗利 {yen(sim.oldUnit)}
+      </p>
+      <label className="block text-xs text-stone-500 mt-2 mb-1">新しい価格（円）</label>
+      <input
+        type="number"
+        inputMode="numeric"
+        value={price}
+        placeholder={String(Math.round(cur))}
+        onChange={(e) => setPrice(e.target.value)}
+        className="w-full border border-stone-300 rounded-lg px-3 py-2"
+      />
+      {sim.breakEvenQtyChange != null && np !== Math.round(cur) && (
+        <p className="text-sm text-stone-700 mt-2">
+          {sim.breakEvenQtyChange < 0
+            ? `売れる数が ${Math.abs(sim.breakEvenQtyChange).toFixed(0)}% 減るまでは、今と同じ以上の利益です。`
+            : `利益を保つには、売れる数を ${sim.breakEvenQtyChange.toFixed(0)}% 増やす必要があります。`}
+        </p>
+      )}
+      <ul className="divide-y divide-stone-100 mt-2">
+        {sim.rows.map((r) => (
+          <li key={r.change} className="py-1.5 flex items-center justify-between text-sm">
+            <span className="text-stone-600">
+              売れる数 {r.change > 0 ? '+' : ''}
+              {r.change}%（{r.qty}食）
+            </span>
+            <span className={`font-semibold ${r.diff >= 0 ? 'text-green-700' : 'text-red-600'}`}>
+              {yen(r.profit)}（{r.diff >= 0 ? '+' : ''}
+              {yen(r.diff)}）
+            </span>
+          </li>
+        ))}
+      </ul>
+      <p className="text-xs text-stone-400 mt-2">この月の販売数を基準にした、そのメニューの粗利（売上−理論原価）の比較です。</p>
+    </Card>
   )
 }
 

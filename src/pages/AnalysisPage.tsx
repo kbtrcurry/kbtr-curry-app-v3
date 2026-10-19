@@ -19,18 +19,25 @@ import {
 import { sessionStats, summarizeSessions, weekdayStats, segmentSessionStats } from '../lib/sessionStats'
 import { usePersistedState } from '../lib/persistState'
 import { menuStats, adDaily, adEffect } from '../lib/menuStats'
+import { adLift, foodGapSeries } from '../lib/planning'
+import GoalTab from './analysis/GoalTab'
+import CashTab from './analysis/CashTab'
+import YearTab from './analysis/YearTab'
 import { useMetaAds } from '../lib/ads'
 import PnlTab from './analysis/PnlTab'
 import MenusTab from './analysis/MenusTab'
 import AdsTab from './analysis/AdsTab'
 import SessionsTab from './analysis/SessionsTab'
 
-type AnalysisTab = 'pnl' | 'sessions' | 'menus' | 'ads'
+type AnalysisTab = 'pnl' | 'sessions' | 'menus' | 'ads' | 'goal' | 'cash' | 'year'
 const TABS: { key: AnalysisTab; label: string }[] = [
   { key: 'pnl', label: '損益' },
   { key: 'sessions', label: '営業' },
   { key: 'menus', label: 'メニュー' },
   { key: 'ads', label: '広告' },
+  { key: 'goal', label: '目標' },
+  { key: 'cash', label: '資金' },
+  { key: 'year', label: '年間' },
 ]
 
 // 分析: 営業の合間にスマホで見る前提。月の切替 + 要点カードの縦スクロール。
@@ -42,6 +49,7 @@ export default function AnalysisPage() {
   const [tab, setTab] = usePersistedState<AnalysisTab>('kbtr_v3_analysis_tab', 'pnl')
   const data = useAnalysisData(month)
   const metaAds = useMetaAds()
+  const [target, setTarget] = useStoredState('kbtr_v3_profit_target', 0)
 
   const view = useMemo(() => {
     const prev = shiftMonth(month, -1)
@@ -55,6 +63,24 @@ export default function AnalysisPage() {
     const ads = metaAds.data ?? []
     const spendOf = (m: string) => ads.filter((x) => x.date.startsWith(m)).reduce((a, x) => a + x.spend, 0)
     return {
+      gap: foodGapSeries(data.entries, lastMonths(month, 6), data.theoreticalByMonth),
+      goal: (() => {
+        const f = foodCostView(pnl, data.theoreticalByMonth.get(month) ?? 0, choice)
+        const sales = sum(inMonth)
+        const var0 = inMonth.reduce((a, x) => a + x.foodCost + x.reservedCost, 0)
+        return {
+          input: {
+            fixed: Math.max(0, pnl.expense - pnl.foodRecorded),
+            otherRevenue: Math.max(0, pnl.revenue - sales),
+            sales,
+            varRate: sales > 0 ? var0 / sales : 0.35,
+            people: ppl(inMonth),
+            profit: f.profit,
+          },
+          avgRent: inMonth.length ? inMonth.reduce((a, x) => a + x.rent, 0) / inMonth.length : 7000,
+          avgOther: inMonth.length ? inMonth.reduce((a, x) => a + x.otherCost, 0) / inMonth.length : 0,
+        }
+      })(),
       menus: menuStats(data.lines, new Set(inMonth.map((x) => x.id)), data.costByMenuId),
       ads: {
         metaSpend: spendOf(month),
@@ -62,6 +88,7 @@ export default function AnalysisPage() {
         effect: adEffect(spendOf(month), sum(inMonth), ppl(inMonth)),
         prevEffect: ads.some((x) => x.date.startsWith(prev)) ? adEffect(spendOf(prev), sum(prevStats), ppl(prevStats)) : null,
         days: adDaily(ads, all.map((x) => ({ date: x.date, sales: x.sales })), month),
+        lift: adLift(ads, all.map((x) => ({ date: x.date, sales: x.sales, people: x.people }))),
       },
       sessions: {
         stats: inMonth,
@@ -123,14 +150,14 @@ export default function AnalysisPage() {
       {data.loading && <Spinner />}
       {data.error && <p className="text-sm text-red-600">読み込みに失敗しました: {data.error.message}</p>}
 
-      <div className="flex gap-1.5" role="tablist">
+      <div className="flex gap-1.5 overflow-x-auto -mx-4 px-4 pb-1" role="tablist">
         {TABS.map((t) => (
           <button
             key={t.key}
             role="tab"
             aria-selected={tab === t.key}
             onClick={() => setTab(t.key)}
-            className={`flex-1 py-2 rounded-full text-sm font-semibold ${
+            className={`flex-1 shrink-0 px-4 py-2 rounded-full text-sm font-semibold whitespace-nowrap ${
               tab === t.key ? 'bg-amber-700 text-[#faf9f5]' : 'bg-stone-100 text-stone-600'
             }`}
           >
@@ -140,11 +167,14 @@ export default function AnalysisPage() {
       </div>
 
       {!data.loading && tab === 'pnl' && (
-        <PnlTab month={month} choice={choice} onChoice={setChoice} pnl={view.pnl} prevPnl={view.prevPnl} food={view.food} prevFood={view.prevFood} series={view.series} />
+        <PnlTab month={month} choice={choice} onChoice={setChoice} pnl={view.pnl} prevPnl={view.prevPnl} food={view.food} prevFood={view.prevFood} series={view.series} gap={view.gap} />
       )}
       {!data.loading && tab === 'sessions' && <SessionsTab {...view.sessions} />}
       {!data.loading && tab === 'menus' && <MenusTab menus={view.menus} />}
       {!data.loading && tab === 'ads' && <AdsTab {...view.ads} />}
+      {!data.loading && tab === 'goal' && <GoalTab {...view.goal} target={target} onTarget={setTarget} />}
+      {tab === 'cash' && <CashTab />}
+      {tab === 'year' && <YearTab />}
 
       {tab === 'pnl' && (
         <Link

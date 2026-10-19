@@ -2,6 +2,7 @@ import { AlertTriangle } from 'lucide-react'
 import { Card, ColumnBars, DeltaBadge, HBarList, Stat } from '../../components/charts'
 import { delta, FOOD_ACCOUNT_CODE, monthLabel, type FoodChoice, type FoodCostView, type MonthPoint, type Pnl } from '../../lib/analysis'
 import { percent, yen } from '../../lib/format'
+import type { FoodGapPoint } from '../../lib/planning'
 
 export type PnlTabProps = {
   month: string
@@ -10,6 +11,7 @@ export type PnlTabProps = {
   food: FoodCostView
   prevFood: FoodCostView
   series: MonthPoint[]
+  gap: FoodGapPoint[]
   choice: FoodChoice
   onChoice: (c: FoodChoice) => void
 }
@@ -21,7 +23,7 @@ const CHOICES: { key: FoodChoice; label: string }[] = [
 ]
 
 // 実費の利益: 会計の収益 − 費用。食材の仕入が会計に入っていない月は理論原価で補う。
-export default function PnlTab({ month, pnl, prevPnl, food, prevFood, series, choice, onChoice }: PnlTabProps) {
+export default function PnlTab({ month, pnl, prevPnl, food, prevFood, series, gap, choice, onChoice }: PnlTabProps) {
   const noData = pnl.entries === 0
   const profitTone = food.profit >= 0 ? 'text-green-700' : 'text-red-600'
   // 食材費を理論原価に置き換えているときは、経費の合計も同じ前提で出す
@@ -129,6 +131,25 @@ export default function PnlTab({ month, pnl, prevPnl, food, prevFood, series, ch
           </ul>
         )}
         <p className="text-xs text-stone-400 mt-2">共通の経費（仕入・広告など）は「共通」にまとまります。</p>
+      </Card>
+
+      <Card title="食材のズレ（仕入の記録 − 理論原価）">
+        <ul className="divide-y divide-stone-100">
+          {gap.map((g) => (
+            <li key={g.month} className="py-1.5 flex items-center justify-between text-sm">
+              <span className="text-stone-600">{Number(g.month.slice(5))}月</span>
+              <span className="text-xs text-stone-400">
+                仕入 {yen(g.recorded)} ／ 理論 {yen(g.theoretical)}
+              </span>
+              <span className={`font-semibold ${g.theoretical > 0 && g.gap < -g.theoretical * 0.5 ? 'text-red-600' : 'text-stone-700'}`}>
+                {yen(g.gap)}
+              </span>
+            </li>
+          ))}
+        </ul>
+        <p className="text-xs text-stone-400 mt-2">
+          大きなマイナスの月は、仕入を会計に入れ忘れている可能性があります。プラスが大きい月は、ロスや仕込みすぎ、在庫の積み増しが考えられます。
+        </p>
       </Card>
 
       <Card title="直近6か月の利益">

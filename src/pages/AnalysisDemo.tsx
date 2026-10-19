@@ -105,6 +105,7 @@ export default function AnalysisDemo() {
             food={foodCostView(pnl, THEORETICAL.get(m) ?? 0, choice)}
             prevFood={foodCostView(prevPnl, THEORETICAL.get('2026-09') ?? 0, choice)}
             series={monthlyProfitSeries(ENTRIES, lastMonths(m, 6), THEORETICAL, choice)}
+            gap={[]}
             choice={choice}
             onChoice={setChoice}
           />

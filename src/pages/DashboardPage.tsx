@@ -1,0 +1,675 @@
+import { useMemo, useState } from 'react'
+import type { ReactNode } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
+import { Pencil, Trash2, Plus, BarChart3 } from 'lucide-react'
+import { useAuth } from '../lib/auth'
+import { Spinner } from '../components/Spinner'
+import { ConfirmModal } from '../components/ConfirmModal'
+import { Modal } from '../components/Modal'
+import {
+  useClosedSessions,
+  useReceiptLines,
+  salesBySession,
+  daysAgoStr,
+  monthOf,
+  deleteSessionCascade,
+  replaceSessionLines,
+  updateSalesSession,
+  type ClosedSession,
+  type EditableLine,
+} from '../lib/analytics'
+import {
+  useAllRecipeIngredients,
+  useAllMenuComponents,
+  useAllMenus,
+  useRecipes,
+  groupRecipeIngredientsByRecipe,
+  menuCost,
+  perServingCost,
+} from '../lib/masterData'
+import { usePersistedState } from '../lib/persistState'
+
+const yen = (n: number) => `¥${Math.round(n).toLocaleString()}`
+
+type SumPeriod = 'month' | '4w' | '3m' | '6m' | '1y'
+const SUM_PERIODS: { key: SumPeriod; label: string; days: number | null }[] = [
+  { key: 'month', label: '今月', days: null },
+  { key: '4w', label: '過去4週', days: 28 },
+  { key: '3m', label: '過去3ヶ月', days: 90 },
+  { key: '6m', label: '過去半年', days: 180 },
+  { key: '1y', label: '過去1年', days: 365 },
+]
+const thisMonth = () => {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`
+}
+
+const peopleOf = (s: ClosedSession) => (s.people > 0 ? s.people : s.groups)
+
+export default function DashboardPage() {
+  const { session: authSession, loading: authLoading, loginWithGoogle } = useAuth()
+  const { data: sessions = [], isLoading: sessionsLoading } = useClosedSessions()
+  const { data: lines = [], isLoading: linesLoading } = useReceiptLines()
+  const { data: allRecipeIngredients = [] } = useAllRecipeIngredients()
+  const { data: menuComponents = [] } = useAllMenuComponents()
+  const { data: recipes = [] } = useRecipes()
+  const { data: allMenus = [] } = useAllMenus()
+  const queryClient = useQueryClient()
+  const menuIdByName = useMemo(() => new Map(allMenus.map((m) => [m.name, m.id])), [allMenus])
+
+  const [sumPeriod, setSumPeriod] = useState<SumPeriod>('month')
+  const [openId, setOpenId] = useState<string | null>(null)
+
+  // 取り置き特典に使うレシピは設定タブで選択する（同じキーをここでも読むだけ）
+  const [toriokiRecipeId] = usePersistedState('kbtr_v3_torioki_recipe', '')
+  const [busy, setBusy] = useState(false)
+  const [confirmDeleteSession, setConfirmDeleteSession] = useState<ClosedSession | null>(null)
+  const [editSessionId, setEditSessionId] = useState<string | null>(null)
+  const [editForm, setEditForm] = useState({ rent: '', otherCost: '', groups: '', people: '', reserved: '', memo: '' })
+  const [menuEditId, setMenuEditId] = useState<string | null>(null)
+  const [menuEditRows, setMenuEditRows] = useState<{ name: string; qty: string; price: string }[]>([])
+
+  const recipeIngredientsByRecipe = groupRecipeIngredientsByRecipe(allRecipeIngredients)
+
+  const invalidateAnalytics = () =>
+    Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['analytics', 'sessions'] }),
+      queryClient.invalidateQueries({ queryKey: ['analytics', 'receipt_lines'] }),
+    ])
+
+  // 取り置き特典の一食原価（税込・理論値）。選択レシピが無ければ0
+  const toriokiCostPerServing = useMemo(() => {
+    if (!toriokiRecipeId) return 0
+    const r = recipes.find((x) => x.id === toriokiRecipeId)
+    if (!r) return 0
+    return perServingCost(r, recipeIngredientsByRecipe[toriokiRecipeId] ?? [])
+  }, [toriokiRecipeId, recipes, recipeIngredientsByRecipe])
+
+  const uzuraCostBySession = useMemo(() => {
+    const map: Record<string, number> = {}
+    for (const s of sessions) map[s.id] = Math.round((s.reserved_people || 0) * toriokiCostPerServing)
+    return map
+  }, [sessions, toriokiCostPerServing])
+
+  const startEdit = (s: ClosedSession) => {
+    setEditSessionId(s.id)
+    setEditForm({
+      rent: String(s.rent),
+      otherCost: String(s.other_cost),
+      groups: String(s.groups),
+      people: String(s.people),
+      reserved: String(s.reserved_people),
+      memo: s.memo,
+    })
+  }
+
+  const saveEdit = async (s: ClosedSession) => {
+    setBusy(true)
+    try {
+      await updateSalesSession(s.id, {
+        rent: Number(editForm.rent) || 0,
+        other_cost: Number(editForm.otherCost) || 0,
+        groups: Number(editForm.groups) || 0,
+        people: Number(editForm.people) || 0,
+        reserved_people: Number(editForm.reserved) || 0,
+        memo: editForm.memo,
+      })
+      await invalidateAnalytics()
+      setEditSessionId(null)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const startMenuEdit = (s: ClosedSession, dayLines: ReturnType<typeof useReceiptLines>['data']) => {
+    const agg: Record<string, { qty: number; amount: number }> = {}
+    for (const l of dayLines ?? []) {
+      if (l.session_id !== s.id) continue
+      if (!agg[l.name_snapshot]) agg[l.name_snapshot] = { qty: 0, amount: 0 }
+      agg[l.name_snapshot].qty += l.qty
+      agg[l.name_snapshot].amount += l.qty * l.unit_price
+    }
+    const rows = Object.entries(agg).map(([name, v]) => ({
+      name,
+      qty: String(v.qty),
+      price: String(v.qty > 0 ? Math.round(v.amount / v.qty) : 0),
+    }))
+    setMenuEditRows(rows)
+    setMenuEditId(s.id)
+  }
+
+  const saveMenuEdit = async (s: ClosedSession) => {
+    setBusy(true)
+    try {
+      const editLines: EditableLine[] = menuEditRows
+        .map((r) => {
+          const name = r.name.trim()
+          return {
+            name,
+            qty: Number(r.qty) || 0,
+            unitPrice: Number(r.price) || 0,
+            menuId: menuIdByName.get(name) ?? null,
+          }
+        })
+        .filter((l) => l.name && l.qty > 0)
+      await replaceSessionLines({ id: s.id, people: s.people }, editLines)
+      await invalidateAnalytics()
+      setMenuEditId(null)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  const handleDeleteSession = async (s: ClosedSession) => {
+    setBusy(true)
+    try {
+      await deleteSessionCascade(s.id)
+      await invalidateAnalytics()
+      setOpenId(null)
+      setConfirmDeleteSession(null)
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  // メニューID → 一食原価（税込・理論値）
+  const costByMenuId = useMemo(() => {
+    const map: Record<string, number> = {}
+    const byMenu: Record<string, typeof menuComponents> = {}
+    for (const c of menuComponents) {
+      if (!byMenu[c.menu_id]) byMenu[c.menu_id] = []
+      byMenu[c.menu_id].push(c)
+    }
+    for (const [menuId, comps] of Object.entries(byMenu)) {
+      map[menuId] = menuCost(comps, recipeIngredientsByRecipe)
+    }
+    return map
+  }, [menuComponents, recipeIngredientsByRecipe])
+
+  const salesMap = useMemo(() => salesBySession(lines), [lines])
+  const foodCostBySession = useMemo(() => {
+    const map: Record<string, number> = {}
+    for (const l of lines) {
+      const cost = l.menu_id ? (costByMenuId[l.menu_id] ?? 0) * l.qty : 0
+      map[l.session_id] = (map[l.session_id] ?? 0) + cost
+    }
+    return map
+  }, [lines, costByMenuId])
+
+  const tm = thisMonth()
+  const periodMeta = SUM_PERIODS.find((p) => p.key === sumPeriod) ?? SUM_PERIODS[0]
+  const cutoff = periodMeta.days != null ? daysAgoStr(periodMeta.days) : null
+  const inPeriod = (date: string) => (cutoff != null ? date >= cutoff : monthOf(date) === tm)
+
+  const pSessions = sessions.filter((s) => inPeriod(s.session_date))
+  const pSales = pSessions.reduce((a, s) => a + (salesMap[s.id] ?? 0), 0)
+  const pFoodCost = pSessions.reduce((a, s) => a + (foodCostBySession[s.id] ?? 0), 0)
+  const pFee = pSessions.reduce((a, s) => a + s.rent, 0)
+  const pOther = pSessions.reduce((a, s) => a + s.other_cost, 0)
+  const pUzura = pSessions.reduce((a, s) => a + (uzuraCostBySession[s.id] ?? 0), 0)
+  const pPeople = pSessions.reduce((a, s) => a + peopleOf(s), 0)
+  const pProfit = pSales - pFoodCost - pFee - pOther - pUzura
+  const pRate = pSales > 0 ? (pFoodCost / pSales) * 100 : null
+  const avgTicket = pPeople > 0 ? pSales / pPeople : null
+  const totalSales = sessions.reduce((a, s) => a + (salesMap[s.id] ?? 0), 0)
+
+  const sortedSessions = [...sessions].sort((a, b) => b.session_date.localeCompare(a.session_date))
+  const recentMax = Math.max(1, ...sortedSessions.map((s) => salesMap[s.id] ?? 0))
+  const last8 = sortedSessions.slice(0, 8).reverse()
+
+  const linesBySession = useMemo(() => {
+    const map: Record<string, typeof lines> = {}
+    for (const l of lines) {
+      if (!map[l.session_id]) map[l.session_id] = []
+      map[l.session_id].push(l)
+    }
+    return map
+  }, [lines])
+
+  if (authLoading) return <Spinner />
+  if (!authSession) {
+    return (
+      <div className="p-6 flex flex-col items-center justify-center min-h-[70svh] gap-6">
+        <BarChart3 className="w-16 h-16 text-amber-700" strokeWidth={1.5} />
+        <h1 className="text-xl font-bold text-amber-800">ダッシュボード</h1>
+        <button
+          onClick={() => void loginWithGoogle()}
+          className="bg-amber-700 text-[#faf9f5] px-6 py-3 rounded-xl font-semibold shadow active:scale-95 transition-transform"
+        >
+          Googleでログイン
+        </button>
+      </div>
+    )
+  }
+
+  const loading = sessionsLoading || linesLoading
+  const hasData = sessions.length > 0
+
+  return (
+    <div className="p-4 pb-24 max-w-2xl mx-auto">
+      <div className="flex items-center justify-between mb-3">
+        <h1 className="text-xl font-bold text-amber-800 flex items-center gap-2">
+          <BarChart3 className="w-5 h-5" /> ダッシュボード
+        </h1>
+      </div>
+
+      {loading && <Spinner />}
+
+      {!loading && !hasData && (
+        <div className="text-center text-stone-500 text-sm py-12">
+          <p>営業データがありません。</p>
+          <p className="mt-2">レジで会計・締めをすると、ここに売上が表示されます。</p>
+        </div>
+      )}
+
+      {hasData && (
+        <>
+          <div className="flex gap-1.5 mb-3 overflow-x-auto">
+                {SUM_PERIODS.map((p) => (
+                  <button
+                    key={p.key}
+                    onClick={() => setSumPeriod(p.key)}
+                    className={`px-3 py-1.5 rounded-full text-xs font-semibold shrink-0 ${
+                      sumPeriod === p.key ? 'bg-amber-700 text-[#faf9f5]' : 'bg-stone-100 text-stone-600'
+                    }`}
+                  >
+                    {p.label}
+                  </button>
+                ))}
+              </div>
+
+              <div className="rounded-2xl border border-stone-200 bg-gradient-to-b from-stone-50 to-white p-5 mb-4">
+                <p className="text-xs text-stone-500 mb-0.5">{periodMeta.label}の推定利益（理論原価ベース）</p>
+                <p className={`text-4xl font-extrabold leading-tight ${pProfit >= 0 ? 'text-green-700' : 'text-red-600'}`}>
+                  {yen(pProfit)}
+                </p>
+                <div className="grid grid-cols-3 gap-3 mt-4">
+                  <HeroStat label="売上" value={yen(pSales)} />
+                  <HeroStat label="原価率(理論)" value={pRate != null ? `${pRate.toFixed(1)}%` : '—'} accent />
+                  <HeroStat label="客単価" value={avgTicket != null ? yen(avgTicket) : '—'} />
+                </div>
+                <p className="text-xs text-stone-400 mt-3">累計売上 {yen(totalSales)}</p>
+                <p className="text-xs text-stone-400 mt-1">※実費ベースの実際の利益は「会計」タブのP&amp;Lを参照</p>
+              </div>
+
+              {last8.length > 0 && (
+                <Section title="売上・推定利益の推移（直近8回）">
+                  <LineChart
+                    data={last8.map((s) => ({
+                      label: s.session_date.slice(5).replace('-', '/'),
+                      sales: salesMap[s.id] ?? 0,
+                      profit:
+                        (salesMap[s.id] ?? 0) -
+                        (foodCostBySession[s.id] ?? 0) -
+                        s.rent -
+                        s.other_cost -
+                        (uzuraCostBySession[s.id] ?? 0),
+                    }))}
+                  />
+                  <div className="flex gap-4 justify-center text-xs mt-1">
+                    <span className="text-stone-500">
+                      <span style={{ color: '#d9824f' }}>●</span> 売上
+                    </span>
+                    <span className="text-stone-500">
+                      <span style={{ color: '#6bcf8c' }}>●</span> 推定利益
+                    </span>
+                  </div>
+                </Section>
+              )}
+
+              <Section title="営業履歴">
+                <div className="space-y-2">
+                  {sortedSessions.map((s) => {
+                    const open = openId === s.id
+                    const sales = salesMap[s.id] ?? 0
+                    const foodCost = foodCostBySession[s.id] ?? 0
+                    const uzura = uzuraCostBySession[s.id] ?? 0
+                    const profit = sales - foodCost - s.rent - s.other_cost - uzura
+                    const rate = sales > 0 ? (foodCost / sales) * 100 : null
+                    const ppl = peopleOf(s)
+                    const dayLines = linesBySession[s.id] ?? []
+                    const menuAgg: Record<string, { qty: number; amount: number }> = {}
+                    for (const l of dayLines) {
+                      if (!menuAgg[l.name_snapshot]) menuAgg[l.name_snapshot] = { qty: 0, amount: 0 }
+                      menuAgg[l.name_snapshot].qty += l.qty
+                      menuAgg[l.name_snapshot].amount += l.qty * l.unit_price
+                    }
+                    const menuList = Object.entries(menuAgg).sort((a, b) => b[1].amount - a[1].amount)
+                    return (
+                      <div key={s.id} className="border border-stone-200 rounded-xl overflow-hidden bg-white">
+                        <button onClick={() => setOpenId(open ? null : s.id)} className="w-full text-left px-3.5 py-3">
+                          <div className="flex items-center gap-3">
+                            <span className="font-bold text-stone-800 w-16 shrink-0">
+                              {s.session_date.slice(5).replace('-', '/')}
+                            </span>
+                            <div className="flex-1 min-w-0">
+                              <div className="flex justify-between text-xs text-stone-500 mb-1">
+                                <span>
+                                  売上 <b className="text-stone-900">{yen(sales)}</b>
+                                </span>
+                                <span>
+                                  推定利益 <b className="text-green-700">{yen(profit)}</b>
+                                </span>
+                              </div>
+                              <div className="h-1.5 bg-stone-100 rounded overflow-hidden">
+                                <div className="h-full bg-amber-500" style={{ width: `${(sales / recentMax) * 100}%` }} />
+                              </div>
+                            </div>
+                            <span className="text-stone-400 shrink-0">{open ? '▾' : '▸'}</span>
+                          </div>
+                        </button>
+
+                        {open && (
+                          <div className="px-3 pb-3 pt-1 border-t border-stone-100 text-sm">
+                            <div className="grid grid-cols-2 gap-x-4 gap-y-1 my-2">
+                              <Row label="売上" value={yen(sales)} />
+                              <Row label="食材原価（理論）" value={yen(foodCost)} />
+                              <Row label="場所代" value={yen(s.rent)} />
+                              {s.other_cost > 0 && <Row label="その他経費" value={yen(s.other_cost)} />}
+                              {uzura > 0 && <Row label="取り置き原価" value={yen(uzura)} />}
+                              <Row label="推定利益" value={yen(profit)} accent />
+                              <Row label="原価率（理論）" value={rate != null ? `${rate.toFixed(1)}%` : '—'} />
+                              {s.groups > 0 && <Row label="組数 / 客数" value={`${s.groups}組 / ${ppl}人`} />}
+                              {ppl > 0 && <Row label="客単価" value={yen(sales / ppl)} />}
+                              <Row label="事業区分" value={s.segments?.name ?? '—'} />
+                            </div>
+                            {s.memo && <p className="text-stone-500 mb-2">メモ: {s.memo}</p>}
+                            <div className="bg-stone-50 rounded-lg p-2 mb-2">
+                              <div className="flex items-center justify-between mb-1">
+                                <p className="text-xs text-stone-400">メニュー別</p>
+                                <button
+                                  onClick={() => startMenuEdit(s, lines)}
+                                  className="text-xs text-amber-700 font-semibold active:opacity-70 flex items-center gap-1"
+                                >
+                                  <Pencil className="w-3 h-3" /> 数を編集
+                                </button>
+                              </div>
+                              {menuList.map(([mn, v]) => (
+                                <div key={mn} className="flex justify-between py-0.5 text-stone-700">
+                                  <span className="truncate">
+                                    {mn} <span className="text-stone-400">×{v.qty}</span>
+                                  </span>
+                                  <span className="font-medium text-stone-800 shrink-0 ml-2">{yen(v.amount)}</span>
+                                </div>
+                              ))}
+                              {menuList.length === 0 && <p className="text-xs text-stone-400 py-1">記録がありません</p>}
+                            </div>
+                            <div className="flex gap-2">
+                              <button
+                                onClick={() => startEdit(s)}
+                                disabled={busy}
+                                className="flex-1 py-2 rounded-lg border border-stone-300 text-stone-700 font-semibold active:bg-stone-50 flex items-center justify-center gap-1.5"
+                              >
+                                <Pencil className="w-4 h-4" /> 編集
+                              </button>
+                              <button
+                                onClick={() => setConfirmDeleteSession(s)}
+                                disabled={busy}
+                                className="flex-1 py-2 rounded-lg border border-red-200 text-red-600 font-semibold active:bg-red-50 disabled:opacity-50 flex items-center justify-center gap-1.5"
+                              >
+                                <Trash2 className="w-4 h-4" /> 削除
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>
+              </Section>
+        </>
+      )}
+
+      {confirmDeleteSession && (
+        <ConfirmModal
+          message={`${confirmDeleteSession.session_date} の営業履歴を削除しますか？\n仕訳・レシート明細も含めて削除され、元に戻せません。`}
+          onConfirm={() => void handleDeleteSession(confirmDeleteSession)}
+          onCancel={() => setConfirmDeleteSession(null)}
+        />
+      )}
+
+      {editSessionId &&
+        (() => {
+          const s = sessions.find((x) => x.id === editSessionId)
+          if (!s) return null
+          return (
+            <Modal onClose={() => setEditSessionId(null)}>
+              <div className="bg-white w-full max-w-lg rounded-2xl p-5 space-y-3 overflow-y-auto max-h-[90svh]">
+                <h2 className="text-lg font-bold text-stone-900">{s.session_date} を編集</h2>
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs text-stone-500 mb-1">場所代</label>
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      value={editForm.rent}
+                      onChange={(e) => setEditForm((f) => ({ ...f, rent: e.target.value }))}
+                      className="w-full border border-stone-300 rounded-lg px-3 py-2"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-stone-500 mb-1">その他経費</label>
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      value={editForm.otherCost}
+                      onChange={(e) => setEditForm((f) => ({ ...f, otherCost: e.target.value }))}
+                      className="w-full border border-stone-300 rounded-lg px-3 py-2"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-stone-500 mb-1">組数</label>
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      value={editForm.groups}
+                      onChange={(e) => setEditForm((f) => ({ ...f, groups: e.target.value }))}
+                      className="w-full border border-stone-300 rounded-lg px-3 py-2"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-stone-500 mb-1">客数</label>
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      value={editForm.people}
+                      onChange={(e) => setEditForm((f) => ({ ...f, people: e.target.value }))}
+                      className="w-full border border-stone-300 rounded-lg px-3 py-2"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-stone-500 mb-1">取り置き人数</label>
+                    <input
+                      type="number"
+                      inputMode="numeric"
+                      value={editForm.reserved}
+                      onChange={(e) => setEditForm((f) => ({ ...f, reserved: e.target.value }))}
+                      className="w-full border border-stone-300 rounded-lg px-3 py-2"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs text-stone-500 mb-1">メモ</label>
+                  <input
+                    type="text"
+                    value={editForm.memo}
+                    onChange={(e) => setEditForm((f) => ({ ...f, memo: e.target.value }))}
+                    className="w-full border border-stone-300 rounded-lg px-3 py-2"
+                  />
+                </div>
+                <div className="flex gap-3 pt-1">
+                  <button
+                    onClick={() => setEditSessionId(null)}
+                    disabled={busy}
+                    className="flex-1 py-3 rounded-xl border border-stone-300 text-stone-600 font-semibold"
+                  >
+                    キャンセル
+                  </button>
+                  <button
+                    onClick={() => void saveEdit(s)}
+                    disabled={busy}
+                    className="flex-1 py-3 rounded-xl bg-amber-700 text-[#faf9f5] font-bold disabled:opacity-50"
+                  >
+                    {busy ? '保存中...' : '保存'}
+                  </button>
+                </div>
+              </div>
+            </Modal>
+          )
+        })()}
+
+      {menuEditId &&
+        (() => {
+          const s = sessions.find((x) => x.id === menuEditId)
+          if (!s) return null
+          return (
+            <Modal onClose={() => setMenuEditId(null)}>
+              <div className="bg-white w-full max-w-lg rounded-2xl p-5 space-y-3 overflow-y-auto max-h-[90svh]">
+                <h2 className="text-lg font-bold text-stone-900">{s.session_date} のメニュー別を編集</h2>
+                <p className="text-xs text-stone-400 -mt-2">
+                  メニュー名は登録済みのものと完全一致させると原価も自動計算されます
+                </p>
+                <datalist id="dash-menu-names">
+                  {allMenus.map((m) => (
+                    <option key={m.id} value={m.name} />
+                  ))}
+                </datalist>
+                <div className="space-y-1.5">
+                  {menuEditRows.map((m, i) => (
+                    <div key={i} className="flex items-center gap-1.5">
+                      <input
+                        type="text"
+                        list="dash-menu-names"
+                        value={m.name}
+                        onChange={(e) =>
+                          setMenuEditRows((arr) => arr.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)))
+                        }
+                        placeholder="メニュー名"
+                        className="flex-1 min-w-0 border border-stone-300 rounded-lg px-2 py-2"
+                      />
+                      <input
+                        type="number"
+                        inputMode="numeric"
+                        value={m.qty}
+                        onChange={(e) =>
+                          setMenuEditRows((arr) => arr.map((x, j) => (j === i ? { ...x, qty: e.target.value } : x)))
+                        }
+                        className="w-16 border border-stone-300 rounded-lg px-2 py-2 text-right"
+                      />
+                      <span className="text-xs text-stone-400 shrink-0">食</span>
+                      <input
+                        type="number"
+                        inputMode="numeric"
+                        value={m.price}
+                        onChange={(e) =>
+                          setMenuEditRows((arr) => arr.map((x, j) => (j === i ? { ...x, price: e.target.value } : x)))
+                        }
+                        className="w-20 border border-stone-300 rounded-lg px-2 py-2 text-right"
+                      />
+                      <span className="text-xs text-stone-400 shrink-0">円</span>
+                      <button
+                        onClick={() => setMenuEditRows((arr) => arr.filter((_, j) => j !== i))}
+                        className="text-red-400 p-1 shrink-0"
+                        title="削除"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ))}
+                  {menuEditRows.length === 0 && <p className="text-xs text-stone-400 py-1">記録がありません</p>}
+                  <button
+                    onClick={() => setMenuEditRows((arr) => [...arr, { name: '', qty: '1', price: '0' }])}
+                    className="text-xs text-amber-700 font-semibold border border-dashed border-amber-300 rounded-full px-2.5 py-1.5 flex items-center gap-1"
+                  >
+                    <Plus className="w-3.5 h-3.5" /> 行を追加
+                  </button>
+                </div>
+                <div className="flex gap-3 pt-1">
+                  <button
+                    onClick={() => setMenuEditId(null)}
+                    disabled={busy}
+                    className="flex-1 py-3 rounded-xl border border-stone-300 text-stone-600 font-semibold"
+                  >
+                    キャンセル
+                  </button>
+                  <button
+                    onClick={() => void saveMenuEdit(s)}
+                    disabled={busy}
+                    className="flex-1 py-3 rounded-xl bg-amber-700 text-[#faf9f5] font-bold disabled:opacity-50"
+                  >
+                    {busy ? '保存中...' : '保存'}
+                  </button>
+                </div>
+              </div>
+            </Modal>
+          )
+        })()}
+    </div>
+  )
+}
+
+function HeroStat({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
+  return (
+    <div>
+      <p className="text-xs text-stone-500">{label}</p>
+      <p className={`text-lg font-bold ${accent ? 'text-amber-800' : 'text-stone-900'}`}>{value}</p>
+    </div>
+  )
+}
+
+function Row({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
+  return (
+    <div className="flex justify-between">
+      <span className="text-stone-500">{label}</span>
+      <span className={`font-semibold ${accent ? 'text-green-700' : 'text-stone-800'}`}>{value}</span>
+    </div>
+  )
+}
+
+function Section({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <div className="mb-5">
+      <div className="flex items-center justify-between mb-2">
+        <h2 className="text-sm font-bold text-stone-700">{title}</h2>
+      </div>
+      {children}
+    </div>
+  )
+}
+
+function LineChart({ data }: { data: { label: string; sales: number; profit: number }[] }) {
+  const W = 320
+  const H = 170
+  const padL = 10
+  const padR = 10
+  const padT = 14
+  const padB = 26
+  const n = data.length
+  const plotW = W - padL - padR
+  const plotH = H - padT - padB
+  const sales = data.map((d) => d.sales)
+  const profit = data.map((d) => d.profit)
+  const maxV = Math.max(1, ...sales, ...profit, 0)
+  const minV = Math.min(0, ...profit)
+  const range = maxV - minV || 1
+  const x = (i: number) => (n <= 1 ? padL + plotW / 2 : padL + (i * plotW) / (n - 1))
+  const y = (v: number) => padT + (1 - (v - minV) / range) * plotH
+  const poly = (arr: number[]) => arr.map((v, i) => `${x(i)},${y(v)}`).join(' ')
+  const zeroY = y(0)
+  return (
+    <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-auto">
+      <line x1={padL} x2={W - padR} y1={zeroY} y2={zeroY} stroke="#3a3733" strokeWidth="1" />
+      <polyline fill="none" stroke="#d9824f" strokeWidth="2" points={poly(sales)} />
+      <polyline fill="none" stroke="#6bcf8c" strokeWidth="2" points={poly(profit)} />
+      {data.map((d, i) => (
+        <g key={i}>
+          <circle cx={x(i)} cy={y(d.sales)} r="2.5" fill="#d9824f" />
+          <circle cx={x(i)} cy={y(d.profit)} r="2.5" fill="#6bcf8c" />
+          <text x={x(i)} y={H - 8} fontSize="10" textAnchor="middle" fill="#918b81">
+            {d.label}
+          </text>
+        </g>
+      ))}
+    </svg>
+  )
+}

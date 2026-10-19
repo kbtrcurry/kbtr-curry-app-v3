@@ -26,6 +26,7 @@ import RecipesPage from './pages/RecipesPage'
 import MenuSettingsPage from './pages/MenuSettingsPage'
 import PrepPage from './pages/PrepPage'
 import TaxPage from './pages/TaxPage'
+import AdsPage from './pages/AdsPage'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -163,6 +164,7 @@ export default function App() {
                   <Route path="/menus" element={<MenuSettingsPage />} />
                   <Route path="/prep" element={<PrepPage />} />
                   <Route path="/tax" element={<TaxPage />} />
+                  <Route path="/ads" element={<AdsPage />} />
                   <Route path="/setup" element={<SetupCheckPage />} />
                 </Routes>
               </div>

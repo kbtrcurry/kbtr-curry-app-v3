@@ -149,3 +149,36 @@ describe('card withdrawal', () => {
     expect(a).not.toBe(b)
   })
 })
+
+describe('三菱UFJの入出金明細CSV（摘要 / 摘要内容 / 支払い金額 / 預かり金額）', () => {
+  // 実際のCSVと同じ見出し。金額・相手先は架空
+  const csv = [
+    '"日付","摘要","摘要内容","支払い金額","預かり金額","差引残高","メモ","未資金化区分","入払区分"',
+    '"2026/9/22","口座振替","ＲＴＫ　ペイペイ","3,000","","82,157","","","振替支払い"',
+    '"2026/9/23","カ－ド","","9,000","","65,157","","","支払い"',
+    '"2026/9/26","カ－ド","","","47,000","91,157","","","入金"',
+    '"2026/10/13","口座振替３","ミツイスミトモカ－ド","63,680","","31,621","","","振替支払い"',
+    '"2026/10/15","年金","コクミンコウセイネンキン","","141,216","158,026","","","振替入金"',
+    '"2026/10/20","振込","ｸﾞｰｸﾞﾙ ｱｲﾙﾗﾝﾄﾞ","","12,345","170,371","","","振替入金"',
+  ].join('\n')
+  const rows = parseCsv(csv)
+
+  it('見出しから列を判定する（相手先は「摘要内容」、種別は「摘要」）', () => {
+    expect(detectBankColumns(rows)).toEqual({ headerRow: 0, date: 0, description: 2, summary: 1, deposit: 4, withdrawal: 3 })
+  })
+  it('日付(月日が1桁)・金額(カンマ)を読み、摘要内容が空なら摘要を使う', () => {
+    const txns = parseBankRows(rows, detectBankColumns(rows)!)
+    expect(txns).toHaveLength(6)
+    expect(txns[0]).toMatchObject({ date: '2026-09-22', withdrawal: 3000, deposit: 0 })
+    expect(txns[1]).toMatchObject({ description: 'カ-ド', withdrawal: 9000 })
+    expect(txns[2]).toMatchObject({ deposit: 47000 })
+  })
+  it('カード会社への引き落としと、Googleからの入金を判定する', async () => {
+    const { isCardWithdrawal, DEFAULT_CARD_WITHDRAWAL_PATTERNS, classifyDeposit, DEFAULT_BANK_RULES } = await import('./bankImport')
+    const txns = parseBankRows(rows, detectBankColumns(rows)!)
+    const settle = txns.filter((t) => t.withdrawal > 0 && isCardWithdrawal(t.description, DEFAULT_CARD_WITHDRAWAL_PATTERNS))
+    expect(settle.map((t) => t.withdrawal)).toEqual([63680])
+    expect(classifyDeposit(txns[5].description, DEFAULT_BANK_RULES)).toBe('youtube')
+    expect(classifyDeposit(txns[4].description, DEFAULT_BANK_RULES)).toBeNull() // 年金は収益ではない
+  })
+})

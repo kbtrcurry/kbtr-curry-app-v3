@@ -3,13 +3,24 @@
 // 必要なら会計タブで編集する（入金額＝売上総額として計上）。
 import { normalize, parseAmount, parseDateLoose } from './csv'
 
-export type BankColumns = { headerRow: number; date: number; description: number; deposit: number; withdrawal: number }
+export type BankColumns = {
+  headerRow: number
+  date: number
+  /** 摘要の詳細（相手先など）。無ければ摘要の列 */
+  description: number
+  /** 摘要内容とは別に「摘要」の列があるとき（種別: 振込・カード など）。摘要内容が空の行で使う */
+  summary?: number
+  deposit: number
+  withdrawal: number
+}
 
 const PATTERNS = {
   date: /日付|取引日|年月日|日時|^日$/,
-  description: /摘要|取引内容|お取引内容|内容|振込人|名義|備考|取扱/,
-  deposit: /入金|預入|お預り|預り金額|収入/,
-  withdrawal: /出金|払戻|お支払|引出|支出/,
+  // 三菱UFJは「摘要」(種別)と「摘要内容」(相手先)の2列。相手先のほうを優先して使う
+  detail: /摘要内容|取引内容|お取引内容/,
+  description: /摘要|内容|振込人|名義|備考|取扱/,
+  deposit: /入金|預入|お預り|預り金額|預かり|収入/,
+  withdrawal: /出金|払戻|お支払|支払い?金額|引出|支出/,
 }
 
 function firstMatch(cells: string[], re: RegExp, exclude: number[] = []): number {
@@ -24,8 +35,11 @@ export function detectBankColumns(rows: string[][]): BankColumns | null {
     const deposit = firstMatch(cells, PATTERNS.deposit, [date])
     if (date < 0 || deposit < 0) continue
     const withdrawal = firstMatch(cells, PATTERNS.withdrawal, [date, deposit])
-    const description = firstMatch(cells, PATTERNS.description, [date, deposit, withdrawal])
-    return { headerRow: i, date, description, deposit, withdrawal }
+    const taken = [date, deposit, withdrawal]
+    const detail = firstMatch(cells, PATTERNS.detail, taken)
+    const general = firstMatch(cells, PATTERNS.description, [...taken, detail])
+    if (detail >= 0) return { headerRow: i, date, description: detail, summary: general >= 0 ? general : undefined, deposit, withdrawal }
+    return { headerRow: i, date, description: general, deposit, withdrawal }
   }
   return null
 }
@@ -45,7 +59,8 @@ export function parseBankRows(rows: string[][], cols: BankColumns): BankTxn[] {
   for (const r of rows.slice(cols.headerRow + 1)) {
     const date = parseDateLoose(r[cols.date])
     if (!date) continue
-    const description = cols.description >= 0 ? normalize(r[cols.description] ?? '') : ''
+    const detail = cols.description >= 0 ? normalize(r[cols.description] ?? '') : ''
+    const description = detail || (cols.summary != null && cols.summary >= 0 ? normalize(r[cols.summary] ?? '') : '')
     const deposit = parseAmount(r[cols.deposit])
     const withdrawal = cols.withdrawal >= 0 ? parseAmount(r[cols.withdrawal]) : 0
     if (deposit === 0 && withdrawal === 0) continue

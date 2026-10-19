@@ -27,7 +27,7 @@ import {
   menuCost,
   perServingCost,
 } from '../lib/masterData'
-import { usePersistedState } from '../lib/persistState'
+import { usePersistedState, useStoredState } from '../lib/persistState'
 import {
   foodCostTone,
   salesPerHourTone,
@@ -74,7 +74,7 @@ export default function DashboardPage() {
   const [confirmDeleteSession, setConfirmDeleteSession] = useState<ClosedSession | null>(null)
   const [editSessionId, setEditSessionId] = useState<string | null>(null)
   // 今月あと何回営業する予定か（着地見込みの計算用。端末ごとに保存）
-  const [remainingSessions, setRemainingSessions] = usePersistedState<number>('kbtr_v3_remaining_sessions', 0)
+  const [remainingSessions, setRemainingSessions] = useStoredState<number>('kbtr_v3_remaining_sessions', 0)
   const [editForm, setEditForm] = useState({
     rent: '',
     otherCost: '',

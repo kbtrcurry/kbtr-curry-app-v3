@@ -6,13 +6,15 @@ export type GoalTabProps = {
   input: Omit<BreakEvenInput, 'target'>
   target: number
   onTarget: (n: number) => void
+  /** 直前3か月の利益（営業のあった月のみ） */
+  recent: number[]
   /** 1回の営業の標準の場所代・その他経費（その月の平均） */
   avgRent: number
   avgOther: number
 }
 
 // 目標と損益分岐点: 固定費(食材費以外の経費) ÷ (1 − 変動費率)。
-export default function GoalTab({ input, target, onTarget, avgRent, avgOther }: GoalTabProps) {
+export default function GoalTab({ input, target, onTarget, recent, avgRent, avgOther }: GoalTabProps) {
   const b = breakEven({ ...input, target })
   const sb = sessionBreakEven(avgRent, avgOther, input.varRate, b.ticket)
   const reached = b.remainBreakEven === 0
@@ -36,6 +38,26 @@ export default function GoalTab({ input, target, onTarget, avgRent, avgOther }: 
       </section>
 
       <Card title="月の利益目標">
+        <p className="text-xs text-stone-500 mb-2">
+          決め方の目安は3つ。①生活費・税金・返済から逆算した「手元に残したい額」 ②直近の実績（下のボタン） ③損益分岐点を超えたうえで、広告や営業日数でどこまで伸ばせるか。まずは②の平均を置いて、慣れたら①に寄せるのがおすすめです。
+        </p>
+        {recent.length > 0 && (
+          <div className="flex flex-wrap gap-1.5 mb-2">
+            {[
+              ['直近の平均', recent.reduce((a, b) => a + b, 0) / recent.length],
+              ['平均の1.2倍', (recent.reduce((a, b) => a + b, 0) / recent.length) * 1.2],
+              ['直近の最高月', Math.max(...recent)],
+            ].map(([label, v]) => (
+              <button
+                key={label as string}
+                onClick={() => onTarget(Math.max(0, Math.round((v as number) / 1000) * 1000))}
+                className="px-3 py-1.5 rounded-full bg-stone-100 text-xs font-semibold text-stone-700 active:scale-95"
+              >
+                {label as string} {yen(v as number)}
+              </button>
+            ))}
+          </div>
+        )}
         <label className="block text-xs text-stone-500 mb-1">目標（円）</label>
         <input
           type="number"

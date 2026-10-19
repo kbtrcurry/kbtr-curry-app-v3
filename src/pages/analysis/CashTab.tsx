@@ -21,6 +21,7 @@ export default function CashTab() {
   const entries = useJournalEntries({ from: '2000-01-01', to: today })
   const recv = useReceivables()
   const [day, setDay] = useStoredState('kbtr_v3_card_day', 10)
+  const [actual, setActual] = useStoredState('kbtr_v3_actual_balance', '')
   const f = useMemo(
     () =>
       cashForecast(
@@ -36,26 +37,54 @@ export default function CashTab() {
       ),
     [entries.data, recv.data, day, today],
   )
+  // 事業用口座の実際の残高を入れると、個人の出入りで会計とずれた分を引き継いだうえで見通しを出す
+  const actualNum = actual.trim() === '' ? null : Number(actual)
+  const offset = actualNum != null && Number.isFinite(actualNum) ? actualNum - f.current : 0
+  const net = f.events.reduce((a, e) => a + e.amount, 0)
   if (entries.isLoading || recv.isLoading) return <Spinner />
   return (
     <div className="space-y-3">
       <section className="rounded-2xl border border-stone-200 bg-gradient-to-b from-stone-50 to-white p-5">
         <p className="text-xs text-stone-500">いまの現金＋預金</p>
-        <p className="text-4xl font-extrabold leading-tight mt-0.5 text-stone-900">{yen(f.current)}</p>
+        <p className="text-4xl font-extrabold leading-tight mt-0.5 text-stone-900">{yen(f.current + offset)}</p>
         <p className="text-xs text-stone-400 mt-2">
-          現金 {yen(f.cash)} ／ 預金 {yen(f.bank)}。会計の記録から計算しているので、入力が漏れていると実際の残高とずれます。
+          会計の記録では 現金 {yen(f.cash)} ／ 預金 {yen(f.bank)}。個人の出入りがあるとずれるので、下で実際の残高を入れられます。
         </p>
+      </section>
+      <Card title="事業用の口座の実際の残高">
+        <p className="text-xs text-stone-500 mb-2">
+          個人の支払いが混ざっていて会計の残高とずれる場合は、通帳アプリで見た「いまの事業用の残高」を入れてください。以降の見通しは、その金額から計算します。
+        </p>
+        <input
+          type="number"
+          inputMode="numeric"
+          value={actual}
+          placeholder="例 250000（空欄なら会計の残高を使う）"
+          onChange={(e) => setActual(e.target.value)}
+          className="w-full border border-stone-300 rounded-lg px-3 py-2"
+        />
+        {actualNum != null && Number.isFinite(actualNum) && (
+          <p className="text-xs text-stone-500 mt-2">会計との差 {yen(offset)}（個人の出入りや未入力の目安）。見通しは実際の残高から出しています。</p>
+        )}
+      </Card>
+      <section className="rounded-2xl border border-stone-200 bg-white p-4">
+        <p className="text-xs text-stone-500">これからの事業の入出金の合計（残高に関係なく見られる数字）</p>
+        <p className={`text-2xl font-extrabold ${net >= 0 ? 'text-green-700' : 'text-red-600'}`}>
+          {net >= 0 ? '+' : ''}
+          {yen(net)}
+        </p>
+        <p className="text-xs text-stone-400">入金予定 − カード未払。個人の支払いに影響されません。</p>
       </section>
       <div className="grid grid-cols-2 gap-3">
         <Stat label="カード未払" value={yen(f.cardPayable)} tone={f.cardPayable > 0 ? 'bad' : undefined} />
         <Stat
           label="予定をすべて反映後"
-          value={yen(f.final)}
+          value={yen(f.final + offset)}
           tone={f.final >= 0 ? 'good' : 'bad'}
-          sub={<span className="text-xs text-stone-400">最低ライン {yen(f.lowest)}</span>}
+          sub={<span className="text-xs text-stone-400">最低ライン {yen(f.lowest + offset)}</span>}
         />
       </div>
-      {f.lowest < 0 && (
+      {f.lowest + offset < 0 && (
         <p className="text-sm text-red-600 font-semibold">残高がマイナスになる時期があります。入金・支払の時期を確認してください。</p>
       )}
       <Card title="これからの入出金（日付順）">
@@ -74,7 +103,7 @@ export default function CashTab() {
                     {e.amount >= 0 ? '+' : ''}
                     {yen(e.amount)}
                   </span>
-                  <span className="block text-xs text-stone-400">残 {yen(e.balance)}</span>
+                  <span className="block text-xs text-stone-400">残 {yen(e.balance + offset)}</span>
                 </span>
               </li>
             ))}

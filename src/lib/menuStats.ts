@@ -25,6 +25,10 @@ export type MenuStat = {
   /** 1食あたり粗利 */
   unitGross: number | null
   quadrant: MenuQuadrant | null
+  /** メニュー設定で非表示（販売停止）になっている */
+  hidden: boolean
+  /** この期間に売れていない登録メニュー */
+  unsold: boolean
 }
 
 function median(xs: number[]): number {
@@ -39,6 +43,7 @@ export function menuStats(
   lines: MenuLine[],
   sessionIds: Set<string>,
   costByMenuId: Record<string, number>,
+  registered: { id: string; name: string; price: number; active: boolean }[] = [],
 ): MenuStat[] {
   const acc = new Map<string, { name: string; qty: number; sales: number; cost: number; hasCost: boolean }>()
   for (const l of lines) {
@@ -67,6 +72,8 @@ export function menuStats(
       costRate: cost != null && a.sales > 0 ? (cost / a.sales) * 100 : null,
       unitGross: gross != null && a.qty > 0 ? gross / a.qty : null,
       quadrant: null,
+      hidden: registered.some((m) => m.id === key && !m.active),
+      unsold: false,
     }
   })
   const rated = rows.filter((r) => r.unitGross != null)
@@ -79,7 +86,27 @@ export function menuStats(
       r.quadrant = popular ? (rich ? 'star' : 'thin') : rich ? 'push' : 'review'
     }
   }
-  return rows.sort((a, b) => b.sales - a.sales)
+  const sold = new Set(rows.map((r) => r.key))
+  const unsold: MenuStat[] = registered
+    .filter((m) => !sold.has(m.id))
+    .map((m) => {
+      const c = costByMenuId[m.id]
+      const hasCost = c != null && c > 0
+      return {
+        key: m.id,
+        name: m.name,
+        qty: 0,
+        sales: 0,
+        cost: null,
+        gross: null,
+        costRate: hasCost && m.price > 0 ? (c / m.price) * 100 : null,
+        unitGross: hasCost ? m.price - c : null,
+        quadrant: null,
+        hidden: !m.active,
+        unsold: true,
+      }
+    })
+  return [...rows.sort((a, b) => b.sales - a.sales), ...unsold]
 }
 
 // ---------- 広告 ----------

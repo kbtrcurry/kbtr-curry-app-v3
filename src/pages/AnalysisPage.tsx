@@ -77,11 +77,15 @@ export default function AnalysisPage() {
             people: ppl(inMonth),
             profit: f.profit,
           },
+          recent: (() => {
+            const prevs = lastMonths(month, 4).slice(0, 3).map((mm) => monthlyProfitSeries(data.entries, [mm], data.theoreticalByMonth, choice)[0])
+            return prevs.filter((p) => p.revenue > 0).map((p) => p.profit)
+          })(),
           avgRent: inMonth.length ? inMonth.reduce((a, x) => a + x.rent, 0) / inMonth.length : 7000,
           avgOther: inMonth.length ? inMonth.reduce((a, x) => a + x.otherCost, 0) / inMonth.length : 0,
         }
       })(),
-      menus: menuStats(data.lines, new Set(inMonth.map((x) => x.id)), data.costByMenuId),
+      menus: menuStats(data.lines, new Set(inMonth.map((x) => x.id)), data.costByMenuId, data.allMenus),
       ads: {
         metaSpend: spendOf(month),
         booked: pnl.adSpend,
@@ -102,7 +106,7 @@ export default function AnalysisPage() {
       prevFood: foodCostView(prevPnl, data.theoreticalByMonth.get(prev) ?? 0, choice),
       series: monthlyProfitSeries(data.entries, lastMonths(month, 6), data.theoreticalByMonth, choice),
     }
-  }, [data.entries, data.theoreticalByMonth, data.sessions, data.salesMap, data.foodBySession, data.reservedCostPerServing, data.lines, data.costByMenuId, metaAds.data, month, choice])
+  }, [data.entries, data.theoreticalByMonth, data.sessions, data.salesMap, data.foodBySession, data.reservedCostPerServing, data.lines, data.costByMenuId, data.allMenus, metaAds.data, month, choice])
 
   if (authLoading) return <Spinner />
   if (!authSession) {

@@ -29,6 +29,18 @@ describe('menuStats', () => {
   })
 })
 
+describe('menuStats 登録メニュー', () => {
+  it('売れていない登録メニューと非表示を含める', () => {
+    const reg = [
+      { id: 'a', name: 'A', price: 1000, active: true },
+      { id: 'z', name: 'Z', price: 900, active: false },
+    ]
+    const r = menuStats([L('a', 'A', 1, 1000)], new Set(['s1']), { a: 300, z: 300 }, reg)
+    expect(r.map((x) => [x.name, x.unsold, x.hidden])).toEqual([['A', false, false], ['Z', true, true]])
+    expect(r[1].unitGross).toBe(600)
+  })
+})
+
 describe('adDaily / adEffect', () => {
   it('月内の広告費と売上を日付ごとに合わせる', () => {
     const d = adDaily(

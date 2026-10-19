@@ -12,8 +12,10 @@ const BADGE: Record<MenuQuadrant, string> = {
 }
 const ORDER: MenuQuadrant[] = ['star', 'thin', 'push', 'review']
 
-export default function MenusTab({ menus }: { menus: MenuStat[] }) {
-  if (menus.length === 0) {
+export default function MenusTab({ menus: all }: { menus: MenuStat[] }) {
+  const menus = all.filter((m) => !m.unsold)
+  const unsoldList = all.filter((m) => m.unsold)
+  if (menus.length === 0 && unsoldList.length === 0) {
     return (
       <Card>
         <p className="text-sm text-stone-500">この月の売上の明細はありません。</p>
@@ -45,6 +47,17 @@ export default function MenusTab({ menus }: { menus: MenuStat[] }) {
           </Card>
         )
       })}
+
+      {unsoldList.length > 0 && (
+        <Card title="この月 売れなかったメニュー">
+          <p className="text-xs text-stone-400 mb-1">登録されているが売上のないもの。非表示にしているメニューも含みます。</p>
+          <ul className="divide-y divide-stone-100">
+            {unsoldList.map((m) => (
+              <MenuRow key={m.key} m={m} />
+            ))}
+          </ul>
+        </Card>
+      )}
 
       <PriceSim menus={menus} />
 
@@ -132,10 +145,14 @@ function MenuRow({ m }: { m: MenuStat }) {
   return (
     <li className="py-2 flex items-center gap-2">
       <div className="min-w-0 flex-1">
-        <p className="text-sm font-semibold text-stone-800 truncate">{m.name}</p>
+        <p className="text-sm font-semibold text-stone-800 truncate">
+          {m.name}
+          {m.hidden && <span className="ml-1.5 text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-stone-200 text-stone-600">非表示</span>}
+        </p>
         <p className="text-xs text-stone-400">
-          {m.qty}食・売上 {yen(m.sales)}
+          {m.unsold ? '売上なし' : `${m.qty}食・売上 ${yen(m.sales)}`}
           {m.costRate != null && `・原価率 ${percent(m.costRate, 0)}`}
+          {m.unsold && m.unitGross != null && `・1食の粗利 ${yen(m.unitGross)}`}
         </p>
       </div>
       {m.gross != null && (

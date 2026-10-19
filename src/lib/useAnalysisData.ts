@@ -9,6 +9,7 @@ import {
   menuCost,
   perServingCost,
   useRecipes,
+  useAllMenus,
   type MenuComponentRow,
 } from './masterData'
 import { shiftMonth, theoreticalFoodCostByMonth } from './analysis'
@@ -27,6 +28,7 @@ export function useAnalysisData(month: string, months = 6) {
   const recipeItems = useAllRecipeIngredients()
   const components = useAllMenuComponents()
   const recipes = useRecipes()
+  const allMenus = useAllMenus()
   // 取り置き特典に使うレシピ（設定タブで選ぶ。ダッシュボードと同じキー）
   const [toriokiRecipeId] = usePersistedState('kbtr_v3_torioki_recipe', '')
 
@@ -65,6 +67,7 @@ export function useAnalysisData(month: string, months = 6) {
     lines: lines.data ?? [],
     salesMap,
     costByMenuId,
+    allMenus: allMenus.data ?? [],
     theoreticalByMonth,
     foodBySession,
     reservedCostPerServing,

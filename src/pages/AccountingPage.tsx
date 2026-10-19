@@ -23,12 +23,15 @@ import {
   type JournalEntry,
   type PaymentMethod,
 } from '../lib/accounting'
+import { isReceivableEntry } from '../lib/receivables'
+import ReceivablesTab from './ReceivablesTab'
 
-type Tab = 'expense' | 'revenue' | 'ledger' | 'pnl'
+type Tab = 'expense' | 'revenue' | 'receivable' | 'ledger' | 'pnl'
 
 const TABS: { key: Tab; label: string }[] = [
   { key: 'expense', label: '経費入力' },
   { key: 'revenue', label: 'note/YouTube収入' },
+  { key: 'receivable', label: '入金予定' },
   { key: 'ledger', label: '仕訳一覧' },
   { key: 'pnl', label: 'セグメント別P&L' },
 ]
@@ -163,6 +166,7 @@ export default function AccountingPage() {
           onSaved={invalidateJournal}
         />
       )}
+      {tab === 'receivable' && <ReceivablesTab />}
       {tab === 'ledger' && <LedgerTab entries={entries} onSaved={invalidateJournal} />}
       {tab === 'pnl' && <PnlTab pnl={pnl} />}
     </div>
@@ -634,14 +638,20 @@ function RevenueTab({
               {e.description && <p className="text-sm text-stone-800 truncate">{e.description}</p>}
             </div>
             <span className="font-bold text-stone-900 shrink-0">¥{entryTotal(e, 'credit').toLocaleString()}</span>
-            {isEditableEntry(e) && (
-              <button onClick={() => startEdit(e)} className="text-stone-500 shrink-0" title="編集">
-                <Pencil className="w-4 h-4" />
-              </button>
+            {isReceivableEntry(e) ? (
+              <span className="text-xs text-amber-700 shrink-0">入金予定タブで管理</span>
+            ) : (
+              <>
+                {isEditableEntry(e) && (
+                  <button onClick={() => startEdit(e)} className="text-stone-500 shrink-0" title="編集">
+                    <Pencil className="w-4 h-4" />
+                  </button>
+                )}
+                <button onClick={() => setConfirmTarget(e)} className="text-red-400 shrink-0" title="削除">
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </>
             )}
-            <button onClick={() => setConfirmTarget(e)} className="text-red-400 shrink-0" title="削除">
-              <Trash2 className="w-4 h-4" />
-            </button>
           </div>
         ))}
       </div>
@@ -681,8 +691,9 @@ function LedgerTab({ entries, onSaved }: { entries: JournalEntry[]; onSaved: () 
               <span className="text-xs text-stone-400 shrink-0">{e.entry_date}</span>
               <span className="text-xs text-stone-500 shrink-0">{e.segments.name}</span>
               <SourceBadge sourceType={e.source_type} />
+              {isReceivableEntry(e) && <span className="text-xs text-amber-700 shrink-0">入金予定</span>}
             </div>
-            {e.source_type !== 'pos_close' && (
+            {e.source_type !== 'pos_close' && !isReceivableEntry(e) && (
               <button onClick={() => setConfirmTarget(e)} className="text-red-400 shrink-0" title="削除">
                 <Trash2 className="w-4 h-4" />
               </button>

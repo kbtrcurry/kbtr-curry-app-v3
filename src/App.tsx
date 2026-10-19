@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import { lazy, Suspense, useEffect } from 'react'
 import { BrowserRouter, NavLink, Route, Routes } from 'react-router-dom'
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query'
 import { useRegisterSW } from 'virtual:pwa-register/react'
 import {
   ShoppingCart,
@@ -22,6 +22,9 @@ import PosPage from './pages/PosPage'
 import AccountingPage from './pages/AccountingPage'
 import DashboardPage from './pages/DashboardPage'
 import AnalysisPage from './pages/AnalysisPage'
+import SegmentsPage from './pages/SegmentsPage'
+import { settleDueReceivables } from './lib/receivables'
+import { todayStr } from './lib/accounting'
 import IngredientsPage from './pages/IngredientsPage'
 import RecipesPage from './pages/RecipesPage'
 import MenuSettingsPage from './pages/MenuSettingsPage'
@@ -56,6 +59,38 @@ const NAV_ITEMS: NavItem[] = [
 ]
 const BOTTOM_NAV_PATHS = new Set(['/', '/accounting', '/analysis', '/setup'])
 const BOTTOM_NAV = NAV_ITEMS.filter((item) => BOTTOM_NAV_PATHS.has(item.to))
+
+// 入金予定日が来た「入金予定」を、アプリを開いたとき（と、日付が変わって戻ってきたとき）に自動で入金へ反映する
+function AutoSettle() {
+  const { session } = useAuth()
+  const queryClient = useQueryClient()
+  useEffect(() => {
+    if (!session) return
+    let lastRun = ''
+    const run = () => {
+      const today = todayStr()
+      if (lastRun === today) return
+      lastRun = today
+      settleDueReceivables(today)
+        .then((n) => {
+          if (n > 0) {
+            void queryClient.invalidateQueries({ queryKey: ['journal'] })
+            void queryClient.invalidateQueries({ queryKey: ['receivables'] })
+          }
+        })
+        .catch(() => {
+          lastRun = '' // 失敗したら次の機会に再試行
+        })
+    }
+    run()
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') run()
+    }
+    document.addEventListener('visibilitychange', onVisible)
+    return () => document.removeEventListener('visibilitychange', onVisible)
+  }, [session, queryClient])
+  return null
+}
 
 function UpdateButton() {
   const {
@@ -159,6 +194,7 @@ export default function App() {
       <AuthProvider>
         <BrowserRouter basename="/kbtr-curry-app-v3">
           <Preloader />
+          <AutoSettle />
           <GmailReturnRedirect />
           <BackHandlerProvider>
             <Layout>
@@ -167,6 +203,7 @@ export default function App() {
                   <Route path="/" element={<PosPage />} />
                   <Route path="/accounting" element={<AccountingPage />} />
                   <Route path="/analysis" element={<AnalysisPage />} />
+                  <Route path="/segments" element={<SegmentsPage />} />
                   {AnalysisDemo && (
                     <Route
                       path="/analysis-demo"

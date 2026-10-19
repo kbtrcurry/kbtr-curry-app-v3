@@ -47,6 +47,7 @@ import {
   type JournalEntry,
 } from '../lib/accounting'
 import { matchesQuery, sortRows } from '../lib/dataView'
+import { isReceivableEntry } from '../lib/receivables'
 import { buildRecipePatch, buildIngredientPatch, buildSessionPatch, toNum } from '../lib/dataEdit'
 
 const yen = (n: number) => `¥${Math.round(n).toLocaleString()}`
@@ -492,6 +493,7 @@ export default function DataPage() {
 
     // レジ締め・手動・移行の仕訳: 内容は編集できない。レジ締めは売上タブから直す／削除する
     const isPos = e.source_type === 'pos_close'
+    const linked = isReceivableEntry(e)
     return (
       <EditModal
         title={`${SOURCE_LABEL[e.source_type]}の仕訳: ${e.entry_date}`}
@@ -500,10 +502,12 @@ export default function DataPage() {
         note={
           isPos
             ? 'レジ締めの仕訳は、売上タブのその日の営業から編集・削除してください（金額は営業の内容から自動で作られます）。'
-            : 'この種類の仕訳は内容を編集できません。削除はできます。'
+            : linked
+              ? 'この仕訳は「入金予定」に紐づいています。会計の「入金予定」タブから直す・削除してください。'
+              : 'この種類の仕訳は内容を編集できません。削除はできます。'
         }
         onDelete={
-          isPos
+          isPos || linked
             ? undefined
             : async () => {
                 await deleteJournalEntry(e.id)

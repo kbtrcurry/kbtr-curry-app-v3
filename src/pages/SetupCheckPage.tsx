@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { Carrot, BookOpen, UtensilsCrossed, Receipt, ChevronRight, Settings, ChefHat, Megaphone, FileUp, Database, History } from 'lucide-react'
+import { Carrot, BookOpen, UtensilsCrossed, Receipt, ChevronRight, Settings, ChefHat, Megaphone, FileUp, Database, History, Tags } from 'lucide-react'
 import { supabase, isSupabaseConfigured } from '../lib/supabase'
 import { useAuth } from '../lib/auth'
 import { usePersistedState } from '../lib/persistState'
@@ -16,6 +16,7 @@ type CheckState = { label: string; ok: boolean | null; detail?: string }
 const HUB_LINKS = [
   { to: '/data', label: 'データ（検索・一覧）', icon: Database },
   { to: '/dashboard', label: '営業履歴・編集', icon: History },
+  { to: '/segments', label: '事業区分（追加・編集）', icon: Tags },
   { to: '/ingredients', label: '食材', icon: Carrot },
   { to: '/recipes', label: 'レシピ', icon: BookOpen },
   { to: '/menus', label: 'メニュー', icon: UtensilsCrossed },

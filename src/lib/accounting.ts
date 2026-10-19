@@ -152,7 +152,9 @@ export async function recordPlatformRevenue(params: RecordPlatformRevenueParams)
 // 既存の仕訳をフォームの値に戻す純粋関数（編集モード用）。
 
 export function isEditableEntry(e: JournalEntry): boolean {
-  return (e.source_type === 'expense' || e.source_type === 'platform_revenue') && !!e.source_id
+  // 売掛金(103)を使う仕訳は「入金予定」に紐づくので、ここでは直さない（入金予定の画面から直す）
+  const linkedToReceivable = e.journal_lines.some((l) => l.accounts.code === '103')
+  return (e.source_type === 'expense' || e.source_type === 'platform_revenue') && !!e.source_id && !linkedToReceivable
 }
 
 export function expenseFormFromEntry(e: JournalEntry): {

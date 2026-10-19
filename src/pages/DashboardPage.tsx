@@ -28,6 +28,7 @@ import {
   perServingCost,
 } from '../lib/masterData'
 import { usePersistedState, useStoredState } from '../lib/persistState'
+import { useSegments } from '../lib/accounting'
 import {
   foodCostTone,
   salesPerHourTone,
@@ -62,6 +63,7 @@ export default function DashboardPage() {
   const { data: menuComponents = [] } = useAllMenuComponents()
   const { data: recipes = [] } = useRecipes()
   const { data: allMenus = [] } = useAllMenus()
+  const { data: segments = [] } = useSegments()
   const queryClient = useQueryClient()
   const menuIdByName = useMemo(() => new Map(allMenus.map((m) => [m.name, m.id])), [allMenus])
 
@@ -76,6 +78,8 @@ export default function DashboardPage() {
   // 今月あと何回営業する予定か（着地見込みの計算用。端末ごとに保存）
   const [remainingSessions, setRemainingSessions] = useStoredState<number>('kbtr_v3_remaining_sessions', 0)
   const [editForm, setEditForm] = useState({
+    date: '',
+    segmentId: '',
     rent: '',
     otherCost: '',
     groups: '',
@@ -112,6 +116,8 @@ export default function DashboardPage() {
   const startEdit = (s: ClosedSession) => {
     setEditSessionId(s.id)
     setEditForm({
+      date: s.session_date,
+      segmentId: s.segment_id,
       rent: String(s.rent),
       otherCost: String(s.other_cost),
       groups: String(s.groups),
@@ -126,6 +132,8 @@ export default function DashboardPage() {
     setBusy(true)
     try {
       await updateSalesSession(s.id, {
+        ...(/^\d{4}-\d{2}-\d{2}$/.test(editForm.date) ? { session_date: editForm.date } : {}),
+        ...(editForm.segmentId ? { segment_id: editForm.segmentId } : {}),
         rent: Number(editForm.rent) || 0,
         other_cost: Number(editForm.otherCost) || 0,
         groups: Number(editForm.groups) || 0,
@@ -509,7 +517,31 @@ export default function DashboardPage() {
             <Modal onClose={() => setEditSessionId(null)}>
               <div className="bg-white w-full max-w-lg rounded-2xl p-5 space-y-3 overflow-y-auto max-h-[90svh]">
                 <h2 className="text-lg font-bold text-stone-900">{s.session_date} を編集</h2>
+                <p className="text-xs text-stone-500">日付・事業区分・場所代などを直すと、会計の仕訳も一緒に直ります。</p>
                 <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs text-stone-500 mb-1">営業日</label>
+                    <input
+                      type="date"
+                      value={editForm.date}
+                      onChange={(e) => setEditForm((f) => ({ ...f, date: e.target.value }))}
+                      className="w-full border border-stone-300 rounded-lg px-3 py-2"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs text-stone-500 mb-1">事業区分</label>
+                    <select
+                      value={editForm.segmentId}
+                      onChange={(e) => setEditForm((f) => ({ ...f, segmentId: e.target.value }))}
+                      className="w-full border border-stone-300 rounded-lg px-3 py-2 bg-white"
+                    >
+                      {segments.map((sg) => (
+                        <option key={sg.id} value={sg.id}>
+                          {sg.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
                   <div>
                     <label className="block text-xs text-stone-500 mb-1">場所代</label>
                     <input

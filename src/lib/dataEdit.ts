@@ -46,6 +46,9 @@ export function buildIngredientPatch(orig: Ingredient, f: Record<string, string>
 
 export function buildSessionPatch(orig: ClosedSession, f: Record<string, string>): SessionPatch {
   const patch: SessionPatch = {
+    // 空欄・形式不正のときは送らない（元の値のまま）
+    ...(/^\d{4}-\d{2}-\d{2}$/.test(f.session_date ?? '') ? { session_date: f.session_date } : {}),
+    ...(f.segment_id ? { segment_id: f.segment_id } : {}),
     rent: toNum(f.rent) ?? 0,
     other_cost: toNum(f.other_cost) ?? 0,
     groups: toNum(f.groups) ?? 0,

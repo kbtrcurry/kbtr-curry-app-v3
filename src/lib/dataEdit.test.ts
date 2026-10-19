@@ -79,4 +79,14 @@ describe('buildSessionPatch', () => {
     expect(buildSessionPatch(s, { ...f, labor_hours: '4.5' }).labor_hours).toBe(4.5)
     expect(buildSessionPatch({ labor_hours: 3 } as ClosedSession, f).labor_hours).toBeNull()
   })
+  it('営業日と事業区分を直すと更新内容に入る（会計の仕訳も直すための値）', () => {
+    const p = buildSessionPatch(s, { ...f, session_date: '2026-10-18', segment_id: 'seg-1' })
+    expect(p).toMatchObject({ session_date: '2026-10-18', segment_id: 'seg-1' })
+  })
+  it('営業日が空・形式不正なら送らない（元の日付のまま）。事業区分が空でも同様', () => {
+    const p = buildSessionPatch(s, { ...f, session_date: '2026/10/18', segment_id: '' })
+    expect('session_date' in p).toBe(false)
+    expect('segment_id' in p).toBe(false)
+    expect('session_date' in buildSessionPatch(s, f)).toBe(false)
+  })
 })

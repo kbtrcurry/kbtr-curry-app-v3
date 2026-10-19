@@ -269,6 +269,9 @@ export default function DataPage() {
   const str = (v: number | null | undefined) => (v == null ? '' : String(v))
   const close = () => setEditor(null)
 
+  // 営業の事業区分の選択肢（今の区分が無効になっていても選べるように含める）
+  const segOptionsAll = segments.map((sg) => ({ value: sg.id, label: sg.name }))
+
   const renderEditor = () => {
     if (!editor) return null
 
@@ -360,6 +363,8 @@ export default function DataPage() {
     if (editor.kind === 'session') {
       const s = editor.s
       const fields: Field[] = [
+        { key: 'session_date', label: '営業日', type: 'date', half: true },
+        { key: 'segment_id', label: '事業区分', type: 'select', options: segOptionsAll, half: true },
         { key: 'rent', label: '場所代', type: 'number', half: true },
         { key: 'other_cost', label: 'その他経費', type: 'number', half: true },
         { key: 'groups', label: '組数', type: 'number', half: true },
@@ -373,6 +378,8 @@ export default function DataPage() {
           title={`${s.session_date} の営業を編集`}
           fields={fields}
           initial={{
+            session_date: s.session_date,
+            segment_id: s.segment_id,
             rent: String(s.rent),
             other_cost: String(s.other_cost),
             groups: String(s.groups),
@@ -381,7 +388,7 @@ export default function DataPage() {
             labor_hours: str(s.labor_hours),
             memo: s.memo ?? '',
           }}
-          note="商品ごとの売上の直しは「ダッシュボード」の営業履歴で行います。"
+          note="営業日・場所代などを直すと、会計の仕訳も一緒に直ります。商品ごとの売上の直しは「営業履歴」で行います。"
           onSave={async (v) => {
             await updateSalesSession(s.id, buildSessionPatch(s, v))
             invalidateAnalytics()

@@ -44,10 +44,22 @@ export function useClosedSessions() {
 }
 
 export type SessionPatch = Partial<
-  Pick<ClosedSession, 'groups' | 'people' | 'reserved_people' | 'rent' | 'other_cost' | 'memo' | 'labor_hours'>
+  Pick<
+    ClosedSession,
+    'session_date' | 'segment_id' | 'groups' | 'people' | 'reserved_people' | 'rent' | 'other_cost' | 'memo' | 'labor_hours'
+  >
 >
+
+// 締め済みの営業の項目を直す。DB側で 営業の更新 と 会計の仕訳（日付・事業区分・場所代・その他経費）の作り直し を1回で行う。
+// （以前は営業の値だけが更新され、レジ締めで作られた仕訳が古いまま残っていた）
 export async function updateSalesSession(id: string, patch: SessionPatch): Promise<void> {
-  const { error } = await supabase.from('sales_sessions').update(patch).eq('id', id)
+  const { error } = await supabase.rpc('update_closed_session', { p_session_id: id, p_patch: patch })
+  if (error) throw error
+}
+
+// レシート（売上の明細）を直したあとなど、会計の仕訳を営業の現在の値から作り直す
+export async function resyncSessionJournal(id: string): Promise<void> {
+  const { error } = await supabase.rpc('resync_session_journal', { p_session_id: id })
   if (error) throw error
 }
 
@@ -111,11 +123,16 @@ export async function deleteSessionCascade(sessionId: string): Promise<void> {
 export type EditableLine = { name: string; qty: number; unitPrice: number; menuId: string | null }
 
 // その日の会計内容(レシート・明細)を1件の修正レシートに作り直す。
-// session側の他項目(場所代・組数・メモ等)には触れない。
+// session側の他項目(場所代・組数・メモ等)には触れない。売上が変わるので、最後に会計の仕訳も作り直す。
 export async function replaceSessionLines(
   session: { id: string; people: number },
   lines: EditableLine[],
 ): Promise<void> {
+  await replaceReceipts(session, lines)
+  await resyncSessionJournal(session.id)
+}
+
+async function replaceReceipts(session: { id: string; people: number }, lines: EditableLine[]): Promise<void> {
   const { data: receiptRows, error: rErr } = await supabase
     .from('receipts')
     .select('id')

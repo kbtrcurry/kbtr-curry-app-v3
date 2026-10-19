@@ -29,6 +29,7 @@ import {
 } from '../lib/amazonImport'
 import { uuidV5 } from '../lib/ads'
 import { useStoredState } from '../lib/persistState'
+import AmazonMailTab from './AmazonMailTab'
 
 const yen = (n: number) => `¥${Math.round(n).toLocaleString()}`
 
@@ -47,11 +48,11 @@ async function fetchRegisteredIds(sourceType: 'expense' | 'platform_revenue', id
   return found
 }
 
-type Tab = 'bank' | 'amazon'
+type Tab = 'mail' | 'bank' | 'amazon'
 
 export default function ImportPage() {
   const { session: authSession, loading: authLoading, loginWithGoogle } = useAuth()
-  const [tab, setTab] = useState<Tab>('bank')
+  const [tab, setTab] = useState<Tab>('mail')
 
   if (authLoading) return <Spinner />
   if (!authSession) {
@@ -72,13 +73,14 @@ export default function ImportPage() {
   return (
     <div className="p-4 pb-24 max-w-2xl mx-auto space-y-4">
       <h1 className="text-xl font-bold text-amber-800 flex items-center gap-2">
-        <FileUp className="w-5 h-5" /> CSV取り込み
+        <FileUp className="w-5 h-5" /> 取り込み
       </h1>
-      <div className="flex gap-1.5">
+      <div className="flex gap-1.5 overflow-x-auto">
         {(
           [
-            ['bank', '銀行の入金（収益）'],
-            ['amazon', 'Amazon購入（経費）'],
+            ['mail', 'Amazon（メール）'],
+            ['bank', '銀行CSV（収益）'],
+            ['amazon', 'AmazonCSV（経費）'],
           ] as const
         ).map(([k, label]) => (
           <button
@@ -92,7 +94,7 @@ export default function ImportPage() {
           </button>
         ))}
       </div>
-      {tab === 'bank' ? <BankTab /> : <AmazonTab />}
+      {tab === 'mail' ? <AmazonMailTab /> : tab === 'bank' ? <BankTab /> : <AmazonTab />}
     </div>
   )
 }

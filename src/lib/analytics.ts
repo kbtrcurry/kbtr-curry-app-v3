@@ -15,24 +15,36 @@ export type ClosedSession = {
   rent: number
   other_cost: number
   memo: string
+  labor_hours: number | null // migration 05 適用前は常に null
   segments: { code: string; name: string }
 }
 
+const SESSION_COLS = 'id, session_date, segment_id, groups, people, reserved_people, rent, other_cost, memo'
+
 export async function fetchClosedSessions(): Promise<ClosedSession[]> {
-  const { data, error } = await supabase
-    .from('sales_sessions')
-    .select('id, session_date, segment_id, groups, people, reserved_people, rent, other_cost, memo, segments(code, name)')
-    .eq('status', 'closed')
-    .order('session_date', { ascending: false })
-  if (error) throw error
-  return (data ?? []) as unknown as ClosedSession[]
+  const query = (cols: string) =>
+    supabase
+      .from('sales_sessions')
+      .select(`${cols}, segments(code, name)`)
+      .eq('status', 'closed')
+      .order('session_date', { ascending: false })
+  const withLabor = await query(`${SESSION_COLS}, labor_hours`)
+  if (!withLabor.error) return (withLabor.data ?? []) as unknown as ClosedSession[]
+  // labor_hours 列が未作成(migration 05 未適用)でもダッシュボードを壊さない
+  if (withLabor.error.code !== '42703' && withLabor.error.code !== 'PGRST204') throw withLabor.error
+  const legacy = await query(SESSION_COLS)
+  if (legacy.error) throw legacy.error
+  return ((legacy.data ?? []) as unknown as Omit<ClosedSession, 'labor_hours'>[]).map((s) => ({
+    ...s,
+    labor_hours: null,
+  })) as ClosedSession[]
 }
 export function useClosedSessions() {
   return useQuery({ queryKey: ['analytics', 'sessions'], queryFn: fetchClosedSessions, staleTime: 60_000 })
 }
 
 export type SessionPatch = Partial<
-  Pick<ClosedSession, 'groups' | 'people' | 'reserved_people' | 'rent' | 'other_cost' | 'memo'>
+  Pick<ClosedSession, 'groups' | 'people' | 'reserved_people' | 'rent' | 'other_cost' | 'memo' | 'labor_hours'>
 >
 export async function updateSalesSession(id: string, patch: SessionPatch): Promise<void> {
   const { error } = await supabase.from('sales_sessions').update(patch).eq('id', id)

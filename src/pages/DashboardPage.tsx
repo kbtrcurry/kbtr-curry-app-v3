@@ -28,6 +28,14 @@ import {
   perServingCost,
 } from '../lib/masterData'
 import { usePersistedState } from '../lib/persistState'
+import {
+  foodCostTone,
+  salesPerHourTone,
+  salesPerLaborHour,
+  projectMonthEnd,
+  TONE_TEXT_CLASS,
+  type Tone,
+} from '../lib/kpi'
 
 const yen = (n: number) => `¥${Math.round(n).toLocaleString()}`
 
@@ -65,7 +73,17 @@ export default function DashboardPage() {
   const [busy, setBusy] = useState(false)
   const [confirmDeleteSession, setConfirmDeleteSession] = useState<ClosedSession | null>(null)
   const [editSessionId, setEditSessionId] = useState<string | null>(null)
-  const [editForm, setEditForm] = useState({ rent: '', otherCost: '', groups: '', people: '', reserved: '', memo: '' })
+  // 今月あと何回営業する予定か（着地見込みの計算用。端末ごとに保存）
+  const [remainingSessions, setRemainingSessions] = usePersistedState<number>('kbtr_v3_remaining_sessions', 0)
+  const [editForm, setEditForm] = useState({
+    rent: '',
+    otherCost: '',
+    groups: '',
+    people: '',
+    reserved: '',
+    labor: '',
+    memo: '',
+  })
   const [menuEditId, setMenuEditId] = useState<string | null>(null)
   const [menuEditRows, setMenuEditRows] = useState<{ name: string; qty: string; price: string }[]>([])
 
@@ -99,6 +117,7 @@ export default function DashboardPage() {
       groups: String(s.groups),
       people: String(s.people),
       reserved: String(s.reserved_people),
+      labor: s.labor_hours != null ? String(s.labor_hours) : '',
       memo: s.memo,
     })
   }
@@ -112,6 +131,10 @@ export default function DashboardPage() {
         groups: Number(editForm.groups) || 0,
         people: Number(editForm.people) || 0,
         reserved_people: Number(editForm.reserved) || 0,
+        // 列が無い環境(migration 05 未適用)で空欄のまま保存しても失敗しないよう、入力があるときだけ送る
+        ...(editForm.labor !== '' || s.labor_hours != null
+          ? { labor_hours: editForm.labor === '' ? null : Number(editForm.labor) }
+          : {}),
         memo: editForm.memo,
       })
       await invalidateAnalytics()
@@ -211,6 +234,22 @@ export default function DashboardPage() {
   const pProfit = pSales - pFoodCost - pFee - pOther - pUzura
   const pRate = pSales > 0 ? (pFoodCost / pSales) * 100 : null
   const avgTicket = pPeople > 0 ? pSales / pPeople : null
+  // 人時売上: 労働時間を入力済みの営業だけで集計（未入力の営業は売上も除く）
+  const laborSessions = pSessions.filter((s) => (s.labor_hours ?? 0) > 0)
+  const pLaborHours = laborSessions.reduce((a, s) => a + (s.labor_hours ?? 0), 0)
+  const pPerHour = salesPerLaborHour(
+    laborSessions.reduce((a, s) => a + (salesMap[s.id] ?? 0), 0),
+    pLaborHours,
+  )
+  const rateTone = foodCostTone(pRate)
+  const perHourTone = salesPerHourTone(pPerHour)
+  const projection =
+    sumPeriod === 'month'
+      ? projectMonthEnd(
+          pSessions.map((s) => salesMap[s.id] ?? 0),
+          remainingSessions,
+        )
+      : null
   const totalSales = sessions.reduce((a, s) => a + (salesMap[s.id] ?? 0), 0)
 
   const sortedSessions = [...sessions].sort((a, b) => b.session_date.localeCompare(a.session_date))
@@ -285,9 +324,43 @@ export default function DashboardPage() {
                 </p>
                 <div className="grid grid-cols-3 gap-3 mt-4">
                   <HeroStat label="売上" value={yen(pSales)} />
-                  <HeroStat label="原価率(理論)" value={pRate != null ? `${pRate.toFixed(1)}%` : '—'} accent />
+                  <HeroStat
+                    label="原価率(理論)"
+                    value={pRate != null ? `${pRate.toFixed(1)}%` : '—'}
+                    accent
+                    tone={rateTone}
+                  />
                   <HeroStat label="客単価" value={avgTicket != null ? yen(avgTicket) : '—'} />
                 </div>
+                {pPerHour != null && (
+                  <div className="grid grid-cols-3 gap-3 mt-3">
+                    <HeroStat label="人時売上" value={yen(pPerHour)} tone={perHourTone} />
+                    <HeroStat label="総労働時間" value={`${pLaborHours}h`} />
+                  </div>
+                )}
+                {projection && (
+                  <div className="mt-4 rounded-xl bg-stone-100 px-3 py-2.5">
+                    <p className="text-xs text-stone-500">今月の着地見込み</p>
+                    <p className="text-2xl font-extrabold text-stone-900">{yen(projection.projected)}</p>
+                    <div className="flex items-center gap-2 mt-1 text-xs text-stone-500">
+                      <span>1営業平均 {yen(projection.avgPerSession)} ／ 残り予定</span>
+                      <input
+                        type="number"
+                        inputMode="numeric"
+                        min={0}
+                        value={remainingSessions}
+                        onChange={(e) => setRemainingSessions(Math.max(0, Number(e.target.value) || 0))}
+                        className="w-14 border border-stone-300 rounded-md px-2 py-1 text-stone-800 bg-white"
+                        aria-label="今月の残り営業予定回数"
+                      />
+                      <span>回</span>
+                    </div>
+                  </div>
+                )}
+                <p className="text-xs text-stone-400 mt-3">
+                  原価率の目安: <span className="text-green-700">30%以下</span> /{' '}
+                  <span className="text-amber-600">35%以下</span> / <span className="text-red-600">超過</span>
+                </p>
                 <p className="text-xs text-stone-400 mt-3">累計売上 {yen(totalSales)}</p>
                 <p className="text-xs text-stone-400 mt-1">※実費ベースの実際の利益は「会計」タブのP&amp;Lを参照</p>
               </div>
@@ -487,6 +560,17 @@ export default function DashboardPage() {
                       className="w-full border border-stone-300 rounded-lg px-3 py-2"
                     />
                   </div>
+                  <div>
+                    <label className="block text-xs text-stone-500 mb-1">労働時間(h)</label>
+                    <input
+                      type="number"
+                      inputMode="decimal"
+                      step="0.5"
+                      value={editForm.labor}
+                      onChange={(e) => setEditForm((f) => ({ ...f, labor: e.target.value }))}
+                      className="w-full border border-stone-300 rounded-lg px-3 py-2"
+                    />
+                  </div>
                 </div>
                 <div>
                   <label className="block text-xs text-stone-500 mb-1">メモ</label>
@@ -608,11 +692,22 @@ export default function DashboardPage() {
   )
 }
 
-function HeroStat({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
+function HeroStat({
+  label,
+  value,
+  accent,
+  tone,
+}: {
+  label: string
+  value: string
+  accent?: boolean
+  tone?: Tone | null
+}) {
+  const color = tone ? TONE_TEXT_CLASS[tone] : accent ? 'text-amber-800' : 'text-stone-900'
   return (
     <div>
       <p className="text-xs text-stone-500">{label}</p>
-      <p className={`text-lg font-bold ${accent ? 'text-amber-800' : 'text-stone-900'}`}>{value}</p>
+      <p className={`text-lg font-bold ${color}`}>{value}</p>
     </div>
   )
 }

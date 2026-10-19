@@ -135,3 +135,17 @@ describe('chunk', () => {
     expect(chunk([1, 2, 3, 4, 5], 2)).toEqual([[1, 2], [3, 4], [5]])
   })
 })
+
+describe('card withdrawal', () => {
+  const patterns = ['ミツイスミトモ', 'スミトモカード', '三井住友', 'SMBC']
+  it('半角カナの摘要でもカード会社の引き落としと判定する', async () => {
+    const { isCardWithdrawal, cardSettlementSourceName } = await import('./bankImport')
+    expect(isCardWithdrawal('ﾐﾂｲｽﾐﾄﾓｶｰﾄﾞ', patterns)).toBe(true)
+    expect(isCardWithdrawal('ＳＭＢＣ ｶｰﾄﾞ', patterns)).toBe(true)
+    expect(isCardWithdrawal('家賃', patterns)).toBe(false)
+    expect(isCardWithdrawal('ﾐﾂｲｽﾐﾄﾓｶｰﾄﾞ', [''])).toBe(false)
+    const a = cardSettlementSourceName({ date: '2026-10-27', description: 'x', deposit: 0, withdrawal: 8855, seq: 0 })
+    const b = cardSettlementSourceName({ date: '2026-10-27', description: 'x', deposit: 0, withdrawal: 8855, seq: 1 })
+    expect(a).not.toBe(b)
+  })
+})

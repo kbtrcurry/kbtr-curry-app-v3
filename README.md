@@ -9,7 +9,7 @@
 ## セットアップ（Phase 0）
 
 1. **Supabase プロジェクト作成**: https://supabase.com/dashboard → New project（無料枠でOK、リージョンは Tokyo 推奨）
-2. **スキーマ適用**: ダッシュボード > SQL Editor で `supabase/migrations/` の7ファイルを番号順に実行
+2. **スキーマ適用**: ダッシュボード > SQL Editor で `supabase/migrations/` の8ファイルを番号順に実行
    1. `20260706000001_schema.sql` — テーブル + RLS
    2. `20260706000002_seed.sql` — セグメント・勘定科目の初期データ
    3. `20260706000003_close_session_rpc.sql` — 締め処理 RPC
@@ -17,6 +17,7 @@
    5. `20261019000005_labor_hours.sql` — 人時売上用の労働時間（v3で追加）
    6. `20261019000006_meta_ads.sql` — Meta広告の日次実績（v3で追加。取込は `99_system_tools/import-meta-ads/`）
    7. `20261019000007_amazon_orders.sql` — Amazon注文の候補（Gmailの注文メールから取り込み。`99_system_tools/import-amazon-orders/`）
+   8. `20261019000008_card_payments.sql` — カード払い(未払金)・カード引き落とし・カード利用の候補（`99_system_tools/import-card-charges/`）
 3. **Google ログイン有効化**: Authentication > Providers > Google を ON（v1 の Google Cloud OAuth クライアントを流用可。リダイレクト URI に Supabase の callback URL を追加）
 4. **環境変数**: `.env.example` を `.env` にコピーし、Settings > API の URL / anon key を記入
 5. `npm install && npm run dev` → セットアップ確認画面でログイン・スキーマ疎通を確認

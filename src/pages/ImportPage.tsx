@@ -2,8 +2,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { FileUp, Check } from 'lucide-react'
 import { useAuth } from '../lib/auth'
 import { Spinner } from '../components/Spinner'
-import { supabase } from '../lib/supabase'
-import { chunk, decodeCsvBuffer, parseCsv } from '../lib/csv'
+import { decodeCsvBuffer, parseCsv } from '../lib/csv'
+import { fetchRegisteredIds } from '../lib/registered'
 import {
   useSegments,
   useExpenseAccounts,
@@ -30,29 +30,16 @@ import {
 import { uuidV5 } from '../lib/ads'
 import { useStoredState } from '../lib/persistState'
 import AmazonMailTab from './AmazonMailTab'
+import CardTab from './CardTab'
+import CardSettlementSection from './CardSettlementSection'
 
 const yen = (n: number) => `¥${Math.round(n).toLocaleString()}`
 
-// 取込済みの行（同じ source_id の仕訳が既にある）を調べる。取込済みは再登録しない（編集済みの内容を守る）
-async function fetchRegisteredIds(sourceType: 'expense' | 'platform_revenue', ids: string[]): Promise<Set<string>> {
-  const found = new Set<string>()
-  for (const part of chunk(ids, 100)) {
-    const { data, error } = await supabase
-      .from('journal_entries')
-      .select('source_id')
-      .eq('source_type', sourceType)
-      .in('source_id', part)
-    if (error) throw error
-    for (const r of data ?? []) if (r.source_id) found.add(r.source_id as string)
-  }
-  return found
-}
-
-type Tab = 'mail' | 'bank' | 'amazon'
+type Tab = 'card' | 'mail' | 'bank' | 'amazon'
 
 export default function ImportPage() {
   const { session: authSession, loading: authLoading, loginWithGoogle } = useAuth()
-  const [tab, setTab] = useState<Tab>('mail')
+  const [tab, setTab] = useState<Tab>('card')
 
   if (authLoading) return <Spinner />
   if (!authSession) {
@@ -78,6 +65,7 @@ export default function ImportPage() {
       <div className="flex gap-1.5 overflow-x-auto">
         {(
           [
+            ['card', 'カード（メール）'],
             ['mail', 'Amazon（メール）'],
             ['bank', '銀行CSV（収益）'],
             ['amazon', 'AmazonCSV（経費）'],
@@ -94,7 +82,7 @@ export default function ImportPage() {
           </button>
         ))}
       </div>
-      {tab === 'mail' ? <AmazonMailTab /> : tab === 'bank' ? <BankTab /> : <AmazonTab />}
+      {tab === 'card' ? <CardTab /> : tab === 'mail' ? <AmazonMailTab /> : tab === 'bank' ? <BankTab /> : <AmazonTab />}
     </div>
   )
 }
@@ -383,6 +371,8 @@ function BankTab() {
         </section>
       )}
 
+      {cols && <CardSettlementSection txns={txns} />}
+
       {message && <div className="bg-stone-100 text-stone-700 rounded-lg px-3 py-2 text-sm break-words">{message}</div>}
 
       <details className="bg-white border border-stone-200 rounded-xl px-3 py-2">
@@ -507,7 +497,7 @@ function AmazonTab() {
           segmentId: seg.id,
           accountId: acctId,
           amount,
-          paymentMethod: 'bank',
+          paymentMethod: 'card',
           memo: `Amazon: ${it.title}${it.orderId ? `（${it.orderId}）` : ''}${sharePct < 100 ? ` 事業${sharePct}%` : ''}`.slice(0, 200),
         })
         ok++
@@ -626,7 +616,7 @@ function AmazonTab() {
             {busy ? '登録中…' : `${selected.length}件（${yen(selectedTotal)}）を経費に登録`}
           </button>
           <p className="text-xs text-stone-400">
-            日付は注文日、支払は口座扱いで登録します。登録済みの商品は再登録されません（金額の直しは会計タブの鉛筆から）。
+            日付は注文日、支払はカード払い（未払金）で登録します。登録済みの商品は再登録されません（金額の直しは会計タブの鉛筆から）。
           </p>
         </section>
       )}

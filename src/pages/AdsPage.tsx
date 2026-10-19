@@ -1,17 +1,9 @@
-import { useEffect, useMemo, useState } from 'react'
-import { Megaphone, Check, AlertTriangle } from 'lucide-react'
+import { useMemo, useState } from 'react'
+import { Megaphone } from 'lucide-react'
 import { useAuth } from '../lib/auth'
 import { Spinner } from '../components/Spinner'
 import { useClosedSessions, useReceiptLines, salesBySession } from '../lib/analytics'
-import {
-  useSegments,
-  useExpenseAccounts,
-  useJournalEntries,
-  useInvalidateJournal,
-  recordExpense,
-  entryTotal,
-  todayStr,
-} from '../lib/accounting'
+import { todayStr } from '../lib/accounting'
 import {
   useMetaAds,
   summarize,
@@ -19,13 +11,8 @@ import {
   groupAds,
   changePercent,
   comparePeriods,
-  monthlySpend,
-  bookingDate,
-  metaMonthExpenseId,
-  addDays,
   type PeriodPreset,
   type AdSummary,
-  type MetaAdRow,
 } from '../lib/ads'
 
 const yen = (n: number) => `¥${Math.round(n).toLocaleString()}`
@@ -235,7 +222,9 @@ export default function AdsPage() {
             </div>
           </section>
 
-          <BookingSection ads={ads} />
+          <p className="text-xs text-stone-400">
+            広告費の経費は、実際のカード請求（三井住友カードの「FACEBK」の利用）から計上します。「取り込み」画面の「カード」タブで確認して登録してください。
+          </p>
         </>
       )}
     </div>
@@ -265,110 +254,5 @@ function MetricRow({
         {change != null ? `${change > 0 ? '+' : ''}${change.toFixed(0)}%` : '—'}
       </span>
     </>
-  )
-}
-
-// 月ごとの広告費を会計の経費（広告宣伝費）に計上する。再計上すると同じ月の仕訳が作り直される。
-function BookingSection({ ads }: { ads: MetaAdRow[] }) {
-  const months = useMemo(() => monthlySpend(ads).slice(0, 6), [ads])
-  const oldest = months.length > 0 ? months[months.length - 1].yearMonth : null
-  const range = useMemo(
-    () => ({ from: oldest ? `${oldest}-01` : todayStr(), to: addDays(todayStr(), 1) }),
-    [oldest],
-  )
-  const { data: entries = [] } = useJournalEntries(range)
-  const { data: segments = [] } = useSegments()
-  const { data: accounts = [] } = useExpenseAccounts()
-  const invalidate = useInvalidateJournal()
-  const [busyMonth, setBusyMonth] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
-  const [ids, setIds] = useState<Record<string, string>>({})
-
-  // 月ごとの決定的なIDを用意（SHA-1 が非同期なので、月の一覧が変わったときに解決し直す）
-  useEffect(() => {
-    let cancelled = false
-    void Promise.all(months.map(async (m) => [m.yearMonth, await metaMonthExpenseId(m.yearMonth)] as const)).then(
-      (pairs) => {
-        if (!cancelled) setIds(Object.fromEntries(pairs))
-      },
-    )
-    return () => {
-      cancelled = true
-    }
-  }, [months])
-
-  const adAccount = accounts.find((a) => a.code === '515')
-  const segment = segments.find((s) => s.code === 'common') ?? segments[0]
-
-  const book = async (yearMonth: string, spend: number) => {
-    const id = ids[yearMonth]
-    if (!id || !adAccount || !segment || spend <= 0) return
-    setBusyMonth(yearMonth)
-    setError(null)
-    try {
-      await recordExpense({
-        id,
-        entryDate: bookingDate(yearMonth, todayStr()),
-        segmentId: segment.id,
-        accountId: adAccount.id,
-        amount: Math.round(spend),
-        paymentMethod: 'bank',
-        memo: `Meta広告 ${yearMonth}分（自動計上）`,
-      })
-      invalidate()
-    } catch (e) {
-      setError(e instanceof Error ? e.message : '計上に失敗しました')
-    } finally {
-      setBusyMonth(null)
-    }
-  }
-
-  return (
-    <section>
-      <h2 className="text-sm font-bold text-stone-700 mb-1">広告費を会計に計上</h2>
-      <p className="text-xs text-stone-400 mb-2">
-        月ごとの広告費を「広告宣伝費」の経費として登録します（支払は口座扱い）。何度押しても同じ月は1件のままで、金額が変わっていれば作り直されます。カード明細の請求額とは月次で照合してください。
-      </p>
-      {error && <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg px-3 py-2 text-sm mb-2">{error}</div>}
-      {!adAccount && <p className="text-xs text-amber-700 mb-2">勘定科目「広告宣伝費(515)」が見つかりません。</p>}
-      <div className="space-y-2">
-        {months.map((m) => {
-          const id = ids[m.yearMonth]
-          const booked = id ? entries.find((e) => e.source_type === 'expense' && e.source_id === id) : undefined
-          const bookedAmount = booked ? entryTotal(booked, 'debit') : null
-          const inSync = bookedAmount != null && bookedAmount === Math.round(m.spend)
-          return (
-            <div key={m.yearMonth} className="bg-white border border-stone-200 rounded-xl px-3 py-2 flex items-center gap-2">
-              <div className="min-w-0 flex-1">
-                <p className="text-sm font-semibold text-stone-800">{m.yearMonth}</p>
-                <p className="text-xs flex items-center gap-1">
-                  {booked ? (
-                    inSync ? (
-                      <span className="text-green-700 flex items-center gap-1">
-                        <Check className="w-3 h-3" />計上済み
-                      </span>
-                    ) : (
-                      <span className="text-amber-700 flex items-center gap-1">
-                        <AlertTriangle className="w-3 h-3" />計上済み {yen(bookedAmount ?? 0)}（差あり）
-                      </span>
-                    )
-                  ) : (
-                    <span className="text-stone-400">未計上</span>
-                  )}
-                </p>
-              </div>
-              <span className="font-bold text-stone-900 shrink-0">{yen(m.spend)}</span>
-              <button
-                onClick={() => void book(m.yearMonth, m.spend)}
-                disabled={busyMonth !== null || !id || !adAccount || inSync}
-                className="shrink-0 px-3 py-1.5 rounded-lg bg-amber-700 text-[#faf9f5] text-xs font-bold disabled:opacity-40"
-              >
-                {busyMonth === m.yearMonth ? '…' : booked ? '更新' : '計上'}
-              </button>
-            </div>
-          )
-        })}
-      </div>
-    </section>
   )
 }

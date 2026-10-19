@@ -64,7 +64,7 @@ export default function AmazonMailTab() {
           segmentId: seg.id,
           accountId: acctId,
           amount,
-          paymentMethod: 'bank',
+          paymentMethod: 'card',
           memo: `Amazon: ${o.title}${o.quantity > 1 ? ` ×${o.quantity}` : ''}（${o.order_id}）${sharePct < 100 ? ` 事業${sharePct}%` : ''}`.slice(0, 200),
         })
         done.push(o.id)
@@ -192,7 +192,7 @@ export default function AmazonMailTab() {
             </button>
           </div>
           <p className="text-xs text-stone-400">
-            金額はメールの支払額（割引・送料込み）です。「合計0円」と表示されていた注文は商品金額のままなので、カード明細と照らして確認してください。日付は注文日、支払は口座扱いで登録します。
+            金額はメールの支払額（割引・送料込み）です。「合計0円」と表示されていた注文は商品金額のままなので、カード明細と照らして確認してください。日付は注文日、支払はカード払い（未払金）で登録します。カードの引き落としは銀行CSVの取り込みで精算します。
           </p>
         </section>
       )}

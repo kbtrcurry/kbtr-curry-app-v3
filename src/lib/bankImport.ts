@@ -83,3 +83,20 @@ export function classifyDeposit(description: string, rules: BankRule[]): BankRul
 export function bankSourceName(t: BankTxn): string {
   return `bank-deposit:${t.date}:${t.deposit}:${t.description}:${t.seq}`
 }
+
+// ---------- クレジットカードの引き落とし ----------
+// 銀行の出金のうち、カード会社への引き落としは 未払金 / 普通預金 で精算する（カード払いの経費は未払金に計上している）。
+// 摘要は半角カナ(ﾐﾂｲｽﾐﾄﾓｶｰﾄﾞ など)のことが多いので、NFKC で揃えてから部分一致する。
+export const DEFAULT_CARD_WITHDRAWAL_PATTERNS = ['ミツイスミトモ', 'スミトモカード', '三井住友', 'SMBC']
+
+export function isCardWithdrawal(description: string, patterns: string[]): boolean {
+  const d = normalize(description).toUpperCase()
+  return patterns.some((p) => {
+    const q = normalize(p).toUpperCase()
+    return q !== '' && d.includes(q)
+  })
+}
+
+export function cardSettlementSourceName(t: BankTxn): string {
+  return `card-settlement:${t.date}:${t.withdrawal}:${t.description}:${t.seq}`
+}

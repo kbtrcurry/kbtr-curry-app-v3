@@ -417,6 +417,7 @@ export default function DataPage() {
           options: [
             { value: 'cash', label: '現金' },
             { value: 'bank', label: '口座' },
+            { value: 'card', label: 'カード（未払金）' },
           ],
           half: true,
         },
@@ -436,7 +437,7 @@ export default function DataPage() {
               segmentId: v.segmentId,
               accountId: v.accountId,
               amount,
-              paymentMethod: v.paymentMethod === 'bank' ? 'bank' : 'cash',
+              paymentMethod: v.paymentMethod === 'bank' ? 'bank' : v.paymentMethod === 'card' ? 'card' : 'cash',
               memo: v.memo,
             })
             invalidateJournal()

@@ -95,13 +95,15 @@ export function entryTotal(entry: JournalEntry, side: 'debit' | 'credit'): numbe
 
 // ---------- 経費入力 ----------
 
+export type PaymentMethod = 'cash' | 'bank' | 'card'
+
 export type RecordExpenseParams = {
   id?: string // 訂正時は既存の仕訳のsource_idを渡す
   entryDate: string
   segmentId: string
   accountId: string
   amount: number
-  paymentMethod: 'cash' | 'bank'
+  paymentMethod: PaymentMethod // card = クレジットカード払い（貸方は未払金。引き落としで精算する）
   memo?: string
 }
 
@@ -158,7 +160,7 @@ export function expenseFormFromEntry(e: JournalEntry): {
   segmentId: string
   accountId: string
   amount: number
-  paymentMethod: 'cash' | 'bank'
+  paymentMethod: PaymentMethod
   memo: string
 } {
   const debit = e.journal_lines.find((l) => l.side === 'debit')
@@ -168,7 +170,7 @@ export function expenseFormFromEntry(e: JournalEntry): {
     segmentId: e.segment_id,
     accountId: debit?.account_id ?? '',
     amount: entryTotal(e, 'debit'),
-    paymentMethod: credit?.accounts.code === '102' ? 'bank' : 'cash',
+    paymentMethod: credit?.accounts.code === '102' ? 'bank' : credit?.accounts.code === '292' ? 'card' : 'cash',
     memo: e.description,
   }
 }
@@ -190,6 +192,20 @@ export function revenueFormFromEntry(e: JournalEntry): {
     fee,
     memo: e.description,
   }
+}
+
+// ---------- カード引き落とし ----------
+// カード払いの経費は未払金に計上されるので、引き落とし日に 未払金 / 普通預金 で精算する。
+// 同じ id で再実行すると作り直す（二重にならない）。
+
+export async function recordCardSettlement(params: { id: string; entryDate: string; amount: number; memo?: string }): Promise<void> {
+  const { error } = await supabase.rpc('record_card_settlement', {
+    p_id: params.id,
+    p_entry_date: params.entryDate,
+    p_amount: params.amount,
+    p_memo: params.memo ?? '',
+  })
+  if (error) throw error
 }
 
 // ---------- 削除 ----------

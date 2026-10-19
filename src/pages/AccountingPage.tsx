@@ -21,6 +21,7 @@ import {
   monthRange,
   todayStr,
   type JournalEntry,
+  type PaymentMethod,
 } from '../lib/accounting'
 
 type Tab = 'expense' | 'revenue' | 'ledger' | 'pnl'
@@ -185,7 +186,7 @@ function ExpenseTab({
   const [segmentId, setSegmentId] = useState('')
   const [accountId, setAccountId] = useState('')
   const [amount, setAmount] = useState('')
-  const [paymentMethod, setPaymentMethod] = useState<'cash' | 'bank'>('cash')
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash')
   const [memo, setMemo] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -340,6 +341,14 @@ function ExpenseTab({
                 }`}
               >
                 口座
+              </button>
+              <button
+                onClick={() => setPaymentMethod('card')}
+                className={`flex-1 py-2 text-sm font-semibold ${
+                  paymentMethod === 'card' ? 'bg-amber-700 text-[#faf9f5]' : 'bg-white text-stone-600'
+                }`}
+              >
+                カード
               </button>
             </div>
           </div>

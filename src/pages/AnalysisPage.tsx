@@ -18,13 +18,19 @@ import {
 } from '../lib/analysis'
 import { sessionStats, summarizeSessions, weekdayStats, segmentSessionStats } from '../lib/sessionStats'
 import { usePersistedState } from '../lib/persistState'
+import { menuStats, adDaily, adEffect } from '../lib/menuStats'
+import { useMetaAds } from '../lib/ads'
 import PnlTab from './analysis/PnlTab'
+import MenusTab from './analysis/MenusTab'
+import AdsTab from './analysis/AdsTab'
 import SessionsTab from './analysis/SessionsTab'
 
-type AnalysisTab = 'pnl' | 'sessions'
+type AnalysisTab = 'pnl' | 'sessions' | 'menus' | 'ads'
 const TABS: { key: AnalysisTab; label: string }[] = [
   { key: 'pnl', label: '損益' },
   { key: 'sessions', label: '営業' },
+  { key: 'menus', label: 'メニュー' },
+  { key: 'ads', label: '広告' },
 ]
 
 // 分析: 営業の合間にスマホで見る前提。月の切替 + 要点カードの縦スクロール。
@@ -35,6 +41,7 @@ export default function AnalysisPage() {
   const [choice, setChoice] = useStoredState<FoodChoice>('kbtr_v3_food_basis', 'auto')
   const [tab, setTab] = usePersistedState<AnalysisTab>('kbtr_v3_analysis_tab', 'pnl')
   const data = useAnalysisData(month)
+  const metaAds = useMetaAds()
 
   const view = useMemo(() => {
     const prev = shiftMonth(month, -1)
@@ -43,7 +50,19 @@ export default function AnalysisPage() {
     const all = sessionStats(data.sessions, data.salesMap, data.foodBySession, data.reservedCostPerServing)
     const inMonth = all.filter((x) => x.date.startsWith(month))
     const prevStats = all.filter((x) => x.date.startsWith(prev))
+    const sum = (st: typeof inMonth) => st.reduce((a, x) => a + x.sales, 0)
+    const ppl = (st: typeof inMonth) => st.reduce((a, x) => a + x.people, 0)
+    const ads = metaAds.data ?? []
+    const spendOf = (m: string) => ads.filter((x) => x.date.startsWith(m)).reduce((a, x) => a + x.spend, 0)
     return {
+      menus: menuStats(data.lines, new Set(inMonth.map((x) => x.id)), data.costByMenuId),
+      ads: {
+        metaSpend: spendOf(month),
+        booked: pnl.adSpend,
+        effect: adEffect(spendOf(month), sum(inMonth), ppl(inMonth)),
+        prevEffect: ads.some((x) => x.date.startsWith(prev)) ? adEffect(spendOf(prev), sum(prevStats), ppl(prevStats)) : null,
+        days: adDaily(ads, all.map((x) => ({ date: x.date, sales: x.sales })), month),
+      },
       sessions: {
         stats: inMonth,
         prevSummary: prevStats.length > 0 ? summarizeSessions(prevStats) : null,
@@ -56,7 +75,7 @@ export default function AnalysisPage() {
       prevFood: foodCostView(prevPnl, data.theoreticalByMonth.get(prev) ?? 0, choice),
       series: monthlyProfitSeries(data.entries, lastMonths(month, 6), data.theoreticalByMonth, choice),
     }
-  }, [data.entries, data.theoreticalByMonth, data.sessions, data.salesMap, data.foodBySession, data.reservedCostPerServing, month, choice])
+  }, [data.entries, data.theoreticalByMonth, data.sessions, data.salesMap, data.foodBySession, data.reservedCostPerServing, data.lines, data.costByMenuId, metaAds.data, month, choice])
 
   if (authLoading) return <Spinner />
   if (!authSession) {
@@ -124,6 +143,8 @@ export default function AnalysisPage() {
         <PnlTab month={month} choice={choice} onChoice={setChoice} pnl={view.pnl} prevPnl={view.prevPnl} food={view.food} prevFood={view.prevFood} series={view.series} />
       )}
       {!data.loading && tab === 'sessions' && <SessionsTab {...view.sessions} />}
+      {!data.loading && tab === 'menus' && <MenusTab menus={view.menus} />}
+      {!data.loading && tab === 'ads' && <AdsTab {...view.ads} />}
 
       {tab === 'pnl' && (
         <Link

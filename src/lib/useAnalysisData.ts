@@ -7,9 +7,13 @@ import {
   useAllMenuComponents,
   groupRecipeIngredientsByRecipe,
   menuCost,
+  perServingCost,
+  useRecipes,
   type MenuComponentRow,
 } from './masterData'
 import { shiftMonth, theoreticalFoodCostByMonth } from './analysis'
+import { theoreticalFoodCostBySession } from './sessionStats'
+import { usePersistedState } from './persistState'
 
 // 選択中の月から過去 months か月分の仕訳を取る（推移グラフ用）
 export function useAnalysisData(month: string, months = 6) {
@@ -22,6 +26,9 @@ export function useAnalysisData(month: string, months = 6) {
   const lines = useReceiptLines()
   const recipeItems = useAllRecipeIngredients()
   const components = useAllMenuComponents()
+  const recipes = useRecipes()
+  // 取り置き特典に使うレシピ（設定タブで選ぶ。ダッシュボードと同じキー）
+  const [toriokiRecipeId] = usePersistedState('kbtr_v3_torioki_recipe', '')
 
   // メニューID → 1食あたりの原価（税込・理論値）。ダッシュボードと同じ計算
   const costByMenuId = useMemo(() => {
@@ -32,6 +39,19 @@ export function useAnalysisData(month: string, months = 6) {
     for (const [menuId, comps] of Object.entries(byMenu)) map[menuId] = menuCost(comps, byRecipe)
     return map
   }, [recipeItems.data, components.data])
+
+  const foodBySession = useMemo(
+    () => theoreticalFoodCostBySession(lines.data ?? [], costByMenuId),
+    [lines.data, costByMenuId],
+  )
+
+  // 取り置き特典1食あたりの原価（レシピ未選択なら0）
+  const reservedCostPerServing = useMemo(() => {
+    const r = (recipes.data ?? []).find((x) => x.id === toriokiRecipeId)
+    if (!r) return 0
+    const byRecipe = groupRecipeIngredientsByRecipe(recipeItems.data ?? [])
+    return perServingCost(r, byRecipe[r.id] ?? [])
+  }, [recipes.data, recipeItems.data, toriokiRecipeId])
 
   const salesMap = useMemo(() => salesBySession(lines.data ?? []), [lines.data])
   const theoreticalByMonth = useMemo(
@@ -46,6 +66,8 @@ export function useAnalysisData(month: string, months = 6) {
     salesMap,
     costByMenuId,
     theoreticalByMonth,
+    foodBySession,
+    reservedCostPerServing,
     loading: journal.isLoading || sessions.isLoading || lines.isLoading,
     error: (journal.error ?? sessions.error ?? lines.error) as Error | null,
   }

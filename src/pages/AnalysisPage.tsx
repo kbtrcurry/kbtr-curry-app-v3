@@ -16,7 +16,16 @@ import {
   shiftMonth,
   type FoodChoice,
 } from '../lib/analysis'
+import { sessionStats, summarizeSessions, weekdayStats, segmentSessionStats } from '../lib/sessionStats'
+import { usePersistedState } from '../lib/persistState'
 import PnlTab from './analysis/PnlTab'
+import SessionsTab from './analysis/SessionsTab'
+
+type AnalysisTab = 'pnl' | 'sessions'
+const TABS: { key: AnalysisTab; label: string }[] = [
+  { key: 'pnl', label: '損益' },
+  { key: 'sessions', label: '営業' },
+]
 
 // 分析: 営業の合間にスマホで見る前提。月の切替 + 要点カードの縦スクロール。
 export default function AnalysisPage() {
@@ -24,20 +33,30 @@ export default function AnalysisPage() {
   const thisMonth = currentYearMonth()
   const [month, setMonth] = useStoredState('kbtr_v3_analysis_month', thisMonth)
   const [choice, setChoice] = useStoredState<FoodChoice>('kbtr_v3_food_basis', 'auto')
+  const [tab, setTab] = usePersistedState<AnalysisTab>('kbtr_v3_analysis_tab', 'pnl')
   const data = useAnalysisData(month)
 
   const view = useMemo(() => {
     const prev = shiftMonth(month, -1)
     const pnl = pnlFromEntries(entriesOfMonth(data.entries, month))
     const prevPnl = pnlFromEntries(entriesOfMonth(data.entries, prev))
+    const all = sessionStats(data.sessions, data.salesMap, data.foodBySession, data.reservedCostPerServing)
+    const inMonth = all.filter((x) => x.date.startsWith(month))
+    const prevStats = all.filter((x) => x.date.startsWith(prev))
     return {
+      sessions: {
+        stats: inMonth,
+        prevSummary: prevStats.length > 0 ? summarizeSessions(prevStats) : null,
+        weekday: weekdayStats(inMonth),
+        segments: segmentSessionStats(inMonth),
+      },
       pnl,
       prevPnl,
       food: foodCostView(pnl, data.theoreticalByMonth.get(month) ?? 0, choice),
       prevFood: foodCostView(prevPnl, data.theoreticalByMonth.get(prev) ?? 0, choice),
       series: monthlyProfitSeries(data.entries, lastMonths(month, 6), data.theoreticalByMonth, choice),
     }
-  }, [data.entries, data.theoreticalByMonth, month, choice])
+  }, [data.entries, data.theoreticalByMonth, data.sessions, data.salesMap, data.foodBySession, data.reservedCostPerServing, month, choice])
 
   if (authLoading) return <Spinner />
   if (!authSession) {
@@ -85,14 +104,35 @@ export default function AnalysisPage() {
       {data.loading && <Spinner />}
       {data.error && <p className="text-sm text-red-600">読み込みに失敗しました: {data.error.message}</p>}
 
-      {!data.loading && <PnlTab month={month} choice={choice} onChoice={setChoice} {...view} />}
+      <div className="flex gap-1.5" role="tablist">
+        {TABS.map((t) => (
+          <button
+            key={t.key}
+            role="tab"
+            aria-selected={tab === t.key}
+            onClick={() => setTab(t.key)}
+            className={`flex-1 py-2 rounded-full text-sm font-semibold ${
+              tab === t.key ? 'bg-amber-700 text-[#faf9f5]' : 'bg-stone-100 text-stone-600'
+            }`}
+          >
+            {t.label}
+          </button>
+        ))}
+      </div>
 
-      <Link
-        to="/dashboard"
-        className="flex items-center justify-center gap-1.5 py-3 rounded-xl border border-stone-300 text-sm text-stone-600 font-semibold bg-white"
-      >
-        <History className="w-4 h-4" /> 営業履歴を見る・直す
-      </Link>
+      {!data.loading && tab === 'pnl' && (
+        <PnlTab month={month} choice={choice} onChoice={setChoice} pnl={view.pnl} prevPnl={view.prevPnl} food={view.food} prevFood={view.prevFood} series={view.series} />
+      )}
+      {!data.loading && tab === 'sessions' && <SessionsTab {...view.sessions} />}
+
+      {tab === 'pnl' && (
+        <Link
+          to="/dashboard"
+          className="flex items-center justify-center gap-1.5 py-3 rounded-xl border border-stone-300 text-sm text-stone-600 font-semibold bg-white"
+        >
+          <History className="w-4 h-4" /> 営業履歴を見る・直す
+        </Link>
+      )}
     </div>
   )
 }

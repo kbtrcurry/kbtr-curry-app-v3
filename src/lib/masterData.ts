@@ -88,9 +88,62 @@ export async function fetchIngredientPurchases(ingredientId: string): Promise<In
     .select('id, ingredient_id, purchased_on, quantity, total_price, memo')
     .eq('ingredient_id', ingredientId)
     .order('purchased_on', { ascending: false })
-    .limit(10)
+    .limit(50)
   if (error) throw error
   return data ?? []
+}
+
+// 仕入れ履歴の最新（数量あり）から単価(円/g)を再計算して食材に反映する。
+// 数量つきの履歴が1件も残っていなければ単価は触らない。
+async function syncUnitPriceFromLatestPurchase(ingredientId: string): Promise<void> {
+  const { data, error } = await supabase
+    .from('ingredient_purchases')
+    .select('quantity, total_price')
+    .eq('ingredient_id', ingredientId)
+    .gt('quantity', 0)
+    .order('purchased_on', { ascending: false })
+    .order('created_at', { ascending: false })
+    .limit(1)
+  if (error) throw error
+  const latest = data?.[0]
+  if (!latest || !latest.quantity) return
+  const perG = Math.round((latest.total_price / latest.quantity) * 10000) / 10000
+  await updateIngredient(ingredientId, { unit_price_per_g: perG })
+}
+
+export type PurchasePatch = { purchased_on: string; quantity: number | null; total_price: number }
+export async function updateIngredientPurchase(id: string, ingredientId: string, patch: PurchasePatch): Promise<void> {
+  const { error } = await supabase.from('ingredient_purchases').update(patch).eq('id', id)
+  if (error) throw error
+  await syncUnitPriceFromLatestPurchase(ingredientId)
+}
+
+export async function deleteIngredientPurchase(id: string, ingredientId: string): Promise<void> {
+  const { error } = await supabase.from('ingredient_purchases').delete().eq('id', id)
+  if (error) throw error
+  await syncUnitPriceFromLatestPurchase(ingredientId)
+}
+
+// 食材の削除。レシピで使用中なら削除せず、使っているレシピ名を示してエラーにする。
+// 仕入れ履歴(ingredient_purchases)は食材と一緒に削除する。
+export async function deleteIngredient(id: string): Promise<void> {
+  const { data: used, error: usedErr } = await supabase
+    .from('recipe_ingredients')
+    .select('recipes(name)')
+    .eq('ingredient_id', id)
+  if (usedErr) throw usedErr
+  if (used && used.length > 0) {
+    const names = [
+      ...new Set(
+        (used as unknown as { recipes: { name: string } | null }[]).map((r) => r.recipes?.name).filter(Boolean),
+      ),
+    ]
+    throw new Error(`レシピで使用中のため削除できません: ${names.slice(0, 5).join('、')}${names.length > 5 ? ' ほか' : ''}`)
+  }
+  const { error: pErr } = await supabase.from('ingredient_purchases').delete().eq('ingredient_id', id)
+  if (pErr) throw pErr
+  const { error } = await supabase.from('ingredients').delete().eq('id', id)
+  if (error) throw error
 }
 
 export type RecordPurchaseParams = {

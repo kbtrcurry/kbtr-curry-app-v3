@@ -9,10 +9,12 @@
 ## セットアップ（Phase 0）
 
 1. **Supabase プロジェクト作成**: https://supabase.com/dashboard → New project（無料枠でOK、リージョンは Tokyo 推奨）
-2. **スキーマ適用**: ダッシュボード > SQL Editor で `supabase/migrations/` の3ファイルを番号順に実行
+2. **スキーマ適用**: ダッシュボード > SQL Editor で `supabase/migrations/` の5ファイルを番号順に実行
    1. `20260706000001_schema.sql` — テーブル + RLS
    2. `20260706000002_seed.sql` — セグメント・勘定科目の初期データ
    3. `20260706000003_close_session_rpc.sql` — 締め処理 RPC
+   4. `20260706000004_accounting_rpc.sql` — 経費・収入登録・仕訳削除 RPC（会計タブに必須）
+   5. `20261019000005_labor_hours.sql` — 人時売上用の労働時間（v3で追加）
 3. **Google ログイン有効化**: Authentication > Providers > Google を ON（v1 の Google Cloud OAuth クライアントを流用可。リダイレクト URI に Supabase の callback URL を追加）
 4. **環境変数**: `.env.example` を `.env` にコピーし、Settings > API の URL / anon key を記入
 5. `npm install && npm run dev` → セットアップ確認画面でログイン・スキーマ疎通を確認

@@ -1,8 +1,9 @@
 import { useState } from 'react'
-import { Carrot, AlertTriangle, Check, Package } from 'lucide-react'
+import { Carrot, AlertTriangle, Check, Package, Pencil, Trash2 } from 'lucide-react'
 import { useAuth } from '../lib/auth'
 import { useRegisterBack } from '../lib/backHandler'
 import { Spinner } from '../components/Spinner'
+import { ConfirmModal } from '../components/ConfirmModal'
 import {
   useIngredients,
   useInvalidateMasterData,
@@ -12,6 +13,9 @@ import {
   updateIngredient,
   recordIngredientPurchase,
   fetchIngredientPurchases,
+  updateIngredientPurchase,
+  deleteIngredientPurchase,
+  deleteIngredient,
   type Ingredient,
   type IngredientPurchase,
 } from '../lib/masterData'
@@ -53,6 +57,10 @@ export default function IngredientsPage() {
   const [purchaseId, setPurchaseId] = useState<string | null>(null)
   const [purchaseForm, setPurchaseForm] = useState({ date: todayStr(), quantity: '', totalPrice: '' })
   const [purchaseHistory, setPurchaseHistory] = useState<Record<string, IngredientPurchase[]>>({})
+  const [editingPurchaseId, setEditingPurchaseId] = useState<string | null>(null)
+  const [confirmDelete, setConfirmDelete] = useState<
+    { kind: 'purchase'; purchase: IngredientPurchase } | { kind: 'ingredient'; ing: Ingredient } | null
+  >(null)
 
   useRegisterBack(() => {
     if (adding) {
@@ -137,6 +145,7 @@ export default function IngredientsPage() {
       return
     }
     setPurchaseId(ing.id)
+    setEditingPurchaseId(null)
     setPurchaseForm({ date: todayStr(), quantity: '', totalPrice: '' })
     if (!purchaseHistory[ing.id]) {
       const hist = await fetchIngredientPurchases(ing.id)
@@ -149,18 +158,58 @@ export default function IngredientsPage() {
     if (!purchaseForm.date || !totalPrice || totalPrice <= 0) return
     setError(null)
     try {
-      await recordIngredientPurchase({
-        ingredientId: ing.id,
-        purchasedOn: purchaseForm.date,
-        quantity: num(purchaseForm.quantity),
-        totalPrice,
-      })
+      if (editingPurchaseId) {
+        await updateIngredientPurchase(editingPurchaseId, ing.id, {
+          purchased_on: purchaseForm.date,
+          quantity: num(purchaseForm.quantity),
+          total_price: totalPrice,
+        })
+      } else {
+        await recordIngredientPurchase({
+          ingredientId: ing.id,
+          purchasedOn: purchaseForm.date,
+          quantity: num(purchaseForm.quantity),
+          totalPrice,
+        })
+      }
       invalidate()
       const hist = await fetchIngredientPurchases(ing.id)
       setPurchaseHistory((p) => ({ ...p, [ing.id]: hist }))
+      setEditingPurchaseId(null)
       setPurchaseForm({ date: todayStr(), quantity: '', totalPrice: '' })
     } catch (e) {
       setError(e instanceof Error ? e.message : '仕入れ記録に失敗しました')
+    }
+  }
+
+  const startEditPurchase = (h: IngredientPurchase) => {
+    setEditingPurchaseId(h.id)
+    setPurchaseForm({
+      date: h.purchased_on,
+      quantity: h.quantity != null ? String(h.quantity) : '',
+      totalPrice: String(h.total_price),
+    })
+  }
+
+  const runDelete = async () => {
+    const target = confirmDelete
+    if (!target) return
+    setConfirmDelete(null)
+    setError(null)
+    try {
+      if (target.kind === 'purchase') {
+        const ingId = target.purchase.ingredient_id
+        await deleteIngredientPurchase(target.purchase.id, ingId)
+        const hist = await fetchIngredientPurchases(ingId)
+        setPurchaseHistory((p) => ({ ...p, [ingId]: hist }))
+        if (editingPurchaseId === target.purchase.id) setEditingPurchaseId(null)
+      } else {
+        await deleteIngredient(target.ing.id)
+        setPurchaseId(null)
+      }
+      invalidate()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '削除に失敗しました')
     }
   }
 
@@ -457,24 +506,61 @@ export default function IngredientsPage() {
                     onClick={() => savePurchase(ing)}
                     className="w-full py-1.5 rounded bg-amber-700 text-[#faf9f5] text-xs font-bold"
                   >
-                    記録する
+                    {editingPurchaseId ? '更新する' : '記録する'}
                   </button>
+                  {editingPurchaseId && (
+                    <button
+                      onClick={() => {
+                        setEditingPurchaseId(null)
+                        setPurchaseForm({ date: todayStr(), quantity: '', totalPrice: '' })
+                      }}
+                      className="w-full py-1.5 rounded border border-stone-300 text-stone-600 text-xs font-semibold"
+                    >
+                      編集をやめる
+                    </button>
+                  )}
                   {history.length > 0 && (
                     <div className="text-xs text-stone-500 space-y-0.5 pt-1 border-t border-stone-200">
                       <p className="text-stone-400">仕入れ履歴（単価推移）</p>
                       {history.map((h) => (
-                        <div key={h.id} className="flex justify-between">
+                        <div
+                          key={h.id}
+                          className={`flex items-center justify-between gap-1 ${
+                            editingPurchaseId === h.id ? 'bg-amber-100 rounded px-1' : ''
+                          }`}
+                        >
                           <span>{h.purchased_on}</span>
-                          <span>
+                          <span className="ml-auto">
                             ¥{h.total_price.toLocaleString()}
                             {h.quantity ? ` / ${h.quantity}g（¥${fmtPerG(h.total_price / h.quantity)}/g）` : ''}
                           </span>
+                          <button
+                            onClick={() => startEditPurchase(h)}
+                            className="p-1 text-stone-500"
+                            aria-label="この仕入れ履歴を編集"
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => setConfirmDelete({ kind: 'purchase', purchase: h })}
+                            className="p-1 text-red-500"
+                            aria-label="この仕入れ履歴を削除"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
                         </div>
                       ))}
                     </div>
                   )}
                 </div>
               )}
+
+              <button
+                onClick={() => setConfirmDelete({ kind: 'ingredient', ing })}
+                className="mt-2 w-full text-xs text-red-500 flex items-center justify-center gap-1 py-1"
+              >
+                <Trash2 className="w-3 h-3" /> この食材を削除
+              </button>
             </div>
           )
         })}
@@ -482,6 +568,18 @@ export default function IngredientsPage() {
 
       {filtered.length === 0 && !isLoading && (
         <p className="text-center text-stone-400 text-sm py-8">条件に一致する食材がありません</p>
+      )}
+
+      {confirmDelete && (
+        <ConfirmModal
+          message={
+            confirmDelete.kind === 'purchase'
+              ? `${confirmDelete.purchase.purchased_on} の仕入れ記録（¥${confirmDelete.purchase.total_price.toLocaleString()}）を削除します。\n残りの履歴の最新から単価を再計算します。`
+              : `「${confirmDelete.ing.name}」と、その仕入れ履歴をすべて削除します。\nレシピで使用中の食材は削除できません。`
+          }
+          onConfirm={() => void runDelete()}
+          onCancel={() => setConfirmDelete(null)}
+        />
       )}
     </div>
   )

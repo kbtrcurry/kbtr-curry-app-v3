@@ -145,6 +145,53 @@ export async function recordPlatformRevenue(params: RecordPlatformRevenueParams)
   return id
 }
 
+// ---------- 訂正（編集） ----------
+// record_expense / record_platform_revenue は同じ source_id で再実行すると仕訳を作り直す。
+// 既存の仕訳をフォームの値に戻す純粋関数（編集モード用）。
+
+export function isEditableEntry(e: JournalEntry): boolean {
+  return (e.source_type === 'expense' || e.source_type === 'platform_revenue') && !!e.source_id
+}
+
+export function expenseFormFromEntry(e: JournalEntry): {
+  entryDate: string
+  segmentId: string
+  accountId: string
+  amount: number
+  paymentMethod: 'cash' | 'bank'
+  memo: string
+} {
+  const debit = e.journal_lines.find((l) => l.side === 'debit')
+  const credit = e.journal_lines.find((l) => l.side === 'credit')
+  return {
+    entryDate: e.entry_date,
+    segmentId: e.segment_id,
+    accountId: debit?.account_id ?? '',
+    amount: entryTotal(e, 'debit'),
+    paymentMethod: credit?.accounts.code === '102' ? 'bank' : 'cash',
+    memo: e.description,
+  }
+}
+
+export function revenueFormFromEntry(e: JournalEntry): {
+  entryDate: string
+  segmentId: string
+  gross: number
+  fee: number
+  memo: string
+} {
+  const fee = e.journal_lines
+    .filter((l) => l.side === 'debit' && l.accounts.code === '521')
+    .reduce((s, l) => s + l.amount, 0)
+  return {
+    entryDate: e.entry_date,
+    segmentId: e.segment_id,
+    gross: entryTotal(e, 'credit'),
+    fee,
+    memo: e.description,
+  }
+}
+
 // ---------- 削除 ----------
 
 export async function deleteJournalEntry(entryId: string): Promise<void> {

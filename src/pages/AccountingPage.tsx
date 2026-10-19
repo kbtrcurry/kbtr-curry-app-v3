@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { Wallet, Trash2, Check, AlertTriangle } from 'lucide-react'
+import { Wallet, Trash2, Check, AlertTriangle, Pencil } from 'lucide-react'
 import { useAuth } from '../lib/auth'
 import { Spinner } from '../components/Spinner'
 import { ConfirmModal } from '../components/ConfirmModal'
@@ -14,6 +14,9 @@ import {
   computeSegmentPnl,
   hasPlatformRevenueInMonth,
   entryTotal,
+  isEditableEntry,
+  expenseFormFromEntry,
+  revenueFormFromEntry,
   currentYearMonth,
   monthRange,
   todayStr,
@@ -187,9 +190,29 @@ function ExpenseTab({
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [confirmTarget, setConfirmTarget] = useState<JournalEntry | null>(null)
+  // 編集中の仕訳（同じ source_id で再登録すると作り直される）
+  const [editing, setEditing] = useState<JournalEntry | null>(null)
 
   const segId = segmentId || segments.find((s) => s.code === 'common')?.id || segments[0]?.id || ''
   const acctId = accountId || accounts[0]?.id || ''
+
+  const startEdit = (e: JournalEntry) => {
+    const f = expenseFormFromEntry(e)
+    setEditing(e)
+    setEntryDate(f.entryDate)
+    setSegmentId(f.segmentId)
+    setAccountId(f.accountId)
+    setAmount(String(f.amount))
+    setPaymentMethod(f.paymentMethod)
+    setMemo(f.memo)
+    setError(null)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+  const cancelEdit = () => {
+    setEditing(null)
+    setAmount('')
+    setMemo('')
+  }
 
   const submit = async () => {
     const amt = Number(amount)
@@ -198,6 +221,7 @@ function ExpenseTab({
     setError(null)
     try {
       await recordExpense({
+        id: editing?.source_id ?? undefined,
         entryDate,
         segmentId: segId,
         accountId: acctId,
@@ -205,6 +229,7 @@ function ExpenseTab({
         paymentMethod,
         memo,
       })
+      setEditing(null)
       setAmount('')
       setMemo('')
       onSaved()
@@ -340,8 +365,16 @@ function ExpenseTab({
           disabled={saving || !(Number(amount) > 0)}
           className="w-full bg-amber-700 text-[#faf9f5] py-3 rounded-xl font-bold disabled:opacity-40 active:scale-95 transition-transform"
         >
-          {saving ? '保存中...' : '経費を記録する'}
+          {saving ? '保存中...' : editing ? '経費を更新する' : '経費を記録する'}
         </button>
+        {editing && (
+          <button
+            onClick={cancelEdit}
+            className="w-full py-2 rounded-xl border border-stone-300 text-stone-600 text-sm font-semibold"
+          >
+            編集をやめる
+          </button>
+        )}
       </div>
 
       <div className="space-y-2">
@@ -361,6 +394,11 @@ function ExpenseTab({
               </p>
             </div>
             <span className="font-bold text-stone-900 shrink-0">¥{entryTotal(e, 'debit').toLocaleString()}</span>
+            {isEditableEntry(e) && (
+              <button onClick={() => startEdit(e)} className="text-stone-500 shrink-0" title="編集">
+                <Pencil className="w-4 h-4" />
+              </button>
+            )}
             <button onClick={() => setConfirmTarget(e)} className="text-red-400 shrink-0" title="削除">
               <Trash2 className="w-4 h-4" />
             </button>
@@ -406,18 +444,45 @@ function RevenueTab({
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [confirmTarget, setConfirmTarget] = useState<JournalEntry | null>(null)
+  const [editing, setEditing] = useState<JournalEntry | null>(null)
 
   const segId = segmentId || segments[0]?.id || ''
   const grossNum = Number(gross) || 0
   const feeNum = Number(fee) || 0
   const netNum = grossNum - feeNum
 
+  const startEdit = (e: JournalEntry) => {
+    const f = revenueFormFromEntry(e)
+    setEditing(e)
+    setEntryDate(f.entryDate)
+    setSegmentId(f.segmentId)
+    setGross(String(f.gross))
+    setFee(f.fee ? String(f.fee) : '')
+    setMemo(f.memo)
+    setError(null)
+    window.scrollTo({ top: 0, behavior: 'smooth' })
+  }
+  const cancelEdit = () => {
+    setEditing(null)
+    setGross('')
+    setFee('')
+    setMemo('')
+  }
+
   const submit = async () => {
     if (!(grossNum > 0) || feeNum < 0 || feeNum > grossNum || !segId) return
     setSaving(true)
     setError(null)
     try {
-      await recordPlatformRevenue({ entryDate, segmentId: segId, gross: grossNum, fee: feeNum, memo })
+      await recordPlatformRevenue({
+        id: editing?.source_id ?? undefined,
+        entryDate,
+        segmentId: segId,
+        gross: grossNum,
+        fee: feeNum,
+        memo,
+      })
+      setEditing(null)
       setGross('')
       setFee('')
       setMemo('')
@@ -533,8 +598,16 @@ function RevenueTab({
           disabled={saving || !(grossNum > 0) || feeNum > grossNum}
           className="w-full bg-amber-700 text-[#faf9f5] py-3 rounded-xl font-bold disabled:opacity-40 active:scale-95 transition-transform"
         >
-          {saving ? '保存中...' : '収入を記録する'}
+          {saving ? '保存中...' : editing ? '収入を更新する' : '収入を記録する'}
         </button>
+        {editing && (
+          <button
+            onClick={cancelEdit}
+            className="w-full py-2 rounded-xl border border-stone-300 text-stone-600 text-sm font-semibold"
+          >
+            編集をやめる
+          </button>
+        )}
       </div>
 
       <div className="space-y-2">
@@ -552,6 +625,11 @@ function RevenueTab({
               {e.description && <p className="text-sm text-stone-800 truncate">{e.description}</p>}
             </div>
             <span className="font-bold text-stone-900 shrink-0">¥{entryTotal(e, 'credit').toLocaleString()}</span>
+            {isEditableEntry(e) && (
+              <button onClick={() => startEdit(e)} className="text-stone-500 shrink-0" title="編集">
+                <Pencil className="w-4 h-4" />
+              </button>
+            )}
             <button onClick={() => setConfirmTarget(e)} className="text-red-400 shrink-0" title="削除">
               <Trash2 className="w-4 h-4" />
             </button>

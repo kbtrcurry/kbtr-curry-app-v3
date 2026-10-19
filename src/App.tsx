@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { useEffect } from 'react'
+import { lazy, Suspense, useEffect } from 'react'
 import { BrowserRouter, NavLink, Route, Routes } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useRegisterSW } from 'virtual:pwa-register/react'
@@ -21,6 +21,7 @@ import SetupCheckPage from './pages/SetupCheckPage'
 import PosPage from './pages/PosPage'
 import AccountingPage from './pages/AccountingPage'
 import DashboardPage from './pages/DashboardPage'
+import AnalysisPage from './pages/AnalysisPage'
 import IngredientsPage from './pages/IngredientsPage'
 import RecipesPage from './pages/RecipesPage'
 import MenuSettingsPage from './pages/MenuSettingsPage'
@@ -37,20 +38,23 @@ const queryClient = new QueryClient({
   },
 })
 
+// 開発時のみの見た目確認用デモ（本番のバンドルには含まれない）
+const AnalysisDemo = import.meta.env.DEV ? lazy(() => import('./pages/AnalysisDemo')) : null
+
 type NavItem = { to: string; label: string; icon: LucideIcon }
 
 // デスクトップのサイドバーは全項目を表示。モバイルのボトムナビは頻度の高いものだけ（残りは設定タブ内のハブから）
 const NAV_ITEMS: NavItem[] = [
   { to: '/', label: 'レジ', icon: ShoppingCart },
   { to: '/accounting', label: '会計', icon: Wallet },
-  { to: '/dashboard', label: '分析', icon: BarChart3 },
+  { to: '/analysis', label: '分析', icon: BarChart3 },
   { to: '/ingredients', label: '食材', icon: Carrot },
   { to: '/recipes', label: 'レシピ', icon: BookOpen },
   { to: '/menus', label: 'メニュー', icon: UtensilsCrossed },
   { to: '/tax', label: '申告', icon: Receipt },
   { to: '/setup', label: '設定', icon: Settings },
 ]
-const BOTTOM_NAV_PATHS = new Set(['/', '/accounting', '/dashboard', '/setup'])
+const BOTTOM_NAV_PATHS = new Set(['/', '/accounting', '/analysis', '/setup'])
 const BOTTOM_NAV = NAV_ITEMS.filter((item) => BOTTOM_NAV_PATHS.has(item.to))
 
 function UpdateButton() {
@@ -162,6 +166,17 @@ export default function App() {
                 <Routes>
                   <Route path="/" element={<PosPage />} />
                   <Route path="/accounting" element={<AccountingPage />} />
+                  <Route path="/analysis" element={<AnalysisPage />} />
+                  {AnalysisDemo && (
+                    <Route
+                      path="/analysis-demo"
+                      element={
+                        <Suspense fallback={null}>
+                          <AnalysisDemo />
+                        </Suspense>
+                      }
+                    />
+                  )}
                   <Route path="/dashboard" element={<DashboardPage />} />
                   <Route path="/ingredients" element={<IngredientsPage />} />
                   <Route path="/recipes" element={<RecipesPage />} />

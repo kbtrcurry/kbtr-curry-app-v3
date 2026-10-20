@@ -28,6 +28,9 @@ const R = (over: Partial<Reservation>): Reservation => ({
   note: '',
   status: 'reserved',
   created_at: '',
+  visit_time: '',
+  is_new: false,
+  uzura: true,
   ...over,
 })
 

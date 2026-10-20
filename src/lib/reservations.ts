@@ -4,7 +4,7 @@ import { supabase } from './supabase'
 
 export type Platform = 'x' | 'instagram' | 'other'
 export type ResStatus = 'reserved' | 'picked_up' | 'no_show' | 'cancelled'
-export type ResItem = { menu_id: string | null; name: string; qty: number }
+export type ResItem = { menu_id: string | null; name: string; qty: number; takeout?: boolean }
 export type Reservation = {
   id: string
   service_date: string
@@ -15,6 +15,12 @@ export type Reservation = {
   note: string
   status: ResStatus
   created_at: string
+  /** 来店予定の時間（お客さんの任意。空欄なら好きな時間） */
+  visit_time: string
+  /** 初めての取り置きのお客さん（メモに「新規」と書いてあったもの、または初回） */
+  is_new: boolean
+  /** うずらアチャール付き（木曜24時までの受付で付く） */
+  uzura: boolean
 }
 export type CustomerNote = { platform: Platform; handle: string; flag: 'none' | 'regular' | 'watch'; posted_review: boolean; note: string }
 
@@ -25,6 +31,24 @@ export const STATUS_LABEL: Record<ResStatus, string> = { reserved: '取り置き
 
 export const normHandle = (h: string): string => h.trim().replace(/^[@＠]+/, '').toLowerCase()
 export const customerKey = (platform: Platform, handle: string): string => `${platform}:${normHandle(handle)}`
+
+/** 名前をそろえる（全角半角・空白・ひらがな/カタカナの違いをなくす）。「やまだ」「ヤマダ」「ﾔﾏﾀﾞ」を同じに見るため。漢字とかなの対応はできない */
+export function kanaKey(name: string): string {
+  return name
+    .normalize('NFKC')
+    .replace(/[\s・･.\-_]/g, '')
+    .replace(/[ァ-ヶ]/g, (c) => String.fromCharCode(c.charCodeAt(0) - 0x60))
+    .replace(/(さん|様|ちゃん|くん|君)$/, '')
+    .toLowerCase()
+}
+
+/** お客さんを見分ける印。アカウント名があればそれ、なければ名前（かなをそろえたもの）で見分ける */
+export function identityOf(r: { platform: Platform; handle: string; name: string }): { platform: Platform; handle: string } | null {
+  const h = normHandle(r.handle)
+  if (h) return { platform: r.platform, handle: h }
+  const k = kanaKey(r.name)
+  return k ? { platform: 'other', handle: `~${k}` } : null
+}
 
 export function profileUrl(platform: Platform, handle: string): string | null {
   const h = normHandle(handle)
@@ -82,9 +106,10 @@ export function customerStats(all: Reservation[], notes: CustomerNote[]): Custom
   const noteBy = new Map(notes.map((n) => [customerKey(n.platform, n.handle), n]))
   const m = new Map<string, CustomerStat>()
   for (const r of [...all].sort((a, b) => a.service_date.localeCompare(b.service_date))) {
-    if (!normHandle(r.handle)) continue
-    const key = customerKey(r.platform, r.handle)
-    const s = m.get(key) ?? { key, platform: r.platform, handle: normHandle(r.handle), name: r.name, reservations: 0, pickedUp: 0, noShow: 0, lastDate: '', note: noteBy.get(key) ?? null }
+    const idn = identityOf(r)
+    if (!idn) continue
+    const key = customerKey(idn.platform, idn.handle)
+    const s = m.get(key) ?? { key, platform: idn.platform, handle: idn.handle, name: r.name, reservations: 0, pickedUp: 0, noShow: 0, lastDate: '', note: noteBy.get(key) ?? null }
     if (r.status !== 'cancelled') s.reservations += 1
     if (r.status === 'picked_up') s.pickedUp += 1
     if (r.status === 'no_show') s.noShow += 1
@@ -242,9 +267,24 @@ export async function saveMenuStock(date: string, stock: Record<string, number |
   }
 }
 
-export async function saveReservation(r: Omit<Reservation, 'id' | 'created_at' | 'status'> & { id?: string; status?: ResStatus }): Promise<void> {
+export type ReservationInput = Omit<Reservation, 'id' | 'created_at' | 'status' | 'visit_time' | 'is_new' | 'uzura'> & {
+  id?: string
+  status?: ResStatus
+  visit_time?: string
+  is_new?: boolean
+  uzura?: boolean
+}
+
+export async function saveReservation(r: ReservationInput): Promise<void> {
   const row = { ...r, handle: normHandle(r.handle) }
   const { error } = r.id ? await supabase.from('reservations').update(row).eq('id', r.id) : await supabase.from('reservations').insert(row)
+  if (error) throw error
+}
+
+/** 過去の台帳をまとめて入れる（取り込み用） */
+export async function insertReservations(rows: ReservationInput[]): Promise<void> {
+  if (rows.length === 0) return
+  const { error } = await supabase.from('reservations').insert(rows.map((r) => ({ ...r, handle: normHandle(r.handle) })))
   if (error) throw error
 }
 
@@ -270,4 +310,30 @@ export function useInvalidateReservations() {
     void qc.invalidateQueries({ queryKey: ['customer_notes'] })
     void qc.invalidateQueries({ queryKey: ['menu_stock'] })
   }
+}
+
+/** うずらアチャール付きになるか: 営業日の前の木曜24時（＝金曜0時）までに受けたもの */
+export function uzuraEligible(serviceDate: string, receivedAt: Date): boolean {
+  const d = new Date(+serviceDate.slice(0, 4), +serviceDate.slice(5, 7) - 1, +serviceDate.slice(8, 10))
+  // 営業日から数えて直前の木曜日（営業日が木曜なら前週の木曜）
+  const back = (d.getDay() - 4 + 7) % 7 || 7
+  const thursday = new Date(d)
+  thursday.setDate(d.getDate() - back)
+  const deadline = new Date(thursday.getFullYear(), thursday.getMonth(), thursday.getDate() + 1, 0, 0, 0)
+  return receivedAt.getTime() < deadline.getTime()
+}
+
+/** 同じ人として統合する: from の取り置きの名前・アカウントを to のものに書き換える（元に戻せないので、画面で相手を選んでから） */
+export async function mergeCustomer(from: CustomerStat, to: CustomerStat, all: Reservation[]): Promise<void> {
+  const ids = all
+    .filter((r) => {
+      const idn = identityOf(r)
+      return idn && customerKey(idn.platform, idn.handle) === from.key
+    })
+    .map((r) => r.id)
+  if (ids.length === 0) return
+  const toNameOnly = to.handle.startsWith('~')
+  const patch = toNameOnly ? { name: to.name } : { name: to.name, platform: to.platform, handle: to.handle }
+  const { error } = await supabase.from('reservations').update(patch).in('id', ids)
+  if (error) throw error
 }

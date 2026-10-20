@@ -2,6 +2,7 @@ import { useMemo, useState } from 'react'
 import { Check, ClipboardPaste, Copy, ExternalLink, Pencil, Plus, Trash2, Users } from 'lucide-react'
 import { useAuth } from '../lib/auth'
 import { Spinner } from '../components/Spinner'
+import ReservationImport from './ReservationImport'
 import { useUndoableDelete } from '../components/UndoDelete'
 import { useActiveMenus } from '../lib/pos'
 import { todayStr } from '../lib/accounting'
@@ -11,6 +12,9 @@ import {
   PLATFORM_LABEL,
   STATUS_LABEL,
   customerKey,
+  identityOf,
+  mergeCustomer,
+  uzuraEligible,
   customerLabel,
   customerStats,
   deleteReservation,
@@ -45,7 +49,7 @@ function nextSaturday(today: string): string {
 }
 const weekday = (d: string) => WEEK[new Date(+d.slice(0, 4), +d.slice(5, 7) - 1, +d.slice(8, 10)).getDay()]
 
-type Tab = 'list' | 'customers'
+type Tab = 'list' | 'customers' | 'import'
 
 // 取り置き: DMで受けたものを控えて、お客さんの履歴（新規か・来なかったことがあるか）を見られるようにする。
 export default function ReservationsPage() {
@@ -99,6 +103,7 @@ export default function ReservationsPage() {
           [
             ['list', '取り置きリスト'],
             ['customers', 'お客さん台帳'],
+            ['import', '過去の台帳'],
           ] as const
         ).map(([k, label]) => (
           <button
@@ -202,7 +207,10 @@ export default function ReservationsPage() {
               <ReservationCard
                 key={r.id}
                 r={r}
-                stat={statBy.get(customerKey(r.platform, r.handle))}
+                stat={(() => {
+                  const idn = identityOf(r)
+                  return idn ? statBy.get(customerKey(idn.platform, idn.handle)) : undefined
+                })()}
                 template={template}
                 onEdit={() => {
                   setEditing(r)
@@ -231,7 +239,8 @@ export default function ReservationsPage() {
         </>
       )}
 
-      {tab === 'customers' && <CustomerLedger stats={stats} onSaved={invalidate} />}
+      {tab === 'customers' && <CustomerLedger stats={stats} all={allRes.data ?? []} onSaved={invalidate} />}
+      {tab === 'import' && <ReservationImport existing={allRes.data ?? []} />}
       {del.toast}
     </div>
   )
@@ -259,14 +268,19 @@ function ReservationForm({
   const [name, setName] = useState(editing?.name ?? '')
   const [qty, setQty] = useState<Record<string, number>>(() => Object.fromEntries((editing?.items ?? []).filter((i) => i.menu_id).map((i) => [i.menu_id as string, i.qty])))
   const [note, setNote] = useState(editing?.note ?? '')
+  const [time, setTime] = useState(editing?.visit_time ?? '')
+  const [takeout, setTakeout] = useState(editing ? editing.items.some((i) => i.takeout) : false)
+  // 木曜24時までに受けたものには、うずらアチャールが付く
+  const [uzura, setUzura] = useState(editing?.uzura ?? uzuraEligible(date, new Date()))
   const [paste, setPaste] = useState('')
   const [pasteMsg, setPasteMsg] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const stat = normHandle(handle) ? statBy.get(customerKey(platform, handle)) : undefined
-  const label = normHandle(handle) ? customerLabel(stat) : null
-  const items: ResItem[] = menus.filter((m) => (qty[m.id] ?? 0) > 0).map((m) => ({ menu_id: m.id, name: m.name, qty: qty[m.id] }))
+  const idn = identityOf({ platform, handle, name })
+  const stat = idn ? statBy.get(customerKey(idn.platform, idn.handle)) : undefined
+  const label = idn ? customerLabel(stat) : null
+  const items: ResItem[] = menus.filter((m) => (qty[m.id] ?? 0) > 0).map((m) => ({ menu_id: m.id, name: m.name, qty: qty[m.id], takeout }))
   const total = items.reduce((a, i) => a + i.qty, 0)
 
   const readPaste = async () => {
@@ -300,7 +314,7 @@ function ReservationForm({
     setBusy(true)
     setError(null)
     try {
-      await saveReservation({ id: editing?.id, service_date: editing?.service_date ?? date, platform, handle, name: name.trim(), items, note, status: editing?.status })
+      await saveReservation({ id: editing?.id, service_date: editing?.service_date ?? date, platform, handle, name: name.trim(), items, note, status: editing?.status, visit_time: time, uzura, is_new: editing ? editing.is_new : !stat })
       onSaved()
     } catch (e) {
       setError(e instanceof Error ? e.message : '保存できませんでした')
@@ -367,7 +381,20 @@ function ReservationForm({
         ))}
       </div>
 
-      <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="メモ（受け取り時間・アレルギーなど）" className="w-full border border-stone-300 rounded-lg px-3 py-2.5 text-sm" />
+      <div className="flex flex-wrap items-center gap-2">
+        <input type="time" value={time} onChange={(e) => setTime(e.target.value)} className="border border-stone-300 rounded-lg px-2 py-2 text-sm" aria-label="来店予定時間（任意）" />
+        <button onClick={() => setTakeout(false)} className={`px-3 py-2 rounded-lg text-sm font-semibold border ${!takeout ? 'bg-amber-700 text-[#faf9f5] border-amber-700' : 'bg-white text-stone-600 border-stone-300'}`}>
+          イートイン
+        </button>
+        <button onClick={() => setTakeout(true)} className={`px-3 py-2 rounded-lg text-sm font-semibold border ${takeout ? 'bg-amber-700 text-[#faf9f5] border-amber-700' : 'bg-white text-stone-600 border-stone-300'}`}>
+          テイクアウト
+        </button>
+        <button onClick={() => setUzura((v) => !v)} aria-pressed={uzura} className={`px-3 py-2 rounded-lg text-sm font-semibold border ${uzura ? 'bg-amber-700 text-[#faf9f5] border-amber-700' : 'bg-white text-stone-600 border-stone-300'}`}>
+          うずら{uzura ? '付き' : 'なし'}
+        </button>
+      </div>
+      <p className="text-xs text-stone-500">来店時間はお客さんの任意です（空欄でもかまいません）。うずらアチャールは、営業日の前の木曜24時までに受けたら付く、として自動で決めています。</p>
+      <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="メモ（アレルギーなど）" className="w-full border border-stone-300 rounded-lg px-3 py-2.5 text-sm" />
 
       {error && <p className="text-sm text-red-600">{error}</p>}
       <div className="flex gap-2">
@@ -401,7 +428,7 @@ function ReservationCard({
 }) {
   const [copied, setCopied] = useState(false)
   const url = profileUrl(r.platform, r.handle)
-  const label = normHandle(r.handle) ? customerLabel(stat ? { ...stat, reservations: Math.max(0, stat.reservations - 1) } : undefined) : null
+  const label = identityOf(r) ? customerLabel(stat ? { ...stat, reservations: Math.max(0, stat.reservations - 1) } : undefined) : null
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(replyText(r, template))
@@ -424,7 +451,12 @@ function ReservationCard({
               </span>
             )}
           </p>
-          <p className="text-sm text-stone-700">{r.items.map((i) => `${i.name}×${i.qty}`).join('、')}</p>
+          <p className="text-sm text-stone-700">{r.items.map((i) => `${i.name}×${i.qty}${i.takeout ? '（TO）' : ''}`).join('、')}</p>
+          <p className="text-xs text-stone-500 mt-0.5 flex flex-wrap gap-x-2">
+            {r.is_new && <span className="font-bold text-sky-700">新規</span>}
+            {r.visit_time && <span>来店 {r.visit_time}頃</span>}
+            <span>{r.uzura ? 'うずら付き' : 'うずらなし'}</span>
+          </p>
           {r.note && <p className="text-xs text-stone-500 mt-0.5">メモ: {r.note}</p>}
         </div>
         <span className={`shrink-0 text-xs font-bold rounded-full px-2 py-1 ${r.status === 'picked_up' ? 'bg-green-100 text-green-700' : r.status === 'reserved' ? 'bg-amber-100 text-amber-800' : 'bg-stone-200 text-stone-600'}`}>
@@ -474,7 +506,7 @@ function ReservationCard({
 
 // ---------- お客さん台帳 ----------
 
-function CustomerLedger({ stats, onSaved }: { stats: CustomerStat[]; onSaved: () => void }) {
+function CustomerLedger({ stats, all, onSaved }: { stats: CustomerStat[]; all: Reservation[]; onSaved: () => void }) {
   const [q, setQ] = useState('')
   const [open, setOpen] = useState<string | null>(null)
   const shown = stats.filter((s) => !q || s.handle.includes(q.toLowerCase()) || s.name.includes(q))
@@ -484,19 +516,32 @@ function CustomerLedger({ stats, onSaved }: { stats: CustomerStat[]; onSaved: ()
       {shown.length === 0 && <p className="text-center text-stone-500 text-sm py-6">まだお客さんの記録がありません。取り置きを登録すると、ここに溜まります。</p>}
       <div className="bg-white border border-stone-200 rounded-xl divide-y divide-stone-100 overflow-hidden">
         {shown.map((s) => (
-          <CustomerRow key={s.key} s={s} open={open === s.key} onToggle={() => setOpen(open === s.key ? null : s.key)} onSaved={onSaved} />
+          <CustomerRow key={s.key} s={s} others={stats.filter((x) => x.key !== s.key)} all={all} open={open === s.key} onToggle={() => setOpen(open === s.key ? null : s.key)} onSaved={onSaved} />
         ))}
       </div>
     </div>
   )
 }
 
-function CustomerRow({ s, open, onToggle, onSaved }: { s: CustomerStat; open: boolean; onToggle: () => void; onSaved: () => void }) {
+function CustomerRow({ s, others, all, open, onToggle, onSaved }: { s: CustomerStat; others: CustomerStat[]; all: Reservation[]; open: boolean; onToggle: () => void; onSaved: () => void }) {
+  const [mergeTo, setMergeTo] = useState('')
   const [flag, setFlag] = useState(s.note?.flag ?? 'none')
   const [review, setReview] = useState(s.note?.posted_review ?? false)
   const [note, setNote] = useState(s.note?.note ?? '')
   const [busy, setBusy] = useState(false)
-  const url = profileUrl(s.platform, s.handle)
+  const nameOnly = s.handle.startsWith('~')
+  const url = nameOnly ? null : profileUrl(s.platform, s.handle)
+  const merge = async () => {
+    const t = others.find((x) => x.key === mergeTo)
+    if (!t) return
+    setBusy(true)
+    try {
+      await mergeCustomer(s, t, all)
+      onSaved()
+    } finally {
+      setBusy(false)
+    }
+  }
   const save = async () => {
     setBusy(true)
     try {
@@ -512,9 +557,7 @@ function CustomerRow({ s, open, onToggle, onSaved }: { s: CustomerStat; open: bo
         <div className="min-w-0 flex-1">
           <p className="text-sm font-semibold text-stone-800 truncate">
             {s.name || `@${s.handle}`}
-            <span className="ml-1.5 text-xs font-normal text-stone-500">
-              {PLATFORM_LABEL[s.platform]} @{s.handle}
-            </span>
+            <span className="ml-1.5 text-xs font-normal text-stone-500">{nameOnly ? 'アカウント未登録（名前で管理）' : `${PLATFORM_LABEL[s.platform]} @${s.handle}`}</span>
           </p>
           <p className="text-xs text-stone-500">
             取り置き{s.reservations}回・受け渡し{s.pickedUp}回{s.noShow > 0 && `・来なかった${s.noShow}回`}
@@ -544,6 +587,21 @@ function CustomerRow({ s, open, onToggle, onSaved }: { s: CustomerStat; open: bo
             <input type="checkbox" checked={review} onChange={(e) => setReview(e.target.checked)} className="w-5 h-5 accent-amber-700" /> 感想を投稿してくれた
           </label>
           <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="メモ" className="w-full border border-stone-300 rounded-lg px-3 py-2 text-sm" />
+          {others.length > 0 && (
+            <div className="flex items-center gap-1.5">
+              <select value={mergeTo} onChange={(e) => setMergeTo(e.target.value)} className="flex-1 min-w-0 border border-stone-300 rounded-lg px-2 py-2 text-sm bg-white" aria-label="同じ人として統合する相手">
+                <option value="">同じ人として統合…（例：漢字の名前とかなの名前）</option>
+                {others.map((o) => (
+                  <option key={o.key} value={o.key}>
+                    {o.name || o.handle}（{o.reservations}回）
+                  </option>
+                ))}
+              </select>
+              <button onClick={() => void merge()} disabled={!mergeTo || busy} className="shrink-0 text-sm font-semibold border border-stone-300 text-stone-600 rounded-lg px-3 py-2 disabled:opacity-40">
+                統合
+              </button>
+            </div>
+          )}
           <div className="flex gap-2">
             <button onClick={() => void save()} disabled={busy} className="flex-1 py-2.5 rounded-lg bg-amber-700 text-[#faf9f5] text-sm font-bold disabled:opacity-50">
               保存

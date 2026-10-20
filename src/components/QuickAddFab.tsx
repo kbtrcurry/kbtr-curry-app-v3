@@ -12,7 +12,7 @@ export function QuickAddFab() {
   const { pathname } = useLocation()
   const [open, setOpen] = useState(false)
   const invalidate = useInvalidateJournal()
-  const hidden = pathname === '/pos' || pathname === '/accounting' || (pathname === '/' && window.matchMedia('(min-width: 768px)').matches)
+  const hidden = pathname === '/pos' || pathname === '/accounting' || pathname === '/import' || (pathname === '/' && window.matchMedia('(min-width: 768px)').matches)
   if (!session || hidden) return null
   return (
     <>

@@ -65,12 +65,15 @@ export function ingredientNeeds(p: PlanInput): NeedRow[] {
 }
 
 /** 仕入先ごと（未設定は「仕入先未設定」）にまとめる。大きい出費の店が先 */
+const UNSET = '仕入先未設定'
+const supplierName = (s: string): string => (['', '未設定', '—', '-', 'ー'].includes(s.trim()) ? UNSET : s.trim())
+
 export function groupBySupplier(rows: NeedRow[]): { supplier: string; rows: NeedRow[]; cost: number }[] {
   const m = new Map<string, NeedRow[]>()
-  for (const r of rows) m.set(r.supplier || '仕入先未設定', [...(m.get(r.supplier || '仕入先未設定') ?? []), r])
+  for (const r of rows) m.set(supplierName(r.supplier), [...(m.get(supplierName(r.supplier)) ?? []), r])
   return [...m.entries()]
     .map(([supplier, rs]) => ({ supplier, rows: rs.sort((a, b) => a.name.localeCompare(b.name, 'ja')), cost: rs.reduce((a, r) => a + (r.cost ?? 0), 0) }))
-    .sort((a, b) => (a.supplier === '仕入先未設定' ? 1 : b.supplier === '仕入先未設定' ? -1 : b.cost - a.cost))
+    .sort((a, b) => (a.supplier === UNSET ? 1 : b.supplier === UNSET ? -1 : b.cost - a.cost))
 }
 
 /** 量の表示: 1000g以上は kg */

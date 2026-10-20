@@ -23,6 +23,12 @@ export type TodoInput = {
   monthFoodRecorded: number
   /** 銀行CSVの明細の最終日（この端末で取り込んだもの） */
   bankLastDate: string | null
+  /** 今日から7日以内の取り置き（取り置き中）の件数・食数と、いちばん近い営業日 */
+  reserveCount?: number
+  reserveQty?: number
+  reserveDate?: string | null
+  /** 4日以内に営業があるのに、用意数がまだ決まっていない日 */
+  stockMissingDate?: string | null
 }
 
 const BANK_KEY = 'kbtr_v3_bank_last_date'
@@ -103,6 +109,26 @@ export function buildTodos(i: TodoInput, today: string): Todo[] {
       cta: 'CSVを取り込む',
     })
   }
+  if ((i.reserveCount ?? 0) > 0 && i.reserveDate) {
+    out.push({
+      id: 'reserve',
+      level: 'info',
+      title: `取り置き ${i.reserveCount}件（${i.reserveQty}食）・${md(i.reserveDate)}`,
+      detail: '受け渡しの準備と、返信が済んでいるかを確認できます。',
+      to: '/reserve',
+      cta: '取り置きを見る',
+    })
+  }
+  if (i.stockMissingDate) {
+    out.push({
+      id: 'stock',
+      level: 'info',
+      title: `${md(i.stockMissingDate)} の営業の食数が、まだ決まっていません`,
+      detail: '食数を入れると、買い出しリストが出て、レジの売り切れ管理にも使えます。',
+      to: '/prep',
+      cta: '食数を入れる',
+    })
+  }
   const metaDays = i.metaLastDate ? daysBetween(i.metaLastDate, today) : null
   if (metaDays != null && metaDays >= 4) {
     out.push({
@@ -164,7 +190,36 @@ export async function fetchTodoInput(): Promise<TodoInput> {
     (a, l) => a + (l.side === 'debit' ? l.amount : -l.amount),
     0,
   )
+  // 取り置きと用意数（テーブルが未作成の環境では何も出さない）
+  let reserveCount = 0
+  let reserveQty = 0
+  let reserveDate: string | null = null
+  let stockMissingDate: string | null = null
+  try {
+    const week = new Date()
+    week.setDate(week.getDate() + 7)
+    const wk = `${week.getFullYear()}-${String(week.getMonth() + 1).padStart(2, '0')}-${String(week.getDate()).padStart(2, '0')}`
+    const { data: rs } = await supabase.from('reservations').select('service_date, items').eq('status', 'reserved').gte('service_date', today).lte('service_date', wk).order('service_date')
+    const list = (rs ?? []) as { service_date: string; items: { qty: number }[] }[]
+    reserveCount = list.length
+    reserveQty = list.reduce((a, r) => a + r.items.reduce((b, i) => b + i.qty, 0), 0)
+    reserveDate = list[0]?.service_date ?? null
+    const near = new Date()
+    near.setDate(near.getDate() + ((6 - near.getDay() + 7) % 7))
+    const sat = `${near.getFullYear()}-${String(near.getMonth() + 1).padStart(2, '0')}-${String(near.getDate()).padStart(2, '0')}`
+    const days = Math.round((new Date(sat).getTime() - new Date(today).getTime()) / 86400000)
+    if (days <= 4) {
+      const { count: n } = await supabase.from('menu_stock').select('*', { count: 'exact', head: true }).eq('service_date', sat)
+      if ((n ?? 0) === 0) stockMissingDate = sat
+    }
+  } catch {
+    /* 取り置きの機能が使えない環境では出さない */
+  }
   return {
+    reserveCount,
+    reserveQty,
+    reserveDate,
+    stockMissingDate,
     cardPending,
     amazonPending,
     lastMailImport,

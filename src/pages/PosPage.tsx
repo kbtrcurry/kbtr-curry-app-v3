@@ -18,6 +18,18 @@ import {
   type Menu,
 } from '../lib/pos'
 import { updateMenu } from '../lib/masterData'
+import { todayStr } from '../lib/accounting'
+import {
+  normHandle,
+  remainingByMenu,
+  reservedByMenu,
+  resQty,
+  setReservationStatus,
+  useInvalidateReservations,
+  useMenuStock,
+  useReservations,
+  type Reservation,
+} from '../lib/reservations'
 
 type CartItem = { menuId: string | null; name: string; price: number; qty: number }
 type ManualItem = { id: string; price: number }
@@ -56,6 +68,10 @@ export default function PosPage() {
   const pendingCount = usePendingCount()
   const queryClient = useQueryClient()
   const [reordering, setReordering] = useState(false)
+  const [resOpen, setResOpen] = useState(false)
+  const stockQ = useMenuStock(todayStr())
+  const resQ = useReservations(todayStr())
+  const invalidateRes = useInvalidateReservations()
 
   const [qty, setQty] = usePersistedState<Record<string, number>>('kbtr_v3_pos_qty', {})
   const [manualItems, setManualItems] = usePersistedState<ManualItem[]>('kbtr_v3_pos_manual', [])
@@ -102,6 +118,30 @@ export default function PosPage() {
 
   const activeReceipts = receipts.filter((r) => !r.voided)
   const dayTotal = activeReceipts.reduce((s, r) => s + r.total, 0)
+
+  // 売り切れ管理: 用意数 − 売れた数 − 取り置き中 − いまカートに入れた数。用意数を決めていないメニューは制限なし
+  const stock = stockQ.data ?? {}
+  const todayRes = (resQ.data ?? []).filter((r) => r.status === 'reserved')
+  const sold: Record<string, number> = {}
+  for (const r of activeReceipts) for (const l of r.lines) if (l.menuId) sold[l.menuId] = (sold[l.menuId] ?? 0) + l.qty
+  const left = remainingByMenu(stock, sold, reservedByMenu(todayRes), qty)
+  const totalLeft = Object.values(left).reduce((a, n) => a + Math.max(0, n), 0)
+  const hasStock = Object.keys(stock).length > 0
+
+  // 取り置きの受け渡し: 品目をカートに入れ、取り置きを「受け渡し済み」にする（残り数の計算は変わらない）
+  const handOver = async (r: Reservation) => {
+    setQty((prev) => {
+      const next = { ...prev }
+      for (const i of r.items) if (i.menu_id) next[i.menu_id] = (next[i.menu_id] ?? 0) + i.qty
+      return next
+    })
+    try {
+      await setReservationStatus(r.id, 'picked_up')
+      invalidateRes()
+    } catch {
+      // 通信できないときも、レジには入れておく（あとで取り置きリストから受け渡し済みにする）
+    }
+  }
 
   const setCount = (menuId: string, delta: number) => {
     setQty((prev) => ({ ...prev, [menuId]: Math.max(0, (prev[menuId] ?? 0) + delta) }))
@@ -462,6 +502,45 @@ export default function PosPage() {
         </div>
       )}
 
+      {(hasStock || todayRes.length > 0) && (
+        <div className="mb-3 rounded-xl border border-stone-200 bg-white">
+          <button onClick={() => setResOpen((v) => !v)} className="w-full flex items-center justify-between gap-2 px-3 py-2.5 text-left">
+            <span className="text-sm text-stone-700 flex flex-wrap gap-x-3">
+              {hasStock && (
+                <span>
+                  残り <b className="text-stone-900 text-base">{totalLeft}</b> 食
+                </span>
+              )}
+              {todayRes.length > 0 && (
+                <span className="text-amber-700 font-semibold">
+                  取り置き {todayRes.length}件（{todayRes.reduce((a, r) => a + resQty(r), 0)}食）
+                </span>
+              )}
+            </span>
+            {todayRes.length > 0 && <span className="text-xs text-stone-400">{resOpen ? '▲' : '▼'}</span>}
+          </button>
+          {resOpen && todayRes.length > 0 && (
+            <div className="border-t border-stone-200 divide-y divide-stone-100">
+              {todayRes.map((r) => (
+                <div key={r.id} className="flex items-center gap-2 px-3 py-2">
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-semibold text-stone-800 truncate">
+                      {r.name || '（名前なし）'}
+                      {normHandle(r.handle) && <span className="ml-1.5 text-xs font-normal text-stone-500">@{normHandle(r.handle)}</span>}
+                    </p>
+                    <p className="text-xs text-stone-600">{r.items.map((i) => `${i.name}×${i.qty}`).join('、')}</p>
+                    {r.note && <p className="text-xs text-stone-500">メモ: {r.note}</p>}
+                  </div>
+                  <button onClick={() => void handOver(r)} className="shrink-0 text-sm font-bold bg-amber-700 text-[#faf9f5] rounded-lg px-3 py-2.5">
+                    会計に入れる
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
+
       {menusLoading && <Spinner />}
 
       {!menusLoading && menus.length === 0 && (
@@ -506,19 +585,32 @@ export default function PosPage() {
             )
           }
           const count = qty[m.id] ?? 0
+          const limited = stock[m.id] != null
+          const remain = limited ? left[m.id] : null // カートに入れた分も引いた残り
+          const soldOut = limited && (remain as number) <= 0
           return (
             <div
               key={m.id}
               className={`rounded-2xl border-2 flex flex-col ${
-                count > 0 ? 'border-amber-500 bg-amber-50' : 'border-stone-300 bg-white'
+                soldOut && count === 0
+                  ? 'border-stone-200 bg-stone-100 opacity-60'
+                  : count > 0
+                    ? 'border-amber-500 bg-amber-50'
+                    : 'border-stone-300 bg-white'
               }`}
             >
               <button
                 onClick={() => setCount(m.id, 1)}
-                className="p-4 text-left flex-1 active:brightness-95 transition-all"
+                disabled={soldOut}
+                className="p-4 text-left flex-1 active:brightness-95 transition-all disabled:active:brightness-100"
               >
                 <p className="font-bold text-stone-900 leading-snug">{m.name}</p>
                 <p className="text-amber-800 font-bold text-lg mt-1">¥{m.price.toLocaleString()}</p>
+                {limited && (
+                  <p className={`mt-1 text-sm font-bold ${soldOut ? 'text-red-600' : (remain as number) <= 3 ? 'text-red-500' : 'text-stone-500'}`}>
+                    {soldOut ? '売り切れ' : `残り ${remain}`}
+                  </p>
+                )}
               </button>
               {count > 0 && (
                 <div className="flex border-t-2 border-amber-200">
@@ -531,7 +623,8 @@ export default function PosPage() {
                   <span className="flex-1 py-3 text-center text-xl font-bold text-amber-700">{count}</span>
                   <button
                     onClick={() => setCount(m.id, 1)}
-                    className="flex-1 py-3 text-2xl font-bold text-stone-600 active:bg-stone-100 rounded-br-xl"
+                    disabled={soldOut}
+                    className="flex-1 py-3 text-2xl font-bold text-stone-600 active:bg-stone-100 rounded-br-xl disabled:opacity-30"
                   >
                     ＋
                   </button>

@@ -1,272 +1,286 @@
-import { useCallback, useState } from 'react'
-import { ChefHat, ShoppingCart } from 'lucide-react'
+import { useMemo, useState } from 'react'
+import { ChefHat, Check, Plus, X } from 'lucide-react'
 import { useAuth } from '../lib/auth'
 import { Spinner } from '../components/Spinner'
+import { QuickExpenseForm } from '../components/QuickExpenseForm'
+import { useActiveMenus } from '../lib/pos'
 import {
-  useRecipes,
+  useAllMenuComponents,
   useAllRecipeIngredients,
   groupRecipeIngredientsByRecipe,
-  RECIPE_TYPES,
+  useIngredients,
+  useRecipes,
 } from '../lib/masterData'
-import { useIngredients } from '../lib/masterData'
-import { getRecent, pushRecent, RECENT_KEYS, RECENT_LABEL } from '../lib/recent'
-import { usePersistedState } from '../lib/persistState'
+import { todayStr, useInvalidateJournal } from '../lib/accounting'
+import { useStoredState } from '../lib/persistState'
+import { fmtQty, groupBySupplier, ingredientNeeds } from '../lib/prepPlan'
+import { reservedByMenu, saveMenuStock, useInvalidateReservations, useMenuStock, useReservations } from '../lib/reservations'
 
-type PrepItem = { recipeId: string; mult: string }
-const PREP_KEY = 'kbtr_v3_prep'
-const ALL_LABEL = 'すべて'
+const yen = (n: number) => `¥${Math.round(n).toLocaleString()}`
+const md = (d: string) => `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}`
+const WEEK = ['日', '月', '火', '水', '木', '金', '土']
+const wd = (d: string) => WEEK[new Date(+d.slice(0, 4), +d.slice(5, 7) - 1, +d.slice(8, 10)).getDay()]
 
-function fmt(x: number): string {
-  return (Math.round(x * 10) / 10).toLocaleString()
+function nextSaturday(today: string): string {
+  const d = new Date(+today.slice(0, 4), +today.slice(5, 7) - 1, +today.slice(8, 10))
+  d.setDate(d.getDate() + ((6 - d.getDay() + 7) % 7))
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
 }
 
+// 仕込み・買い出し: 営業日ごとにメニューの食数を入れると、必要な材料と概算金額が出る。
+// その食数は「用意数」としてレジの売り切れ管理に使える。
 export default function PrepPage() {
-  const { session: authSession, loading: authLoading, loginWithGoogle } = useAuth()
-  const { data: recipes = [], isLoading: recipesLoading } = useRecipes()
-  const { data: allRecipeIngredients = [] } = useAllRecipeIngredients()
-  const { data: ingredients = [] } = useIngredients()
-  const recipeIngredientsByRecipe = groupRecipeIngredientsByRecipe(allRecipeIngredients)
-  const stockByName: Record<string, number | null> = {}
-  for (const i of ingredients) stockByName[i.name] = i.stock_g
+  const { session, loading, loginWithGoogle } = useAuth()
+  const today = todayStr()
+  const [saved, setSaved] = useStoredState('kbtr_v3_prep_date', nextSaturday(today))
+  const date = saved < today ? nextSaturday(today) : saved
 
-  const [search, setSearch] = useState('')
-  const [cat, setCat] = usePersistedState<string>('kbtr_view_prep_cat', RECENT_LABEL)
-  const [recent, setRecent] = useState<string[]>(() => getRecent(RECENT_KEYS.prep))
-  const [subTab, setSubTab] = useState<'shopping' | 'recipes'>('shopping')
-  const [selected, setSelected] = useState<PrepItem[]>(() => {
+  const menus = useActiveMenus()
+  const components = useAllMenuComponents()
+  const items = useAllRecipeIngredients()
+  const ingredients = useIngredients()
+  const recipes = useRecipes()
+  const stock = useMenuStock(date)
+  const res = useReservations(date)
+  const invalidateRes = useInvalidateReservations()
+  const invalidateJournal = useInvalidateJournal()
+
+  // 画面で直した食数（まだ保存していない分）。入れていないメニューは、保存済みの用意数を出す
+  const [edits, setEdits] = useState<Record<string, string>>({})
+  const [extra, setExtra] = useStoredState<Record<string, string>>('kbtr_v3_prep_extra', {})
+  const [checked, setChecked] = useStoredState<Record<string, boolean>>(`kbtr_v3_shop_${date}`, {})
+  const [busy, setBusy] = useState(false)
+  const [msg, setMsg] = useState<string | null>(null)
+  const [extraSearch, setExtraSearch] = useState('')
+
+  const menuQty = useMemo(
+    () => Object.fromEntries((menus.data ?? []).map((m) => [m.id, edits[m.id] !== undefined ? Number(edits[m.id]) || 0 : stock.data?.[m.id] ?? 0])),
+    [menus.data, edits, stock.data],
+  )
+
+  const byRecipe = useMemo(() => groupRecipeIngredientsByRecipe(items.data ?? []), [items.data])
+  const info = useMemo(() => new Map((ingredients.data ?? []).map((i) => [i.id, { supplier: i.supplier, category: i.category }])), [ingredients.data])
+  const rows = useMemo(
+    () =>
+      ingredientNeeds({
+        menuQty,
+        components: components.data ?? [],
+        recipeItems: byRecipe,
+        extraMult: Object.fromEntries(Object.entries(extra).map(([k, v]) => [k, Number(v) || 0])),
+        ingredientInfo: info,
+      }),
+    [menuQty, components.data, byRecipe, extra, info],
+  )
+  const groups = useMemo(() => groupBySupplier(rows), [rows])
+  const total = rows.reduce((a, r) => a + (r.cost ?? 0), 0)
+  const unpriced = rows.filter((r) => r.cost == null).length
+  const reserved = reservedByMenu(res.data ?? [])
+  const totalServings = (menus.data ?? []).reduce((a, m) => a + (menuQty[m.id] ?? 0), 0)
+
+  const saveStock = async () => {
+    setBusy(true)
+    setMsg(null)
     try {
-      return JSON.parse(localStorage.getItem(PREP_KEY) ?? '[]')
-    } catch {
-      return []
-    }
-  })
-
-  const persist = useCallback((next: PrepItem[]) => {
-    setSelected(next)
-    localStorage.setItem(PREP_KEY, JSON.stringify(next))
-  }, [])
-
-  const addRecipe = (recipeId: string) => {
-    const r = recipes.find((x) => x.id === recipeId)
-    if (r) setRecent(pushRecent(RECENT_KEYS.prep, r.name))
-    if (selected.some((s) => s.recipeId === recipeId)) return
-    persist([...selected, { recipeId, mult: '1' }])
-    setSearch('')
-  }
-  const removeRecipe = (recipeId: string) => {
-    persist(selected.filter((s) => s.recipeId !== recipeId))
-  }
-  const setMult = (recipeId: string, mult: string) => {
-    persist(selected.map((s) => (s.recipeId === recipeId ? { ...s, mult } : s)))
-  }
-
-  const recipeById = (id: string) => recipes.find((r) => r.id === id)
-
-  // 買い出し集計
-  const agg: Record<string, { qty: number; unit: string }> = {}
-  for (const s of selected) {
-    const m = Number(s.mult) || 0
-    for (const it of recipeIngredientsByRecipe[s.recipeId] ?? []) {
-      const name = it.ingredients.name
-      if (!agg[name]) agg[name] = { qty: 0, unit: it.unit }
-      agg[name].qty += it.quantity * m
+      const map: Record<string, number | null> = {}
+      for (const m of menus.data ?? []) {
+        const v = edits[m.id]
+        if (v === undefined) continue
+        map[m.id] = v.trim() === '' ? null : Math.max(0, Math.round(Number(v) || 0))
+      }
+      await saveMenuStock(date, map)
+      invalidateRes()
+      setEdits({})
+      setMsg(`${md(date)} の用意数を保存しました。レジに「残り◯食」が出ます`)
+    } catch (e) {
+      setMsg(e instanceof Error ? e.message : '保存できませんでした')
+    } finally {
+      setBusy(false)
     }
   }
-  const shoppingRows = Object.entries(agg)
-    .map(([name, v]) => {
-      const stock = stockByName[name] ?? null
-      const short = v.qty - (stock ?? 0)
-      return { name, need: v.qty, unit: v.unit, stock, short }
-    })
-    .sort((a, b) => b.short - a.short)
 
-  const types = [...new Set(recipes.map((r) => r.dish_type || 'その他'))]
-  const ordered = RECIPE_TYPES.filter((t) => types.includes(t))
-  const extra = types.filter((t) => !RECIPE_TYPES.includes(t)).sort()
-  const typeTabs = [...ordered, ...extra]
-
-  const selectedIds = new Set(selected.map((s) => s.recipeId))
-  // 「最近」が空のとき（まだ使っていない）は「すべて」を見せる
-  const viewCat = cat === RECENT_LABEL && recent.length === 0 ? ALL_LABEL : cat
-  const listed = (
-    search
-      ? recipes.filter((r) => r.name.includes(search)).slice(0, 50)
-      : viewCat === ALL_LABEL
-        ? recipes
-        : viewCat === RECENT_LABEL
-          ? recent.map((n) => recipes.find((r) => r.name === n)).filter((r): r is (typeof recipes)[number] => !!r)
-          : recipes.filter((r) => (r.dish_type || 'その他') === viewCat)
-  ).filter((r) => !selectedIds.has(r.id))
-
-  if (authLoading) return <Spinner />
-  if (!authSession) {
+  if (loading) return <Spinner />
+  if (!session) {
     return (
       <div className="p-6 flex flex-col items-center justify-center min-h-[70svh] gap-6">
         <ChefHat className="w-16 h-16 text-amber-700" strokeWidth={1.5} />
-        <h1 className="text-xl font-bold text-amber-800">仕込み計画</h1>
-        <button
-          onClick={() => void loginWithGoogle()}
-          className="bg-amber-700 text-[#faf9f5] px-6 py-3 rounded-xl font-semibold shadow active:scale-95 transition-transform"
-        >
+        <h1 className="text-xl font-bold text-amber-800">仕込み・買い出し</h1>
+        <button onClick={() => void loginWithGoogle()} className="bg-amber-700 text-[#faf9f5] px-6 py-3 rounded-xl font-semibold">
           Googleでログイン
         </button>
       </div>
     )
   }
 
+  const extraList = Object.keys(extra)
+    .map((id) => recipes.data?.find((r) => r.id === id))
+    .filter((r): r is NonNullable<typeof r> => !!r)
+  const extraCandidates = extraSearch
+    ? (recipes.data ?? []).filter((r) => r.name.includes(extraSearch) && !(r.id in extra)).slice(0, 8)
+    : []
+  const dirty = Object.keys(edits).length > 0
+
   return (
-    <div className="p-4 pb-24 max-w-2xl mx-auto">
-      <div className="flex items-center justify-between mb-3">
-        <h1 className="text-xl font-bold text-amber-800 flex items-center gap-2">
-          <ChefHat className="w-5 h-5" /> 仕込み計画
-        </h1>
-      </div>
+    <div className="p-4 pb-28 max-w-2xl mx-auto space-y-4">
+      <h1 className="text-xl font-bold text-amber-800 flex items-center gap-2">
+        <ChefHat className="w-5 h-5" /> 仕込み・買い出し
+      </h1>
 
-      {recipesLoading && <Spinner />}
+      <section className="bg-white border border-stone-200 rounded-2xl p-4 space-y-3">
+        <div className="flex items-center gap-2 flex-wrap">
+          <button onClick={() => setSaved(nextSaturday(today))} className="px-3 py-1.5 rounded-full bg-stone-100 text-sm font-semibold text-stone-700">
+            次の土曜
+          </button>
+          <button onClick={() => setSaved(today)} className="px-3 py-1.5 rounded-full bg-stone-100 text-sm font-semibold text-stone-700">
+            今日
+          </button>
+          <input type="date" value={date} onChange={(e) => e.target.value && setSaved(e.target.value)} className="border border-stone-300 rounded-lg px-2 py-1.5 text-sm" />
+          <span className="text-sm font-bold text-stone-800">
+            {md(date)}（{wd(date)}）の営業
+          </span>
+        </div>
 
-      {selected.length > 0 && (
-        <div className="space-y-1.5 mb-4">
-          <p className="text-xs text-stone-400">本日の仕込み（{selected.length}品）</p>
-          {selected.map((s) => {
-            const r = recipeById(s.recipeId)
-            if (!r) return null
+        <p className="text-sm text-stone-600">メニューごとに、何食つくるかを入れてください。必要な材料が下に出ます。</p>
+
+        {(menus.isLoading || components.isLoading) && <Spinner />}
+        <div className="divide-y divide-stone-100 border border-stone-200 rounded-xl">
+          {(menus.data ?? []).map((m) => {
+            const hasRecipe = (components.data ?? []).some((c) => c.menu_id === m.id)
             return (
-              <div key={s.recipeId} className="flex items-center gap-2 border border-stone-200 rounded-lg px-3 py-2">
-                <span className="flex-1 min-w-0 truncate text-sm text-stone-800">{r.name}</span>
-                <div className="flex items-center gap-1 shrink-0">
-                  <input
-                    type="number"
-                    inputMode="decimal"
-                    step="0.5"
-                    value={s.mult}
-                    onChange={(e) => setMult(s.recipeId, e.target.value)}
-                    className="w-14 border border-stone-300 rounded px-2 py-1 text-right text-sm"
-                  />
-                  <span className="text-xs text-stone-400">倍</span>
+              <div key={m.id} className="flex items-center gap-2 px-3 py-2">
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-semibold text-stone-800 truncate">{m.name}</p>
+                  <p className="text-xs text-stone-500">
+                    {!hasRecipe && 'レシピ未設定 ・ '}
+                    {(reserved[m.id] ?? 0) > 0 && `取り置き ${reserved[m.id]}食`}
+                  </p>
                 </div>
-                <button onClick={() => removeRecipe(s.recipeId)} className="text-stone-300 text-lg shrink-0 px-1">
-                  ×
-                </button>
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  min={0}
+                  value={edits[m.id] ?? (stock.data?.[m.id] != null ? String(stock.data[m.id]) : '')}
+                  placeholder="0"
+                  onChange={(e) => setEdits((x) => ({ ...x, [m.id]: e.target.value }))}
+                  className="w-20 border border-stone-300 rounded-lg px-2 py-2.5 text-right text-lg font-bold"
+                  aria-label={`${m.name}の食数`}
+                />
+                <span className="text-sm text-stone-500 w-4">食</span>
               </div>
             )
           })}
         </div>
-      )}
-
-      {selected.length > 0 && (
-        <div className="flex border border-stone-200 rounded-lg overflow-hidden mb-3">
+        <div className="flex items-center justify-between">
+          <p className="text-sm text-stone-600">
+            合計 <b className="text-stone-900 text-base">{totalServings}</b> 食
+          </p>
           <button
-            onClick={() => setSubTab('shopping')}
-            className={`flex-1 py-2 text-sm font-semibold flex items-center justify-center gap-1.5 ${subTab === 'shopping' ? 'bg-amber-700 text-[#faf9f5]' : 'text-stone-500'}`}
+            onClick={() => void saveStock()}
+            disabled={busy || !dirty}
+            className="px-4 py-2.5 rounded-xl bg-amber-700 text-[#faf9f5] text-sm font-bold disabled:opacity-40"
           >
-            <ShoppingCart className="w-4 h-4" /> 買い出し
-          </button>
-          <button
-            onClick={() => setSubTab('recipes')}
-            className={`flex-1 py-2 text-sm font-semibold flex items-center justify-center gap-1.5 ${subTab === 'recipes' ? 'bg-amber-700 text-[#faf9f5]' : 'text-stone-500'}`}
-          >
-            <ChefHat className="w-4 h-4" /> 仕込みレシピ
+            {busy ? '保存中…' : 'この食数を用意数として保存'}
           </button>
         </div>
-      )}
+        <p className="text-xs text-stone-500">保存すると、レジにメニューごとの「残り◯食」が出て、売り切れで押せなくなります。空欄にして保存すると、そのメニューは制限なしに戻ります。</p>
+        {msg && <p className="text-sm text-green-700 font-semibold">{msg}</p>}
+      </section>
 
-      {selected.length > 0 && subTab === 'shopping' && (
-        <div className="border border-stone-200 rounded-lg overflow-hidden mb-5">
-          <table className="w-full text-sm">
-            <thead className="bg-stone-50 text-stone-500">
-              <tr>
-                <th className="text-left px-3 py-2 font-medium">食材</th>
-                <th className="text-right px-2 py-2 font-medium">必要量</th>
-                <th className="text-right px-2 py-2 font-medium">在庫</th>
-                <th className="text-right px-3 py-2 font-medium">買う量</th>
-              </tr>
-            </thead>
-            <tbody>
-              {shoppingRows.map((r) => (
-                <tr key={r.name} className={`border-t border-stone-100 ${r.short > 0 ? '' : 'text-stone-400'}`}>
-                  <td className="px-3 py-2 text-stone-800">{r.name}</td>
-                  <td className="px-2 py-2 text-right">
-                    {fmt(r.need)}
-                    {r.unit}
-                  </td>
-                  <td className="px-2 py-2 text-right text-stone-400">{r.stock === null ? 'N/A' : fmt(r.stock)}</td>
-                  <td className={`px-3 py-2 text-right font-semibold ${r.short > 0 ? 'text-red-600' : 'text-green-600'}`}>
-                    {r.short > 0 ? `${fmt(r.short)}${r.unit}` : '足りる'}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {selected.length > 0 && subTab === 'recipes' && (
-        <div className="space-y-4 mb-5">
-          {selected.map((s) => {
-            const r = recipeById(s.recipeId)
-            if (!r) return null
-            const m = Number(s.mult) || 0
-            const items = recipeIngredientsByRecipe[s.recipeId] ?? []
-            return (
-              <div key={s.recipeId}>
-                <h3 className="font-semibold text-stone-800 mb-1">
-                  {r.name} <span className="text-sm text-amber-700">×{s.mult}</span>
-                </h3>
-                <div className="border border-stone-200 rounded-lg overflow-hidden">
-                  <table className="w-full text-sm">
-                    <tbody>
-                      {items.map((it) => (
-                        <tr key={it.id} className="border-t border-stone-100 first:border-t-0">
-                          <td className="px-3 py-1.5 text-stone-700">{it.ingredients.name}</td>
-                          <td className="px-3 py-1.5 text-right font-medium text-stone-800">
-                            {fmt(it.quantity * m)}
-                            {it.unit}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )
-          })}
-        </div>
-      )}
-
-      {!recipesLoading && (
-        <div className="border-t border-stone-200 pt-3">
-          <p className="text-xs text-stone-400 mb-2">レシピを追加</p>
-          <input
-            type="text"
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            placeholder="レシピを検索…"
-            className="w-full border border-stone-300 rounded-lg px-3 py-2 mb-2"
-          />
-          {!search && (
-            <div className="flex gap-1.5 overflow-x-auto pb-2 mb-2 -mx-1 px-1">
-              {[RECENT_LABEL, ALL_LABEL, ...typeTabs].map((t) => (
-                <button
-                  key={t}
-                  onClick={() => setCat(t)}
-                  className={`shrink-0 px-3 py-1.5 rounded-full text-sm font-semibold ${viewCat === t ? 'bg-amber-700 text-[#faf9f5]' : 'bg-stone-100 text-stone-600'}`}
-                >
-                  {t}
-                </button>
-              ))}
-            </div>
-          )}
-          <div className="border border-stone-200 rounded-lg divide-y divide-stone-100 max-h-64 overflow-y-auto">
-            {listed.map((r) => (
-              <button key={r.id} onClick={() => addRecipe(r.id)} className="w-full text-left px-3 py-2 text-sm active:bg-stone-50 flex justify-between">
-                <span className="truncate">{r.name}</span>
-                <span className="text-amber-700 ml-2 shrink-0">＋追加</span>
-              </button>
-            ))}
-            {listed.length === 0 && <p className="text-center text-stone-400 text-sm py-6">該当するレシピがありません</p>}
+      {rows.length > 0 ? (
+        <section className="space-y-3">
+          <div className="flex items-baseline justify-between">
+            <h2 className="text-base font-bold text-stone-800">買い出しリスト</h2>
+            <p className="text-sm text-stone-600">
+              概算 <b className="text-stone-900 text-base">{yen(total)}</b>（税込）
+            </p>
           </div>
-        </div>
+          {unpriced > 0 && <p className="text-xs text-amber-700">単価が未設定の食材が {unpriced}件あり、金額に含まれていません（食材の画面で単価を入れてください）。</p>}
+          {groups.map((g) => (
+            <div key={g.supplier} className="bg-white border border-stone-200 rounded-2xl overflow-hidden">
+              <div className="flex items-center justify-between px-3 py-2 bg-stone-50">
+                <p className="text-sm font-bold text-stone-700">{g.supplier}</p>
+                <p className="text-xs text-stone-500">{yen(g.cost)}</p>
+              </div>
+              <ul className="divide-y divide-stone-100">
+                {g.rows.map((r) => {
+                  const on = !!checked[r.ingredientId]
+                  return (
+                    <li key={r.ingredientId}>
+                      <button onClick={() => setChecked((c) => ({ ...c, [r.ingredientId]: !on }))} className="w-full flex items-center gap-3 px-3 py-3 text-left">
+                        <span className={`w-6 h-6 rounded-md border-2 flex items-center justify-center shrink-0 ${on ? 'bg-amber-700 border-amber-700' : 'border-stone-300'}`}>
+                          {on && <Check className="w-4 h-4 text-[#faf9f5]" />}
+                        </span>
+                        <span className={`flex-1 min-w-0 text-base ${on ? 'line-through text-stone-400' : 'text-stone-800'}`}>{r.name}</span>
+                        <span className={`font-bold shrink-0 ${on ? 'text-stone-400' : 'text-stone-900'}`}>{fmtQty(r.qty, r.unit)}</span>
+                        <span className="text-xs text-stone-500 w-14 text-right shrink-0">{r.cost != null ? yen(r.cost) : '—'}</span>
+                      </button>
+                    </li>
+                  )
+                })}
+              </ul>
+            </div>
+          ))}
+          <button onClick={() => setChecked({})} className="text-xs text-stone-500 underline">
+            チェックをすべてはずす
+          </button>
+        </section>
+      ) : (
+        <p className="text-center text-stone-500 text-sm py-4">食数を入れると、ここに必要な材料が出ます。</p>
       )}
+
+      <details className="bg-white border border-stone-200 rounded-xl px-3 py-2">
+        <summary className="text-sm font-semibold text-stone-700 cursor-pointer">メニューにない仕込みを足す（レシピを倍数で）</summary>
+        <div className="mt-2 space-y-2">
+          {extraList.map((r) => (
+            <div key={r.id} className="flex items-center gap-2">
+              <span className="flex-1 min-w-0 truncate text-sm text-stone-800">{r.name}</span>
+              <input
+                type="number"
+                inputMode="decimal"
+                step="0.5"
+                value={extra[r.id]}
+                onChange={(e) => setExtra((x) => ({ ...x, [r.id]: e.target.value }))}
+                className="w-16 border border-stone-300 rounded px-2 py-1.5 text-right text-sm"
+              />
+              <span className="text-xs text-stone-500">倍</span>
+              <button
+                onClick={() =>
+                  setExtra((x) => {
+                    const n = { ...x }
+                    delete n[r.id]
+                    return n
+                  })
+                }
+                aria-label="はずす"
+                className="p-1 text-stone-400"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+          ))}
+          <input value={extraSearch} onChange={(e) => setExtraSearch(e.target.value)} placeholder="レシピ名で探す" className="w-full border border-stone-300 rounded-lg px-3 py-2 text-sm" />
+          {extraCandidates.map((r) => (
+            <button
+              key={r.id}
+              onClick={() => {
+                setExtra((x) => ({ ...x, [r.id]: '1' }))
+                setExtraSearch('')
+              }}
+              className="w-full flex items-center justify-between text-left text-sm px-3 py-2 rounded-lg bg-stone-50"
+            >
+              <span className="truncate">{r.name}</span>
+              <Plus className="w-4 h-4 text-amber-700 shrink-0" />
+            </button>
+          ))}
+        </div>
+      </details>
+
+      <details className="bg-white border border-stone-200 rounded-xl px-3 py-2">
+        <summary className="text-sm font-semibold text-stone-700 cursor-pointer">現金で払った買い物を記録する</summary>
+        <div className="mt-2 space-y-2">
+          <p className="text-xs text-stone-500">カードで払った分は、取り込みの画面で自動で入ります。現金で払った分だけ、ここで金額を入れてください（仕入高として会計に入ります）。</p>
+          <QuickExpenseForm onSaved={invalidateJournal} />
+        </div>
+      </details>
     </div>
   )
 }

@@ -12,6 +12,7 @@ import {
   Home,
   ChefHat,
   Menu as MenuIcon,
+  Users,
   type LucideIcon,
 } from 'lucide-react'
 import { AuthProvider, useAuth } from './lib/auth'
@@ -20,6 +21,7 @@ import { preloadAll } from './lib/preload'
 import MorePage from './pages/MorePage'
 import HomePage from './pages/HomePage'
 import ToolsPage from './pages/ToolsPage'
+import ReservationsPage from './pages/ReservationsPage'
 import PosPage from './pages/PosPage'
 import AccountingPage from './pages/AccountingPage'
 import HistoryPage from './pages/HistoryPage'
@@ -54,6 +56,7 @@ type NavItem = { to: string; label: string; icon: LucideIcon }
 const SIDE_NAV: NavItem[] = [
   { to: '/', label: 'レジ', icon: ShoppingCart },
   { to: '/home', label: 'やること', icon: Home },
+  { to: '/reserve', label: '取り置き', icon: Users },
   { to: '/prep', label: '仕込み', icon: ChefHat },
   { to: '/analysis', label: '分析', icon: BarChart3 },
   { to: '/accounting', label: '会計', icon: Wallet },
@@ -63,6 +66,7 @@ const SIDE_NAV: NavItem[] = [
 ]
 const BOTTOM_NAV: NavItem[] = [
   { to: '/', label: 'ホーム', icon: Home },
+  { to: '/reserve', label: '取り置き', icon: Users },
   { to: '/prep', label: '仕込み', icon: ChefHat },
   { to: '/analysis', label: '分析', icon: BarChart3 },
   { to: '/more', label: 'その他', icon: MenuIcon },
@@ -229,6 +233,7 @@ export default function App() {
                   <Route path="/" element={<StartPage />} />
                   <Route path="/home" element={<HomePage />} />
                   <Route path="/pos" element={<PosPage />} />
+                  <Route path="/reserve" element={<ReservationsPage />} />
                   <Route path="/history" element={<HistoryPage />} />
                   <Route path="/tools" element={<ToolsPage />} />
                   <Route path="/more" element={<MorePage />} />

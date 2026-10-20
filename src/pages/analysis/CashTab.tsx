@@ -3,24 +3,20 @@ import { Card, Stat } from '../../components/charts'
 import { todayStr, useJournalEntries } from '../../lib/accounting'
 import { netAmount, useReceivables } from '../../lib/receivables'
 import { cashForecast } from '../../lib/planning'
+import { cardPayables, unpaidByDue } from '../../lib/cardPayable'
+import { useCardCycle } from '../../lib/importBooking'
 import { useStoredState } from '../../lib/persistState'
 import { Spinner } from '../../components/Spinner'
 import { yen } from '../../lib/format'
-
-// 次のカード引き落とし日（毎月 day 日）
-function nextWithdrawal(day: number, today: string): string {
-  const [y, m, d] = today.split('-').map(Number)
-  const pad = (n: number) => String(n).padStart(2, '0')
-  if (d <= day) return `${y}-${pad(m)}-${pad(day)}`
-  return m === 12 ? `${y + 1}-01-${pad(day)}` : `${y}-${pad(m + 1)}-${pad(day)}`
-}
 
 // 資金繰り: いまの現金+預金に、入金予定とカード引き落としを日付順に足し引きして見通しを出す。
 export default function CashTab() {
   const today = todayStr()
   const entries = useJournalEntries({ from: '2000-01-01', to: today })
   const recv = useReceivables()
-  const [day, setDay] = useStoredState('kbtr_v3_card_day', 10)
+  const [cycle, setCycle] = useCardCycle()
+  const day = cycle.payDay
+  const setDay = (d: number) => setCycle({ ...cycle, payDay: d })
   const [actual, setActual] = useStoredState('kbtr_v3_actual_balance', '')
   const f = useMemo(
     () =>
@@ -33,9 +29,10 @@ export default function CashTab() {
             net: netAmount(r),
             label: `入金予定 ${r.memo || r.segments?.name || ''}`.trim(),
           })),
-        nextWithdrawal(day, today),
+        // カード払いは利用日ごとに引き落とし日が違うので、予定日ごとに分けて差し引く
+        unpaidByDue(cardPayables(entries.data ?? [], cycle).items).map((g) => ({ date: g.due, amount: g.amount })),
       ),
-    [entries.data, recv.data, day, today],
+    [entries.data, recv.data, cycle],
   )
   // 事業用口座の実際の残高を入れると、個人の出入りで会計とずれた分を引き継いだうえで見通しを出す
   const actualNum = actual.trim() === '' ? null : Number(actual)

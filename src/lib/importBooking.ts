@@ -45,5 +45,12 @@ export function useCardPayables() {
   const journal = useJournalEntries({ from: '2000-01-01', to: '2999-12-31' })
   const result = useMemo(() => cardPayables(journal.data ?? [], cycle), [journal.data, cycle])
   const byEntry = useMemo(() => new Map(result.items.map((i) => [i.entryId, i])), [result.items])
-  return { ...result, byEntry, cycle, today: todayStr(), loading: journal.isLoading }
+  return { ...result, byEntry, cycle, today: todayStr(), loading: journal.isLoading, allEntries: journal.data ?? [] }
 }
+
+/** 「重複ではない」と確認した手入力の仕訳ID（端末に保存） */
+export function useNotDuplicate(): [Set<string>, (id: string) => void] {
+  const [ids, setIds] = useStoredState<string[]>('kbtr_v3_not_dup', [])
+  return [new Set(ids), (id) => setIds((xs) => (xs.includes(id) ? xs : [...xs, id]))]
+}
+

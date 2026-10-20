@@ -1,6 +1,6 @@
 import { CardPayableSummary } from '../components/CardPayableSummary'
-import { useCardPayables } from '../lib/importBooking'
-import { manualDuplicates } from '../lib/cardPayable'
+import { useCardPayables, useNotDuplicate } from '../lib/importBooking'
+import { findDuplicates } from '../lib/cardPayable'
 import { useSearchParams } from 'react-router-dom'
 import { useMemo, useState } from 'react'
 import { Wallet, Trash2, Check, AlertTriangle, Pencil } from 'lucide-react'
@@ -678,9 +678,14 @@ function RevenueTab({
 
 function LedgerTab({ entries, onSaved }: { entries: JournalEntry[]; onSaved: () => void }) {
   const [confirmTarget, setConfirmTarget] = useState<JournalEntry | null>(null)
-  const { byEntry } = useCardPayables()
-  // 取り込んだ仕訳と同じ日・同じ金額の手入力（消す候補）
-  const dupOf = useMemo(() => new Map(manualDuplicates(entries).map((p) => [p.manual.id, p.imported])), [entries])
+  const { byEntry, allEntries } = useCardPayables()
+  const [notDup, markNotDup] = useNotDuplicate()
+  // 取り込んだ仕訳と重複していそうな手入力（月をまたぐずれも拾うため全期間で探す）
+  const dupOf = useMemo(
+    () => new Map(findDuplicates(allEntries).filter((p) => !notDup.has(p.manual.id)).map((p) => [p.manual.id, p])),
+    [allEntries, notDup],
+  )
+  const monthDups = entries.filter((e) => dupOf.has(e.id)).length
   const md = (d: string) => `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}`
 
   const remove = async (entryId: string) => {
@@ -691,9 +696,9 @@ function LedgerTab({ entries, onSaved }: { entries: JournalEntry[]; onSaved: () 
   return (
     <div className="space-y-2">
       <CardPayableSummary />
-      {dupOf.size > 0 && (
+      {monthDups > 0 && (
         <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-          取り込んだ仕訳と同じ日・同じ金額の手入力が {dupOf.size}件あります（黄色の枠）。二重になっているので、手入力のほうを削除してください。
+          取り込んだ仕訳と重複していそうな手入力が {monthDups}件あります（黄色の枠）。二重なら手入力のほうを削除、別の支払いなら「重複ではない」を押してください。
         </p>
       )}
       {entries.length === 0 && <p className="text-center text-stone-400 text-sm py-4">この月の仕訳はまだありません</p>}
@@ -723,14 +728,22 @@ function LedgerTab({ entries, onSaved }: { entries: JournalEntry[]; onSaved: () 
           </div>
           {e.description && <p className="text-sm text-stone-600 mb-1">{e.description}</p>}
           {dupOf.has(e.id) && (
-            <div className="flex items-center justify-between gap-2 mb-1">
-              <p className="text-xs text-amber-800">取り込み「{dupOf.get(e.id)!.description}」と重複（手入力）</p>
-              <button
-                onClick={() => setConfirmTarget(e)}
-                className="text-xs font-bold text-[#faf9f5] bg-amber-700 rounded-lg px-2.5 py-1 shrink-0"
-              >
-                手入力を削除
-              </button>
+            <div className="mb-1.5 space-y-1">
+              <p className="text-xs text-amber-800">
+                {dupOf.get(e.id)!.level === 'same' ? '重複' : '重複かも'}：取り込み「{dupOf.get(e.id)!.imported.description}」（
+                {dupOf.get(e.id)!.imported.entry_date.slice(5)}）と同じ金額
+              </p>
+              <div className="flex gap-1.5">
+                <button
+                  onClick={() => setConfirmTarget(e)}
+                  className="text-xs font-bold text-[#faf9f5] bg-amber-700 rounded-lg px-2.5 py-1"
+                >
+                  手入力を削除
+                </button>
+                <button onClick={() => markNotDup(e.id)} className="text-xs font-semibold text-stone-600 border border-stone-300 rounded-lg px-2.5 py-1">
+                  重複ではない
+                </button>
+              </div>
             </div>
           )}
           <div className="space-y-0.5">

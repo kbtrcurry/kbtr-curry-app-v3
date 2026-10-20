@@ -86,14 +86,16 @@ export default function PrepPage() {
   const typeTabs = [...ordered, ...extra]
 
   const selectedIds = new Set(selected.map((s) => s.recipeId))
+  // 「最近」が空のとき（まだ使っていない）は「すべて」を見せる
+  const viewCat = cat === RECENT_LABEL && recent.length === 0 ? ALL_LABEL : cat
   const listed = (
     search
       ? recipes.filter((r) => r.name.includes(search)).slice(0, 50)
-      : cat === ALL_LABEL
+      : viewCat === ALL_LABEL
         ? recipes
-        : cat === RECENT_LABEL
+        : viewCat === RECENT_LABEL
           ? recent.map((n) => recipes.find((r) => r.name === n)).filter((r): r is (typeof recipes)[number] => !!r)
-          : recipes.filter((r) => (r.dish_type || 'その他') === cat)
+          : recipes.filter((r) => (r.dish_type || 'その他') === viewCat)
   ).filter((r) => !selectedIds.has(r.id))
 
   if (authLoading) return <Spinner />
@@ -247,7 +249,7 @@ export default function PrepPage() {
                 <button
                   key={t}
                   onClick={() => setCat(t)}
-                  className={`shrink-0 px-3 py-1.5 rounded-full text-sm font-semibold ${cat === t ? 'bg-amber-700 text-[#faf9f5]' : 'bg-stone-100 text-stone-600'}`}
+                  className={`shrink-0 px-3 py-1.5 rounded-full text-sm font-semibold ${viewCat === t ? 'bg-amber-700 text-[#faf9f5]' : 'bg-stone-100 text-stone-600'}`}
                 >
                   {t}
                 </button>

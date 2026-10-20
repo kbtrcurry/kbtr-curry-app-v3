@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { withdrawalDate, cardPayables, unpaidByDue, manualDuplicates } from './cardPayable'
+import { withdrawalDate, cardPayables, unpaidByDue, manualDuplicates, findDuplicates } from './cardPayable'
 import type { JournalEntry } from './accounting'
 
 type L = [string, 'asset' | 'liability' | 'revenue' | 'expense', 'debit' | 'credit', number]
@@ -68,3 +68,29 @@ describe('manualDuplicates', () => {
     expect(manualDuplicates([imp, man])[0].manual.id).toBe(man.id)
   })
 })
+
+describe('findDuplicates', () => {
+  it('同じ日・同じ金額でも科目が違えば「かも」止まり（自動では消さない）', () => {
+    const imp = E('2026-09-03', 'Amazon: ミント', [['501', 'expense', 'debit', 1400], ['292', 'liability', 'credit', 1400]])
+    const other = E('2026-09-03', '成増スリランカ', [['529', 'expense', 'debit', 1400], ['101', 'asset', 'credit', 1400]])
+    expect(manualDuplicates([imp, other])).toEqual([])
+    expect(findDuplicates([imp, other])[0].level).toBe('maybe')
+  })
+  it('同じ科目の手入力があれば、そちらを優先して自動削除の対象にする', () => {
+    const imp = E('2026-09-03', 'Amazon: ミント', [['501', 'expense', 'debit', 1400], ['292', 'liability', 'credit', 1400]])
+    const other = E('2026-09-03', '成増スリランカ', [['529', 'expense', 'debit', 1400], ['101', 'asset', 'credit', 1400]])
+    const mint = E('2026-09-03', 'ミント', [['501', 'expense', 'debit', 1400], ['101', 'asset', 'credit', 1400]])
+    const r = findDuplicates([imp, other, mint])
+    expect(r).toHaveLength(1)
+    expect(r[0]).toMatchObject({ level: 'same' })
+    expect(r[0].manual.id).toBe(mint.id)
+  })
+  it('日付が1〜3日ずれた同じ金額は「かも」', () => {
+    const imp = E('2026-09-20', 'Amazon: 輪ゴム', [['518', 'expense', 'debit', 262], ['292', 'liability', 'credit', 262]])
+    const man = E('2026-09-21', 'わごむ', [['518', 'expense', 'debit', 262], ['101', 'asset', 'credit', 262]])
+    const far = E('2026-09-28', 'わごむ', [['518', 'expense', 'debit', 262], ['101', 'asset', 'credit', 262]])
+    const r = findDuplicates([imp, far, man])
+    expect(r.map((x) => [x.manual.id, x.level])).toEqual([[man.id, 'maybe']])
+  })
+})
+

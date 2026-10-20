@@ -155,14 +155,19 @@ export function balanceOf(entries: JournalEntry[], code: string): number {
 export function cashForecast(
   entries: JournalEntry[],
   receivables: { expected_date: string; net: number; label: string }[],
-  cardWithdrawalDate: string | null,
+  /** カードの引き落とし予定（予定日ごと）。省略時は未払金の残高を日付未定で1件にする */
+  cardWithdrawals: { date: string; amount: number }[] | string | null,
 ): CashForecast {
   const cash = balanceOf(entries, '101')
   const bank = balanceOf(entries, '102')
   const cardPayable = -balanceOf(entries, '292')
   const current = cash + bank
   const raw = receivables.map((r) => ({ date: r.expected_date, label: r.label, amount: r.net }))
-  if (cardPayable > 0) raw.push({ date: cardWithdrawalDate ?? '9999-12-31', label: 'カード引き落とし（未払）', amount: -cardPayable })
+  if (Array.isArray(cardWithdrawals)) {
+    for (const w of cardWithdrawals) raw.push({ date: w.date, label: 'カード引き落とし', amount: -w.amount })
+  } else if (cardPayable > 0) {
+    raw.push({ date: cardWithdrawals ?? '9999-12-31', label: 'カード引き落とし（未払）', amount: -cardPayable })
+  }
   raw.sort((a, b) => a.date.localeCompare(b.date))
   let bal = current
   let lowest = current

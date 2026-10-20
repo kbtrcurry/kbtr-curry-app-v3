@@ -81,20 +81,48 @@ function isManualOf(e: JournalEntry, kind: 'expense' | 'revenue'): boolean {
   return hasType(e, kind)
 }
 
-/** 取り込んだ仕訳1件につき、同じ日・同じ金額の手入力の仕訳を1件ずつ対応させる（消す候補） */
-export function manualDuplicates(entries: JournalEntry[]): { imported: JournalEntry; manual: JournalEntry }[] {
-  const used = new Set<string>()
-  const out: { imported: JournalEntry; manual: JournalEntry }[] = []
-  for (const imp of entries.filter(isImportedEntry)) {
-    const kind = hasType(imp, 'revenue') ? 'revenue' : 'expense'
-    const amt = entryAmount(imp)
-    const m = entries.find(
-      (e) => !used.has(e.id) && e.id !== imp.id && e.entry_date === imp.entry_date && entryAmount(e) === amt && isManualOf(e, kind),
-    )
-    if (m) {
-      used.add(m.id)
-      out.push({ imported: imp, manual: m })
+/** 経費なら借方の費用科目、収益なら貸方の収益科目 */
+function mainAccount(e: JournalEntry): string {
+  const l = e.journal_lines.find((x) => x.accounts.type === 'expense' || x.accounts.type === 'revenue')
+  return l?.accounts.code ?? ''
+}
+
+const dayDiff = (a: string, b: string) =>
+  Math.abs(Date.UTC(+a.slice(0, 4), +a.slice(5, 7) - 1, +a.slice(8, 10)) - Date.UTC(+b.slice(0, 4), +b.slice(5, 7) - 1, +b.slice(8, 10))) / 86400000
+
+export type DupLevel = 'same' | 'maybe'
+export type DupPair = { imported: JournalEntry; manual: JournalEntry; level: DupLevel }
+
+/**
+ * 取り込んだ仕訳と、手入力の仕訳の重複を探す（取り込み1件・手入力1件ずつ対応）。
+ * - same: 同じ日・同じ金額・同じ科目 → 取り込み時に手入力を自動で削除してよい
+ * - maybe: 金額が同じで、日付が3日以内のずれ または 科目が違う → 一覧で「重複かも」と知らせるだけ
+ *   （Amazonは注文日、手入力は受け取った日、のように日付がずれることがある）
+ */
+export function findDuplicates(entries: JournalEntry[]): DupPair[] {
+  const usedManual = new Set<string>()
+  const usedImported = new Set<string>()
+  const imported = entries.filter(isImportedEntry)
+  const out: DupPair[] = []
+  const pass = (level: DupLevel, ok: (imp: JournalEntry, m: JournalEntry) => boolean) => {
+    for (const imp of imported) {
+      if (usedImported.has(imp.id)) continue
+      const kind = hasType(imp, 'revenue') ? 'revenue' : 'expense'
+      const amt = entryAmount(imp)
+      const m = entries.find((e) => !usedManual.has(e.id) && e.id !== imp.id && entryAmount(e) === amt && isManualOf(e, kind) && ok(imp, e))
+      if (m) {
+        usedManual.add(m.id)
+        usedImported.add(imp.id)
+        out.push({ imported: imp, manual: m, level })
+      }
     }
   }
+  pass('same', (imp, m) => m.entry_date === imp.entry_date && mainAccount(m) === mainAccount(imp))
+  pass('maybe', (imp, m) => dayDiff(m.entry_date, imp.entry_date) <= 3)
   return out
+}
+
+/** 取り込み時に自動で消してよい重複（同じ日・同じ金額・同じ科目） */
+export function manualDuplicates(entries: JournalEntry[]): DupPair[] {
+  return findDuplicates(entries).filter((p) => p.level === 'same')
 }

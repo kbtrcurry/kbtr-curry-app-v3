@@ -415,7 +415,7 @@ export default function DataPage() {
         : [...expenseAccounts, { id: f.accountId, code: '', name: e.journal_lines.find((l) => l.side === 'debit')?.accounts.name ?? '（科目）' }]
       const fields: Field[] = [
         { key: 'entryDate', label: '日付', type: 'date', half: true },
-        { key: 'segmentId', label: 'セグメント', type: 'select', options: segOptions, half: true },
+        { key: 'segmentId', label: '事業区分', type: 'select', options: segOptions, half: true },
         { key: 'accountId', label: '科目', type: 'select', options: accts.map((a) => ({ value: a.id, label: a.name })) },
         { key: 'amount', label: '金額（円）', type: 'number', half: true },
         {
@@ -464,7 +464,7 @@ export default function DataPage() {
       const f = revenueFormFromEntry(e)
       const fields: Field[] = [
         { key: 'entryDate', label: '日付', type: 'date', half: true },
-        { key: 'segmentId', label: 'セグメント', type: 'select', options: segOptions, half: true },
+        { key: 'segmentId', label: '事業区分', type: 'select', options: segOptions, half: true },
         { key: 'gross', label: '売上総額（円・手数料込）', type: 'number', half: true },
         { key: 'fee', label: '手数料（円）', type: 'number', half: true },
         { key: 'memo', label: 'メモ' },

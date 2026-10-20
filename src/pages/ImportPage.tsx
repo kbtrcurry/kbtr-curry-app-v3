@@ -288,7 +288,7 @@ function BankTab() {
       const t = deposits[i]
       const seg = segments.find((s) => s.code === segOf(i))
       if (!seg) {
-        failed.push(`${t.date} ${t.description}（セグメント「${segOf(i)}」が見つかりません）`)
+        failed.push(`${t.date} ${t.description}（事業区分「${segOf(i)}」が見つかりません）`)
         continue
       }
       try {

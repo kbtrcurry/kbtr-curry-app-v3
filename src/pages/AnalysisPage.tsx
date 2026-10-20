@@ -20,6 +20,7 @@ import { sessionStats, summarizeSessions, weekdayStats, segmentSessionStats } fr
 import { usePersistedState } from '../lib/persistState'
 import { menuStats, adDaily, adEffect } from '../lib/menuStats'
 import { adLift, foodGapSeries } from '../lib/planning'
+import { expenseTotal, suggestOneOff, useOneOff } from '../lib/journalTags'
 import { useMetaAds } from '../lib/ads'
 import PnlTab from './analysis/PnlTab'
 import MenusTab from './analysis/MenusTab'
@@ -44,11 +45,19 @@ export default function AnalysisPage() {
   const data = useAnalysisData(month)
   const activeTab: AnalysisTab = TABS.some((t) => t.key === tab) ? tab : 'pnl'
   const metaAds = useMetaAds()
+  const oneOff = useOneOff()
+  const [includeOneOff, setIncludeOneOff] = useStoredState('kbtr_v3_include_one_off', false)
 
   const view = useMemo(() => {
     const prev = shiftMonth(month, -1)
-    const pnl = pnlFromEntries(entriesOfMonth(data.entries, month))
-    const prevPnl = pnlFromEntries(entriesOfMonth(data.entries, prev))
+    // 「一時的な出費」の印が付いた仕訳は、既定では「いつもの営業の利益」から外す
+    const base = includeOneOff ? data.entries : data.entries.filter((e) => !oneOff.ids.has(e.id))
+    const monthEntries = entriesOfMonth(data.entries, month)
+    const oneOffItems = monthEntries
+      .filter((e) => oneOff.ids.has(e.id))
+      .map((e) => ({ id: e.id, date: e.entry_date, label: e.description || e.journal_lines.find((l) => l.side === 'debit')?.accounts.name || '', amount: expenseTotal(e) }))
+    const pnl = pnlFromEntries(entriesOfMonth(base, month))
+    const prevPnl = pnlFromEntries(entriesOfMonth(base, prev))
     const all = sessionStats(data.sessions, data.salesMap, data.foodBySession, data.reservedCostPerServing)
     const inMonth = all.filter((x) => x.date.startsWith(month))
     const prevStats = all.filter((x) => x.date.startsWith(prev))
@@ -73,13 +82,18 @@ export default function AnalysisPage() {
         weekday: weekdayStats(inMonth),
         segments: segmentSessionStats(inMonth),
       },
+      oneOff: {
+        items: oneOffItems,
+        total: oneOffItems.reduce((a, x) => a + x.amount, 0),
+        suggestions: suggestOneOff(monthEntries, oneOff.ids).map((e) => ({ id: e.id, date: e.entry_date, label: e.description || e.journal_lines.find((l) => l.side === 'debit')?.accounts.name || '', amount: expenseTotal(e) })),
+      },
       pnl,
       prevPnl,
       food: foodCostView(pnl, data.theoreticalByMonth.get(month) ?? 0, choice),
       prevFood: foodCostView(prevPnl, data.theoreticalByMonth.get(prev) ?? 0, choice),
-      series: monthlyProfitSeries(data.entries, lastMonths(month, 6), data.theoreticalByMonth, choice),
+      series: monthlyProfitSeries(base, lastMonths(month, 6), data.theoreticalByMonth, choice),
     }
-  }, [data.entries, data.theoreticalByMonth, data.sessions, data.salesMap, data.foodBySession, data.reservedCostPerServing, data.lines, data.costByMenuId, data.allMenus, metaAds.data, month, choice])
+  }, [oneOff.ids, includeOneOff, data.entries, data.theoreticalByMonth, data.sessions, data.salesMap, data.foodBySession, data.reservedCostPerServing, data.lines, data.costByMenuId, data.allMenus, metaAds.data, month, choice])
 
   if (authLoading) return <Spinner />
   if (!authSession) {
@@ -99,7 +113,7 @@ export default function AnalysisPage() {
 
   return (
     <div className="p-4 pb-24 max-w-2xl mx-auto space-y-3">
-      <div className="sticky top-0 z-10 -mx-4 px-4 py-2 bg-[#faf9f5]/95 backdrop-blur flex items-center gap-2">
+      <div className="sticky top-0 z-10 -mx-4 px-4 py-2 bg-[var(--page-bg)] flex items-center gap-2">
         <button
           onClick={() => setMonth(shiftMonth(month, -1))}
           className="p-2 rounded-lg bg-stone-100 text-stone-600 active:scale-95"
@@ -144,7 +158,7 @@ export default function AnalysisPage() {
       </div>
 
       {!data.loading && activeTab === 'pnl' && (
-        <PnlTab month={month} choice={choice} onChoice={setChoice} pnl={view.pnl} prevPnl={view.prevPnl} food={view.food} prevFood={view.prevFood} series={view.series} gap={view.gap} />
+        <PnlTab month={month} choice={choice} onChoice={setChoice} pnl={view.pnl} prevPnl={view.prevPnl} food={view.food} prevFood={view.prevFood} series={view.series} gap={view.gap} oneOff={view.oneOff} includeOneOff={includeOneOff} onIncludeOneOff={setIncludeOneOff} onMarkOneOff={(id, on) => void oneOff.set(id, on)} />
       )}
       {!data.loading && activeTab === 'sessions' && <SessionsTab {...view.sessions} />}
       {!data.loading && activeTab === 'menus' && <MenusTab menus={view.menus} />}

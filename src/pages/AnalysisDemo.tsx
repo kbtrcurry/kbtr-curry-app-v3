@@ -106,6 +106,10 @@ export default function AnalysisDemo() {
             prevFood={foodCostView(prevPnl, THEORETICAL.get('2026-09') ?? 0, choice)}
             series={monthlyProfitSeries(ENTRIES, lastMonths(m, 6), THEORETICAL, choice)}
             gap={[]}
+            oneOff={{ items: [], total: 0, suggestions: [] }}
+            includeOneOff={false}
+            onIncludeOneOff={() => {}}
+            onMarkOneOff={() => {}}
             choice={choice}
             onChoice={setChoice}
           />

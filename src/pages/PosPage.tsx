@@ -251,7 +251,7 @@ export default function PosPage() {
   if (step === 'pay') {
     return (
       <div
-        className="fixed inset-0 z-50 bg-[#191817] flex justify-center overflow-hidden"
+        className="fixed inset-0 z-50 bg-[var(--page-bg)] flex justify-center overflow-hidden"
         style={{
           paddingTop: 'calc(env(safe-area-inset-top, 0px) + 0.5rem)',
           paddingBottom: 'calc(env(safe-area-inset-bottom, 0px) + 0.75rem)',
@@ -266,7 +266,7 @@ export default function PosPage() {
 
           <div className="flex-1 min-h-0 flex flex-col md:grid md:grid-cols-2 md:auto-rows-fr md:gap-8 md:items-stretch">
             <div className="flex flex-col shrink-0 md:justify-start md:gap-3 md:self-start md:w-full">
-              <div className="rounded-2xl bg-[#191817] border border-stone-300 overflow-hidden mb-2 md:mb-0 shrink-0">
+              <div className="rounded-2xl bg-[var(--page-bg)] border border-stone-300 overflow-hidden mb-2 md:mb-0 shrink-0">
                 <div className="flex items-baseline justify-between px-4 py-2.5 md:py-4">
                   <span className="text-stone-500 text-sm md:text-lg">お会計（{cartCount}点）</span>
                   <span className="text-2xl md:text-4xl font-bold text-stone-900">

@@ -18,6 +18,7 @@ import {
 } from 'lucide-react'
 import { supabase, isSupabaseConfigured } from '../lib/supabase'
 import { useAuth } from '../lib/auth'
+import { readTheme, saveTheme, type ThemeChoice } from '../lib/theme'
 import { usePersistedState } from '../lib/persistState'
 import {
   useRecipes,
@@ -67,6 +68,11 @@ const HUB_GROUPS: { title: string; links: HubLink[] }[] = [
 export default function MorePage() {
   const { session, loading, loginWithGoogle, logout } = useAuth()
   const [checks, setChecks] = useState<CheckState[]>([])
+  const [theme, setThemeState] = useState<ThemeChoice>(readTheme)
+  const setTheme = (t: ThemeChoice) => {
+    saveTheme(t)
+    setThemeState(t)
+  }
 
   const { data: recipes = [] } = useRecipes()
   const { data: allRecipeIngredients = [] } = useAllRecipeIngredients()
@@ -123,6 +129,28 @@ export default function MorePage() {
       ))}
 
       <h2 className="text-xs font-bold text-stone-500 px-1 -mb-4">設定</h2>
+
+      <section className="bg-white rounded-xl p-4 space-y-2">
+        <h2 className="font-semibold text-stone-800">表示</h2>
+        <p className="text-xs text-stone-500">明るい場所（屋外のイベントなど）では「明るい」が見やすいです。</p>
+        <div className="flex rounded-lg border border-stone-300 overflow-hidden">
+          {(
+            [
+              ['dark', '暗い'],
+              ['light', '明るい'],
+              ['auto', '端末に合わせる'],
+            ] as [ThemeChoice, string][]
+          ).map(([k, label]) => (
+            <button
+              key={k}
+              onClick={() => setTheme(k)}
+              className={`flex-1 py-2.5 text-sm font-semibold ${theme === k ? 'bg-amber-700 text-[#faf9f5]' : 'bg-white text-stone-600'}`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </section>
 
       <section className="bg-white rounded-xl p-4 space-y-2">
         <h2 className="font-semibold text-stone-800">取り置き特典</h2>

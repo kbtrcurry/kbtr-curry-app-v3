@@ -4,6 +4,9 @@ import { delta, FOOD_ACCOUNT_CODE, monthLabel, type FoodChoice, type FoodCostVie
 import { percent, yen } from '../../lib/format'
 import type { FoodGapPoint } from '../../lib/planning'
 
+export type OneOffItem = { id: string; date: string; label: string; amount: number }
+export type OneOffView = { items: OneOffItem[]; total: number; suggestions: OneOffItem[] }
+
 export type PnlTabProps = {
   month: string
   pnl: Pnl
@@ -12,6 +15,10 @@ export type PnlTabProps = {
   prevFood: FoodCostView
   series: MonthPoint[]
   gap: FoodGapPoint[]
+  oneOff: OneOffView
+  includeOneOff: boolean
+  onIncludeOneOff: (b: boolean) => void
+  onMarkOneOff: (id: string, on: boolean) => void
   choice: FoodChoice
   onChoice: (c: FoodChoice) => void
 }
@@ -23,7 +30,7 @@ const CHOICES: { key: FoodChoice; label: string }[] = [
 ]
 
 // 実費の利益: 会計の収益 − 費用。食材の仕入が会計に入っていない月は理論原価で補う。
-export default function PnlTab({ month, pnl, prevPnl, food, prevFood, series, gap, choice, onChoice }: PnlTabProps) {
+export default function PnlTab({ month, pnl, prevPnl, food, prevFood, series, gap, oneOff, includeOneOff, onIncludeOneOff, onMarkOneOff, choice, onChoice }: PnlTabProps) {
   const noData = pnl.entries === 0
   const profitTone = food.profit >= 0 ? 'text-green-700' : 'text-red-600'
   // 食材費を理論原価に置き換えているときは、経費の合計も同じ前提で出す
@@ -41,7 +48,9 @@ export default function PnlTab({ month, pnl, prevPnl, food, prevFood, series, ga
   return (
     <div className="space-y-3">
       <section className="rounded-2xl border border-stone-200 bg-gradient-to-b from-stone-50 to-white p-5">
-        <p className="text-xs text-stone-500">{monthLabel(month)}の実費の利益</p>
+        <p className="text-xs text-stone-500">
+          {monthLabel(month)}の{oneOff.items.length > 0 && !includeOneOff ? 'いつもの営業の利益' : '実費の利益'}
+        </p>
         <p className={`text-4xl font-extrabold leading-tight mt-0.5 ${noData ? 'text-stone-300' : profitTone}`}>
           {noData ? '—' : yen(food.profit)}
         </p>
@@ -52,7 +61,56 @@ export default function PnlTab({ month, pnl, prevPnl, food, prevFood, series, ga
           会計の「収益 − 費用」です。食材費は{food.basis === 'actual' ? '会計に記録された仕入' : '理論原価（メニューのレシピ原価×売れた数）'}で計算しています。
         </p>
         {noData && <p className="text-sm text-stone-500 mt-2">この月の会計の記録がありません。</p>}
+        {oneOff.items.length > 0 && (
+          <div className="mt-3 rounded-xl bg-stone-100 px-3 py-2.5 flex items-center gap-2">
+            <p className="flex-1 text-sm text-stone-600">
+              {includeOneOff ? '一時的な出費を含めています' : `一時的な出費 ${yen(oneOff.total)} を除いています`}
+            </p>
+            <button onClick={() => onIncludeOneOff(!includeOneOff)} className="shrink-0 text-xs font-bold text-amber-700 underline">
+              {includeOneOff ? '除いて見る' : '含めて見る'}
+            </button>
+          </div>
+        )}
       </section>
+
+      {(oneOff.items.length > 0 || oneOff.suggestions.length > 0) && (
+        <Card title="一時的な出費（設備・旅費など、毎月は出ないもの）">
+          <ul className="divide-y divide-stone-100">
+            {oneOff.items.map((x) => (
+              <li key={x.id} className="py-2 flex items-center gap-2 text-sm">
+                <span className="flex-1 min-w-0 truncate text-stone-800">
+                  {x.label} <span className="text-xs text-stone-500">{x.date.slice(5)}</span>
+                </span>
+                <span className="font-semibold text-stone-900 shrink-0">{yen(x.amount)}</span>
+                <button onClick={() => onMarkOneOff(x.id, false)} className="text-xs text-stone-500 underline shrink-0">
+                  解除
+                </button>
+              </li>
+            ))}
+          </ul>
+          {oneOff.suggestions.length > 0 && (
+            <div className={oneOff.items.length > 0 ? 'mt-3 pt-3 border-t border-stone-100' : ''}>
+              <p className="text-xs text-stone-500 mb-1">一時的な出費では？（金額が大きい経費）</p>
+              <ul className="divide-y divide-stone-100">
+                {oneOff.suggestions.map((x) => (
+                  <li key={x.id} className="py-2 flex items-center gap-2 text-sm">
+                    <span className="flex-1 min-w-0 truncate text-stone-800">
+                      {x.label} <span className="text-xs text-stone-500">{x.date.slice(5)}</span>
+                    </span>
+                    <span className="font-semibold text-stone-900 shrink-0">{yen(x.amount)}</span>
+                    <button
+                      onClick={() => onMarkOneOff(x.id, true)}
+                      className="shrink-0 text-xs font-bold text-[#faf9f5] bg-amber-700 rounded-lg px-2.5 py-1.5"
+                    >
+                      一時的にする
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+        </Card>
+      )}
 
       {food.warn && (
         <div className="rounded-2xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900 flex gap-2">

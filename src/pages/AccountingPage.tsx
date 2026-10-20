@@ -1,6 +1,6 @@
-import { CardPayableSummary } from '../components/CardPayableSummary'
-import { useCardPayables, useNotDuplicate } from '../lib/importBooking'
-import { findDuplicates } from '../lib/cardPayable'
+import { LedgerView } from './LedgerView'
+import { QuickExpenseForm } from '../components/QuickExpenseForm'
+import { useUndoableDelete } from '../components/UndoDelete'
 import { useSearchParams } from 'react-router-dom'
 import { useMemo, useState } from 'react'
 import { Wallet, Trash2, Check, AlertTriangle, Pencil } from 'lucide-react'
@@ -9,22 +9,18 @@ import { Spinner } from '../components/Spinner'
 import { ConfirmModal } from '../components/ConfirmModal'
 import {
   useSegments,
-  useExpenseAccounts,
   useJournalEntries,
   useInvalidateJournal,
-  recordExpense,
   recordPlatformRevenue,
   deleteJournalEntry,
   hasPlatformRevenueInMonth,
   entryTotal,
   isEditableEntry,
-  expenseFormFromEntry,
   revenueFormFromEntry,
   currentYearMonth,
   monthRange,
   todayStr,
   type JournalEntry,
-  type PaymentMethod,
 } from '../lib/accounting'
 import { isReceivableEntry } from '../lib/receivables'
 import ReceivablesTab from './ReceivablesTab'
@@ -80,20 +76,6 @@ function BarRow({ label, value, max, color }: { label: string; value: number; ma
   )
 }
 
-function SourceBadge({ sourceType }: { sourceType: JournalEntry['source_type'] }) {
-  const label = {
-    pos_close: 'レジ締め',
-    expense: '経費',
-    platform_revenue: 'プラットフォーム収入',
-    manual: '手動',
-    migration: '移行',
-  }[sourceType]
-  return (
-    <span className="text-[10px] text-stone-500 border border-stone-300 rounded-full px-1.5 py-0.5 shrink-0">
-      {label}
-    </span>
-  )
-}
 
 export default function AccountingPage() {
   const { session: authSession, loading: authLoading, loginWithGoogle } = useAuth()
@@ -104,7 +86,6 @@ export default function AccountingPage() {
   const range = useMemo(() => monthRange(yearMonth), [yearMonth])
 
   const { data: segments = [] } = useSegments()
-  const { data: expenseAccounts = [] } = useExpenseAccounts()
   const { data: entries = [], isLoading: entriesLoading } = useJournalEntries(range)
   const invalidateJournal = useInvalidateJournal()
 
@@ -153,12 +134,7 @@ export default function AccountingPage() {
       {entriesLoading && <Spinner />}
 
       {tab === 'expense' && (
-        <ExpenseTab
-          segments={segments}
-          accounts={expenseAccounts}
-          entries={expenseEntries}
-          onSaved={invalidateJournal}
-        />
+        <ExpenseTab entries={expenseEntries} onSaved={invalidateJournal} />
       )}
       {tab === 'revenue' && (
         <RevenueTab
@@ -170,102 +146,43 @@ export default function AccountingPage() {
         />
       )}
       {tab === 'receivable' && <ReceivablesTab />}
-      {tab === 'ledger' && <LedgerTab entries={entries} onSaved={invalidateJournal} />}
+      {tab === 'ledger' && <LedgerView entries={entries} onSaved={invalidateJournal} />}
     </div>
   )
 }
 
 // ---------- 経費入力 ----------
 
-function ExpenseTab({
-  segments,
-  accounts,
-  entries,
-  onSaved,
-}: {
-  segments: { id: string; code: string; name: string }[]
-  accounts: { id: string; code: string; name: string }[]
-  entries: JournalEntry[]
-  onSaved: () => void
-}) {
-  const [entryDate, setEntryDate] = useState(todayStr())
-  const [segmentId, setSegmentId] = useState('')
-  const [accountId, setAccountId] = useState('')
-  const [amount, setAmount] = useState('')
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('cash')
-  const [memo, setMemo] = useState('')
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState<string | null>(null)
-  const [confirmTarget, setConfirmTarget] = useState<JournalEntry | null>(null)
+function ExpenseTab({ entries, onSaved }: { entries: JournalEntry[]; onSaved: () => void }) {
   // 編集中の仕訳（同じ source_id で再登録すると作り直される）
   const [editing, setEditing] = useState<JournalEntry | null>(null)
-
-  const segId = segmentId || segments.find((s) => s.code === 'common')?.id || segments[0]?.id || ''
-  const acctId = accountId || accounts[0]?.id || ''
-
-  const startEdit = (e: JournalEntry) => {
-    const f = expenseFormFromEntry(e)
-    setEditing(e)
-    setEntryDate(f.entryDate)
-    setSegmentId(f.segmentId)
-    setAccountId(f.accountId)
-    setAmount(String(f.amount))
-    setPaymentMethod(f.paymentMethod)
-    setMemo(f.memo)
-    setError(null)
-    window.scrollTo({ top: 0, behavior: 'smooth' })
-  }
-  const cancelEdit = () => {
-    setEditing(null)
-    setAmount('')
-    setMemo('')
-  }
-
-  const submit = async () => {
-    const amt = Number(amount)
-    if (!(amt > 0) || !segId || !acctId) return
-    setSaving(true)
-    setError(null)
-    try {
-      await recordExpense({
-        id: editing?.source_id ?? undefined,
-        entryDate,
-        segmentId: segId,
-        accountId: acctId,
-        amount: amt,
-        paymentMethod,
-        memo,
-      })
-      setEditing(null)
-      setAmount('')
-      setMemo('')
-      onSaved()
-    } catch (e) {
-      setError(e instanceof Error ? e.message : '保存に失敗しました')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const remove = async (entryId: string) => {
-    await deleteJournalEntry(entryId)
+  const del = useUndoableDelete(async (id) => {
+    await deleteJournalEntry(id)
     onSaved()
-  }
+  })
+  const shown = entries.filter((e) => !del.hidden.has(e.id))
 
   const categoryTotals = useMemo(() => {
     const map: Record<string, number> = {}
-    for (const e of entries) {
+    for (const e of shown) {
       const name = e.journal_lines.find((l) => l.side === 'debit')?.accounts.name ?? 'その他'
       map[name] = (map[name] ?? 0) + entryTotal(e, 'debit')
     }
     return Object.entries(map)
       .map(([name, amount]) => ({ name, amount }))
       .sort((a, b) => b.amount - a.amount)
-  }, [entries])
+  }, [shown])
   const categoryMax = Math.max(1, ...categoryTotals.map((c) => c.amount))
 
   return (
     <div className="space-y-5">
+      <QuickExpenseForm
+        key={editing?.id ?? 'new'}
+        editing={editing}
+        onSaved={onSaved}
+        onDone={() => setEditing(null)}
+      />
+
       {categoryTotals.length > 0 && (
         <div className="bg-white border border-stone-200 rounded-2xl p-4 space-y-2">
           <p className="text-sm font-bold text-stone-700 mb-1">科目別の内訳</p>
@@ -275,133 +192,13 @@ function ExpenseTab({
         </div>
       )}
 
-      <div className="bg-white border border-stone-200 rounded-2xl p-4 space-y-3">
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="block text-sm text-stone-500 mb-1">日付</label>
-            <input
-              type="date"
-              value={entryDate}
-              onChange={(e) => setEntryDate(e.target.value)}
-              className="w-full border border-stone-300 rounded-lg px-3 py-2"
-            />
-          </div>
-          <div>
-            <label className="block text-sm text-stone-500 mb-1">セグメント</label>
-            <select
-              value={segId}
-              onChange={(e) => setSegmentId(e.target.value)}
-              className="w-full border border-stone-300 rounded-lg px-3 py-2"
-            >
-              {segments.map((s) => (
-                <option key={s.id} value={s.id}>
-                  {s.name}
-                </option>
-              ))}
-            </select>
-          </div>
-        </div>
-
-        <div>
-          <label className="block text-sm text-stone-500 mb-1">科目（カテゴリ）</label>
-          <select
-            value={acctId}
-            onChange={(e) => setAccountId(e.target.value)}
-            className="w-full border border-stone-300 rounded-lg px-3 py-2"
-          >
-            {accounts.map((a) => (
-              <option key={a.id} value={a.id}>
-                {a.name}
-              </option>
-            ))}
-          </select>
-        </div>
-
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="block text-sm text-stone-500 mb-1">金額（円）</label>
-            <input
-              type="number"
-              inputMode="numeric"
-              value={amount}
-              onChange={(e) => setAmount(e.target.value)}
-              placeholder="0"
-              className="w-full border border-stone-300 rounded-lg px-3 py-2 text-lg"
-            />
-          </div>
-          <div>
-            <label className="block text-sm text-stone-500 mb-1">支払方法</label>
-            <div className="flex rounded-lg border border-stone-300 overflow-hidden">
-              <button
-                onClick={() => setPaymentMethod('cash')}
-                className={`flex-1 py-2 text-sm font-semibold ${
-                  paymentMethod === 'cash' ? 'bg-amber-700 text-[#faf9f5]' : 'bg-white text-stone-600'
-                }`}
-              >
-                現金
-              </button>
-              <button
-                onClick={() => setPaymentMethod('bank')}
-                className={`flex-1 py-2 text-sm font-semibold ${
-                  paymentMethod === 'bank' ? 'bg-amber-700 text-[#faf9f5]' : 'bg-white text-stone-600'
-                }`}
-              >
-                口座
-              </button>
-              <button
-                onClick={() => setPaymentMethod('card')}
-                className={`flex-1 py-2 text-sm font-semibold ${
-                  paymentMethod === 'card' ? 'bg-amber-700 text-[#faf9f5]' : 'bg-white text-stone-600'
-                }`}
-              >
-                カード
-              </button>
-            </div>
-          </div>
-        </div>
-
-        <div>
-          <label className="block text-sm text-stone-500 mb-1">メモ（任意）</label>
-          <input
-            type="text"
-            value={memo}
-            onChange={(e) => setMemo(e.target.value)}
-            placeholder="仕入れ先・内容など"
-            className="w-full border border-stone-300 rounded-lg px-3 py-2"
-          />
-        </div>
-
-        {error && (
-          <div className="bg-red-50 border border-red-200 text-red-700 rounded-lg px-4 py-3 text-sm">{error}</div>
-        )}
-
-        <button
-          onClick={() => void submit()}
-          disabled={saving || !(Number(amount) > 0)}
-          className="w-full bg-amber-700 text-[#faf9f5] py-3 rounded-xl font-bold disabled:opacity-40 active:scale-95 transition-transform"
-        >
-          {saving ? '保存中...' : editing ? '経費を更新する' : '経費を記録する'}
-        </button>
-        {editing && (
-          <button
-            onClick={cancelEdit}
-            className="w-full py-2 rounded-xl border border-stone-300 text-stone-600 text-sm font-semibold"
-          >
-            編集をやめる
-          </button>
-        )}
-      </div>
-
       <div className="space-y-2">
-        {entries.length === 0 && <p className="text-center text-stone-400 text-sm py-4">この月の経費はまだありません</p>}
-        {entries.map((e) => (
-          <div
-            key={e.id}
-            className="flex items-center justify-between gap-2 bg-white border border-stone-200 rounded-xl px-3 py-2"
-          >
+        {shown.length === 0 && <p className="text-center text-stone-400 text-sm py-4">この月の経費はまだありません</p>}
+        {shown.map((e) => (
+          <div key={e.id} className="flex items-center justify-between gap-2 bg-white border border-stone-200 rounded-xl px-3 py-2">
             <div className="min-w-0 flex-1">
               <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-xs text-stone-400">{e.entry_date}</span>
+                <span className="text-xs text-stone-500">{e.entry_date}</span>
                 <span className="text-xs text-stone-500">{e.segments.name}</span>
               </div>
               <p className="text-sm text-stone-800 truncate">
@@ -410,28 +207,24 @@ function ExpenseTab({
             </div>
             <span className="font-bold text-stone-900 shrink-0">¥{entryTotal(e, 'debit').toLocaleString()}</span>
             {isEditableEntry(e) && (
-              <button onClick={() => startEdit(e)} className="text-stone-500 shrink-0" title="編集">
+              <button
+                onClick={() => {
+                  setEditing(e)
+                  window.scrollTo({ top: 0, behavior: 'smooth' })
+                }}
+                className="text-stone-500 shrink-0 p-1.5"
+                title="編集"
+              >
                 <Pencil className="w-4 h-4" />
               </button>
             )}
-            <button onClick={() => setConfirmTarget(e)} className="text-red-400 shrink-0" title="削除">
+            <button onClick={() => del.request(e.id, e.description || '経費')} className="text-red-400 shrink-0 p-1.5" title="削除">
               <Trash2 className="w-4 h-4" />
             </button>
           </div>
         ))}
       </div>
-
-      {confirmTarget && (
-        <ConfirmModal
-          message={`${confirmTarget.entry_date} の経費「${confirmTarget.description || '記録'}」を削除しますか？\n（元に戻せません）`}
-          onConfirm={() => {
-            const id = confirmTarget.id
-            setConfirmTarget(null)
-            void remove(id)
-          }}
-          onCancel={() => setConfirmTarget(null)}
-        />
-      )}
+      {del.toast}
     </div>
   )
 }
@@ -549,7 +342,7 @@ function RevenueTab({
             />
           </div>
           <div>
-            <label className="block text-sm text-stone-500 mb-1">セグメント</label>
+            <label className="block text-sm text-stone-500 mb-1">事業区分</label>
             <select
               value={segId}
               onChange={(e) => setSegmentId(e.target.value)}
@@ -674,106 +467,6 @@ function RevenueTab({
   )
 }
 
-// ---------- 仕訳一覧 ----------
-
-function LedgerTab({ entries, onSaved }: { entries: JournalEntry[]; onSaved: () => void }) {
-  const [confirmTarget, setConfirmTarget] = useState<JournalEntry | null>(null)
-  const { byEntry, allEntries } = useCardPayables()
-  const [notDup, markNotDup] = useNotDuplicate()
-  // 取り込んだ仕訳と重複していそうな手入力（月をまたぐずれも拾うため全期間で探す）
-  const dupOf = useMemo(
-    () => new Map(findDuplicates(allEntries).filter((p) => !notDup.has(p.manual.id)).map((p) => [p.manual.id, p])),
-    [allEntries, notDup],
-  )
-  const monthDups = entries.filter((e) => dupOf.has(e.id)).length
-  const md = (d: string) => `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}`
-
-  const remove = async (entryId: string) => {
-    await deleteJournalEntry(entryId)
-    onSaved()
-  }
-
-  return (
-    <div className="space-y-2">
-      <CardPayableSummary />
-      {monthDups > 0 && (
-        <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-          取り込んだ仕訳と重複していそうな手入力が {monthDups}件あります（黄色の枠）。二重なら手入力のほうを削除、別の支払いなら「重複ではない」を押してください。
-        </p>
-      )}
-      {entries.length === 0 && <p className="text-center text-stone-400 text-sm py-4">この月の仕訳はまだありません</p>}
-      {entries.map((e) => (
-        <div
-          key={e.id}
-          className={`bg-white border rounded-xl px-3 py-2.5 ${dupOf.has(e.id) ? 'border-amber-400 bg-amber-50' : 'border-stone-200'}`}
-        >
-          <div className="flex items-center justify-between gap-2 mb-1.5">
-            <div className="flex items-center gap-2 min-w-0">
-              <span className="text-xs text-stone-400 shrink-0">{e.entry_date}</span>
-              <span className="text-xs text-stone-500 shrink-0">{e.segments.name}</span>
-              <SourceBadge sourceType={e.source_type} />
-              {isReceivableEntry(e) && <span className="text-xs text-amber-700 shrink-0">入金予定</span>}
-              {byEntry.get(e.id) &&
-                (byEntry.get(e.id)!.settled ? (
-                  <span className="text-xs text-green-700 shrink-0">カード・引き落とし済み</span>
-                ) : (
-                  <span className="text-xs text-sky-700 shrink-0">カード・{md(byEntry.get(e.id)!.due)}引き落とし予定</span>
-                ))}
-            </div>
-            {e.source_type !== 'pos_close' && !isReceivableEntry(e) && (
-              <button onClick={() => setConfirmTarget(e)} className="text-red-400 shrink-0" title="削除">
-                <Trash2 className="w-4 h-4" />
-              </button>
-            )}
-          </div>
-          {e.description && <p className="text-sm text-stone-600 mb-1">{e.description}</p>}
-          {dupOf.has(e.id) && (
-            <div className="mb-1.5 space-y-1">
-              <p className="text-xs text-amber-800">
-                {dupOf.get(e.id)!.level === 'same' ? '重複' : '重複かも'}：取り込み「{dupOf.get(e.id)!.imported.description}」（
-                {dupOf.get(e.id)!.imported.entry_date.slice(5)}）と同じ金額
-              </p>
-              <div className="flex gap-1.5">
-                <button
-                  onClick={() => setConfirmTarget(e)}
-                  className="text-xs font-bold text-[#faf9f5] bg-amber-700 rounded-lg px-2.5 py-1"
-                >
-                  手入力を削除
-                </button>
-                <button onClick={() => markNotDup(e.id)} className="text-xs font-semibold text-stone-600 border border-stone-300 rounded-lg px-2.5 py-1">
-                  重複ではない
-                </button>
-              </div>
-            </div>
-          )}
-          <div className="space-y-0.5">
-            {e.journal_lines.map((l) => (
-              <div key={l.id} className="flex items-center justify-between text-sm">
-                <span className={l.side === 'debit' ? 'text-stone-800' : 'text-stone-800 pl-6'}>
-                  {l.side === 'credit' && '/ '}
-                  {l.accounts.name}
-                </span>
-                <span className="font-mono text-stone-700">¥{l.amount.toLocaleString()}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      ))}
-
-      {confirmTarget && (
-        <ConfirmModal
-          message={`${confirmTarget.entry_date} の仕訳「${confirmTarget.description || confirmTarget.segments.name}」を削除しますか？\n（元に戻せません）`}
-          onConfirm={() => {
-            const id = confirmTarget.id
-            setConfirmTarget(null)
-            void remove(id)
-          }}
-          onCancel={() => setConfirmTarget(null)}
-        />
-      )}
-    </div>
-  )
-}
 
 // ---------- セグメント別P&L ----------
 

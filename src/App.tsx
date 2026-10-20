@@ -36,6 +36,7 @@ import AdsPage from './pages/AdsPage'
 import ImportPage from './pages/ImportPage'
 import DataPage from './pages/DataPage'
 import { GmailReturnRedirect } from './components/GmailReturnRedirect'
+import { QuickAddFab } from './components/QuickAddFab'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -155,7 +156,7 @@ function Preloader() {
 function Layout({ children }: { children: ReactNode }) {
   return (
     <div className="min-h-svh md:flex">
-      <header className="md:hidden flex items-center gap-2 px-4 py-3 border-b border-stone-200 bg-[#191817]">
+      <header className="md:hidden flex items-center gap-2 px-4 py-3 border-b border-stone-200 bg-[var(--page-bg)]">
         <UpdateButton />
         <span className="text-base font-bold text-amber-800">コバタロカレー v3</span>
         <span className="text-xs text-stone-400">v{__APP_VERSION__}.{__BUILD_DATE__}</span>
@@ -186,6 +187,7 @@ function Layout({ children }: { children: ReactNode }) {
         </nav>
       </aside>
 
+      <QuickAddFab />
       <main className="flex-1 min-w-0 pb-[calc(5rem+env(safe-area-inset-bottom,0px))] md:pb-10 md:ml-52 lg:ml-60">{children}</main>
 
       <nav

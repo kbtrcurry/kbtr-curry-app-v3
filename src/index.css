@@ -2,6 +2,11 @@
 
 /* Claude Code 風ダークテーマ。utilityのトークンを総入れ替え */
 @theme {
+  --text-xs: 0.8125rem;
+  --text-xs--line-height: 1.2rem;
+  --text-sm: 0.9375rem;
+  --text-sm--line-height: 1.4rem;
+
   /* サーフェス（bg-white）= ダークパネル */
   --color-white: #232120;
 
@@ -10,9 +15,9 @@
   --color-stone-100: #2d2b28;
   --color-stone-200: #3a3733;
   --color-stone-300: #4a4641;
-  --color-stone-400: #6f6a62;
-  --color-stone-500: #918b81;
-  --color-stone-600: #b0aaa0;
+  --color-stone-400: #8c867c;
+  --color-stone-500: #a9a399;
+  --color-stone-600: #bfb9af;
   --color-stone-700: #cbc5ba;
   --color-stone-800: #e0dbd2;
   --color-stone-900: #f2efe8;
@@ -78,12 +83,52 @@ body {
   }
 }
 
+/* 明るい配色（その他 → 表示 で切り替え）。ダークと同じトークンを入れ替える */
+:root {
+  --page-bg: #191817;
+  --page-fg: #e0dbd2;
+}
+:root[data-theme='light'] {
+  --page-bg: #faf9f5;
+  --page-fg: #2b2926;
+  --color-white: #ffffff;
+  --color-stone-50: #f6f4ee;
+  --color-stone-100: #efece4;
+  --color-stone-200: #e2ded3;
+  --color-stone-300: #cfc9bb;
+  --color-stone-400: #7d776b;
+  --color-stone-500: #625d53;
+  --color-stone-600: #4a463f;
+  --color-stone-700: #36332e;
+  --color-stone-800: #26241f;
+  --color-stone-900: #14120f;
+  --color-amber-50: #fbf0e8;
+  --color-amber-100: #f6e2d3;
+  --color-amber-200: #ecc9ae;
+  --color-amber-300: #e0a983;
+  --color-amber-400: #cf7a52;
+  --color-amber-500: #c56b3f;
+  --color-amber-600: #b05a31;
+  --color-amber-700: #a64e28;
+  --color-amber-800: #8a3f1f;
+  --color-amber-900: #6e3219;
+  --color-green-100: #dcf1e2;
+  --color-green-600: #2f8a50;
+  --color-green-700: #1f7a41;
+  --color-red-50: #fdecea;
+  --color-red-100: #fbdcd8;
+  --color-red-200: #f3bdb6;
+  --color-red-500: #d4503f;
+  --color-red-600: #c23f2e;
+  --color-red-700: #a53020;
+}
+
 body {
   margin: 0;
   font-family: system-ui, 'Hiragino Sans', 'Yu Gothic', sans-serif;
   -webkit-font-smoothing: antialiased;
-  background: #191817; /* ページ背景（パネルより暗い） */
-  color: #e0dbd2;
+  background: var(--page-bg); /* ページ背景（パネルより暗い） */
+  color: var(--page-fg);
   overflow-x: hidden; /* スワイプ戻し中のはみ出しを隠す */
 }
 

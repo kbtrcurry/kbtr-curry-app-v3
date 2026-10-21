@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import { lazy, Suspense, useEffect, useState } from 'react'
-import { BrowserRouter, Navigate, NavLink, Route, Routes } from 'react-router-dom'
+import { BrowserRouter, Navigate, NavLink, Route, Routes, useLocation } from 'react-router-dom'
 import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query'
 import { useRegisterSW } from 'virtual:pwa-register/react'
 import {
@@ -158,9 +158,11 @@ function Preloader() {
 }
 
 function Layout({ children }: { children: ReactNode }) {
+  // 取り置きの一覧は、スマホで1画面にたくさん出したいので、上のアプリ名の帯を隠す
+  const dense = useLocation().pathname === '/reserve'
   return (
     <div className="min-h-svh md:flex">
-      <header className="md:hidden flex items-center gap-2 px-4 py-3 border-b border-stone-200 bg-[var(--page-bg)]">
+      <header className={`${dense ? 'hidden' : 'flex'} md:hidden items-center gap-2 px-4 py-3 border-b border-stone-200 bg-[var(--page-bg)]`}>
         <UpdateButton />
         <span className="text-base font-bold text-amber-800">コバタロカレー v3</span>
         <span className="text-xs text-stone-400">v{__APP_VERSION__}.{__BUILD_DATE__}</span>

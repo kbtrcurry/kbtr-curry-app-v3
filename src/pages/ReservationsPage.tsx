@@ -105,7 +105,7 @@ export default function ReservationsPage() {
   }
 
   return (
-    <div className="px-3 pt-3 pb-28 max-w-2xl mx-auto space-y-2.5">
+    <div className="px-3 pt-2 pb-24 max-w-2xl mx-auto space-y-2">
       <div className="flex gap-1.5">
         {(
           [
@@ -117,7 +117,7 @@ export default function ReservationsPage() {
           <button
             key={k}
             onClick={() => setTab(k)}
-            className={`flex-1 py-2 rounded-full text-sm font-semibold ${tab === k ? 'bg-amber-700 text-[#faf9f5]' : 'bg-stone-100 text-stone-600'}`}
+            className={`flex-1 py-1.5 rounded-full text-sm font-semibold ${tab === k ? 'bg-amber-700 text-[#faf9f5]' : 'bg-stone-100 text-stone-600'}`}
           >
             {label}
           </button>
@@ -511,7 +511,7 @@ function ReservationRow({
   return (
     <div className={done ? 'bg-green-100/40' : ''}>
       <div className="flex items-stretch">
-        <button onClick={() => setOpen((v) => !v)} aria-expanded={open} className={`flex-1 min-w-0 flex items-center gap-1.5 pl-2.5 pr-1 text-left ${off ? 'opacity-50' : ''}`} style={{ minHeight: 38 }}>
+        <button onClick={() => setOpen((v) => !v)} aria-expanded={open} className={`flex-1 min-w-0 flex items-center gap-1.5 pl-2.5 pr-1 text-left ${off ? 'opacity-50' : ''}`} style={{ minHeight: 35 }}>
           <span className="font-bold text-[15px] text-stone-900 truncate max-w-[7.5em] shrink">{r.name || '（名前なし）'}</span>
           <span className="text-[13px] text-stone-700 whitespace-nowrap">{shortItems(r.items)}</span>
           <span className="flex items-center gap-1 text-[11px] font-bold leading-none min-w-0">
@@ -526,7 +526,7 @@ function ReservationRow({
           <button
             onClick={() => void go()}
             disabled={busy}
-            className="shrink-0 w-[88px] my-1 mr-1 rounded-lg bg-amber-700 text-[#faf9f5] text-sm font-bold active:scale-95 transition-transform disabled:opacity-60"
+            className="shrink-0 w-[88px] my-[2px] mr-1 rounded-lg bg-amber-700 text-[#faf9f5] text-sm font-bold active:scale-95 transition-transform disabled:opacity-60"
             aria-label={`${r.name || '取り置き'}を来店済みにする`}
           >
             来店済み

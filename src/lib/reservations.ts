@@ -245,7 +245,7 @@ export function parseReservationText(
 // ---------- DMの文面から名前を探す ----------
 
 // 名前ではないもの（挨拶・お願い・メニュー・数など）
-const NAME_STOP = /お願い|取り置き|取置|予約|よろしく|大丈夫|可能|ありがとう|新規|初めて|はじめて|ですか|でしょう|いかが|ビリヤニ|ソーダ|サワー|食|人|時|分|こんにちは|こんばんは|おはよう|お世話|お疲れ|すみません|失礼|テイクアウト|イートイン|うずら|^はい$|^いいえ$/
+const NAME_STOP = /黒胡椒|チキン|マトン|キーマ|青唐|すだち|エビ|ニラ|ミント|お願い|取り置き|取置|予約|よろしく|大丈夫|可能|ありがとう|新規|初めて|はじめて|ですか|でしょう|いかが|ビリヤニ|ソーダ|サワー|食|人|時|分|こんにちは|こんばんは|おはよう|お世話|お疲れ|すみません|失礼|テイクアウト|イートイン|うずら|^はい$|^いいえ$/
 const GREETING = /^(?:こんにちは|こんばんは|おはようございます|はじめまして|初めまして|お世話になります|お疲れ様です|突然すみません|突然失礼します|失礼します)[、,!！\s]*/
 const honorific = (s: string): string => s.replace(/(?:さん|様|ちゃん|くん|君)$/, '').trim()
 const okName = (v: string): boolean => v.length > 0 && v.length <= 20 && !/\d/.test(v) && !NAME_STOP.test(v)
@@ -283,6 +283,15 @@ export function extractName(text: string): string {
       const v = honorific(by[1])
       if (okName(v)) return v
     }
+  }
+  // 「廣井 智 1食お願いします」「山田2名で」のように、名前のすぐあとに食数・人数・盛りの言葉が続くもの
+  const COUNT_AFTER = String.raw`(?:\d+\s*(?:食|名|人|つ|個)|大盛り?|普通盛り?|通常|ビリヤニ|テイクアウト|TO|イートイン)`
+  for (const seg0 of segs) {
+    const seg = seg0.replace(GREETING, '').trim()
+    const m1 = seg.match(new RegExp(String.raw`^([^\s、,。]{1,10}(?:[ ][^\s、,。]{1,10})?)[ ]+` + COUNT_AFTER))
+    const m2 = seg.match(new RegExp(String.raw`^([^\d\s、,。]{1,10})(?=` + COUNT_AFTER + ')'))
+    const v = honorific((m1 ?? m2)?.[1] ?? '')
+    if (v && okName(v)) return v
   }
   const first = segs[0]?.replace(GREETING, '').trim() ?? ''
   if (first.length <= 12 && !/[!！?？、。:：]/.test(first) && okName(honorific(first))) return honorific(first)
@@ -490,7 +499,9 @@ function addBiryaniFromWords(orig: string, menus: { id: string; name: string }[]
   const big =
     menus.find((m) => /大盛/.test(m.name) && m.name.replace(/[\s\u3000]*大盛り?[\s\u3000]*/g, ' ').trim() === base.name.trim()) ??
     menus.find((m) => /大盛/.test(m.name) && isBiryani(m.name))
-  const hc = headcountOf(orig)
+  // 「2名」「3人」のほか、「1食お願いします」の食数も、ビリヤニの数として読む
+  const servings = orig.match(/(\d{1,2})\s*食(?!べ|事)/)
+  const hc = headcountOf(orig) ?? (servings ? Number(servings[1]) : null)
   const regularWord = /普通盛り?|通常盛り?|通常サイズ|通常|普通|並盛り?/.test(orig)
   const bigMention = orig.match(/大盛り?\s*(?:[×x*]\s*)?(\d+)?/)
   const hasBiryani = found.some((f) => isBiryani(f.name))

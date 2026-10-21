@@ -238,3 +238,25 @@ describe('「2名です」「普通盛り」から、その月のビリヤニを
   })
 })
 
+describe('名前のあとに「1食」が続くDM', () => {
+  const menus = [
+    { id: 'n', name: '黒胡椒チキンビリヤニ' },
+    { id: 'b', name: '黒胡椒チキンビリヤニ 大盛り' },
+  ]
+  it('「廣井　智　1食お願いします」→ 名前「廣井 智」、通常サイズのビリヤニ1食', () => {
+    const r = parseReservationText('廣井　智　1食お願いします', menus)
+    expect(r.name).toBe('廣井 智')
+    expect(r.items.map((i) => `${i.name}×${i.qty}`)).toEqual(['黒胡椒チキンビリヤニ×1'])
+  })
+  it('名前と数がくっついていても、名前だけを取る', () => {
+    expect(extractName('山田2食お願いします')).toBe('山田')
+    expect(extractName('山田 太郎 2名で')).toBe('山田 太郎')
+    expect(extractName('山田 大盛りで')).toBe('山田')
+    expect(parseReservationText('山田2食お願いします', menus).items.map((i) => i.qty)).toEqual([2])
+  })
+  it('名前ではない文は、名前にしない', () => {
+    expect(extractName('2食お願いします')).toBe('')
+    expect(extractName('取り置き 1食お願いします')).toBe('')
+  })
+})
+

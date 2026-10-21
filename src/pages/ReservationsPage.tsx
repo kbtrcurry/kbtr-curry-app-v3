@@ -469,15 +469,39 @@ function ReservationForm({
 
 // ---------- 取り置き1件 ----------
 
-// 品目の短い表記: ビリヤニ通常=「通」、大盛り=「大」、それ以外は名前の頭。TOは末尾に「T」
-function shortItems(items: ResItem[]): string {
-  const short = (n: string) => (/大盛/.test(n) ? '大' : /ビリヤ|biryani/i.test(n) ? '通' : n.replace(/^スパイス/, '').slice(0, 3))
-  const m = new Map<string, number>()
+// 品目の短い表記と色: ビリヤニ通常=「並」(青)、大盛り=「大」(黄)、ソーダ=茶、それ以外=灰。テイクアウトは緑の「TO」を前に付ける
+type ChipDef = { bg: string; fg: string }
+const CHIP: Record<string, ChipDef> = {
+  並: { bg: '#2563eb', fg: '#ffffff' },
+  大: { bg: '#facc15', fg: '#422006' },
+  ソーダ: { bg: '#92400e', fg: '#ffffff' },
+  TO: { bg: '#16a34a', fg: '#ffffff' },
+  うずら: { bg: '#ea580c', fg: '#ffffff' },
+  備考あり: { bg: '#dc2626', fg: '#ffffff' },
+  他: { bg: '#78716c', fg: '#ffffff' },
+}
+
+function Chip({ kind, children }: { kind: keyof typeof CHIP | string; children: React.ReactNode }) {
+  const c = CHIP[kind] ?? CHIP['他']
+  return (
+    <span className="inline-flex items-center rounded px-1.5 py-[1px] text-[12px] font-bold leading-[18px] whitespace-nowrap" style={{ background: c.bg, color: c.fg }}>
+      {children}
+    </span>
+  )
+}
+
+function shortItems(items: ResItem[]): { key: string; kind: string; label: string; takeout: boolean }[] {
+  const short = (n: string): { kind: string; label: string } =>
+    /大盛/.test(n) ? { kind: '大', label: '大' } : /ビリヤ|biryani/i.test(n) ? { kind: '並', label: '並' } : /ソーダ/.test(n) ? { kind: 'ソーダ', label: 'ソーダ' } : { kind: '他', label: n.replace(/^スパイス/, '').slice(0, 3) }
+  const m = new Map<string, { kind: string; label: string; takeout: boolean; qty: number }>()
   for (const i of items) {
-    const k = `${short(i.name)}${i.takeout ? 'T' : ''}`
-    m.set(k, (m.get(k) ?? 0) + i.qty)
+    const sh = short(i.name)
+    const k = `${sh.label}|${i.takeout ? 'T' : 'E'}`
+    const cur = m.get(k)
+    if (cur) cur.qty += i.qty
+    else m.set(k, { ...sh, takeout: !!i.takeout, qty: i.qty })
   }
-  return [...m.entries()].map(([k, q]) => `${k}${q}`).join(' ')
+  return [...m.entries()].map(([k, v]) => ({ key: k, kind: v.kind, label: `${v.label}${v.qty}`, takeout: v.takeout }))
 }
 
 // 取り置き1件を1行で。右の「来店済み」ボタンは大きめ。行（名前のあたり）をタップすると、詳しい内容・編集・削除が開く
@@ -511,15 +535,22 @@ function ReservationRow({
   return (
     <div className={done ? 'bg-green-100/40' : ''}>
       <div className="flex items-stretch">
-        <button onClick={() => setOpen((v) => !v)} aria-expanded={open} className={`flex-1 min-w-0 flex items-center gap-1.5 pl-2.5 pr-1 text-left ${off ? 'opacity-50' : ''}`} style={{ minHeight: 35 }}>
-          <span className="font-bold text-[15px] text-stone-900 truncate max-w-[7.5em] shrink">{r.name || '（名前なし）'}</span>
-          <span className="text-[13px] text-stone-700 whitespace-nowrap">{shortItems(r.items)}</span>
-          <span className="flex items-center gap-1 text-[11px] font-bold leading-none min-w-0">
-            {r.is_new && <span className="text-sky-700">新</span>}
-            {!r.uzura && <span className="text-red-500">うずなし</span>}
-            {r.visit_time && <span className="text-stone-500 font-normal">{r.visit_time}</span>}
-            {r.note && <span className="text-stone-400 font-normal">✎</span>}
-            {off && <span className="text-stone-500">{STATUS_LABEL[r.status]}</span>}
+        <button onClick={() => setOpen((v) => !v)} aria-expanded={open} className={`flex-1 min-w-0 flex flex-wrap items-center gap-x-1.5 gap-y-[2px] pl-2.5 pr-1 py-[3px] text-left ${off ? 'opacity-50' : ''}`} style={{ minHeight: 35 }}>
+          <span className="font-bold text-[15px] text-stone-900 truncate max-w-[6.5em] shrink-0">{r.name || '（名前なし）'}</span>
+          <span className="flex items-center gap-[3px] shrink-0">
+            {shortItems(r.items).map((it) => (
+              <span key={it.key} className="inline-flex items-center gap-[2px]">
+                {it.takeout && <Chip kind="TO">TO</Chip>}
+                <Chip kind={it.kind}>{it.label}</Chip>
+              </span>
+            ))}
+          </span>
+          <span className="flex items-center gap-[3px] min-w-0">
+            {r.uzura && <Chip kind="うずら">うずら</Chip>}
+            {r.note && <Chip kind="備考あり">備考あり</Chip>}
+            {r.is_new && <span className="text-[11px] font-bold text-sky-700">新</span>}
+            {r.visit_time && <span className="text-[11px] text-stone-500">{r.visit_time}</span>}
+            {off && <span className="text-[11px] font-bold text-stone-500">{STATUS_LABEL[r.status]}</span>}
           </span>
         </button>
         {r.status === 'reserved' ? (

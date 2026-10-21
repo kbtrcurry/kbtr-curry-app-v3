@@ -492,7 +492,7 @@ function Chip({ kind, children }: { kind: keyof typeof CHIP | string; children: 
 
 function shortItems(items: ResItem[]): { key: string; kind: string; label: string; takeout: boolean }[] {
   const short = (n: string): { kind: string; label: string } =>
-    /大盛/.test(n) ? { kind: '大', label: '大' } : /ビリヤ|biryani/i.test(n) ? { kind: '並', label: '並' } : /ソーダ/.test(n) ? { kind: 'ソーダ', label: 'ソーダ' } : { kind: '他', label: n.replace(/^スパイス/, '').slice(0, 3) }
+    /大盛/.test(n) ? { kind: '大', label: '大' } : /ビリヤ|biryani/i.test(n) ? { kind: '並', label: '並' } : /ソーダ/.test(n) ? { kind: 'ソーダ', label: 'ソーダ' } : /容器/.test(n) ? { kind: '他', label: '容器' } : /サワー/.test(n) ? { kind: '他', label: 'サワー' } : { kind: '他', label: n.replace(/^スパイス/, '').slice(0, 3) }
   const m = new Map<string, { kind: string; label: string; takeout: boolean; qty: number }>()
   for (const i of items) {
     const sh = short(i.name)

@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
   parseReservationText,
+  extractName,
   remainingPools,
   resPortions,
   fmtPortions,
@@ -138,6 +139,32 @@ describe('メモの「◯回目」を台帳の回数に反映', () => {
     expect(customerLabel(s).text).toContain('3回目')
     const c = customerStats([R({ handle: '', name: 'さくら', platform: 'other', visit_no: 5, status: 'cancelled' })], [])[0]
     expect(c.visitNo).toBe(0)
+  })
+})
+
+describe('DMの文面から名前を探す', () => {
+  it('「お名前：」「【名前】」のようにラベルがあるもの', () => {
+    expect(extractName('10/24の取り置きをお願いします\nお名前：山田 太郎\n黒胡椒チキンビリヤニ 2')).toBe('山田 太郎')
+    expect(extractName('【名前】やまだ\n【内容】ビリヤニ1')).toBe('やまだ')
+  })
+  it('挨拶のあとに「山田です」「田中と申します」と名乗るもの', () => {
+    expect(extractName('こんばんは！\n10/24の取り置きをお願いしたいです。\n山田です。\n黒胡椒チキンビリヤニ2つ')).toBe('山田')
+    expect(extractName('はじめまして、田中と申します。取り置き可能でしょうか')).toBe('田中')
+    expect(extractName('こんにちは、佐藤 花子です。よろしくお願いします。')).toBe('佐藤 花子')
+  })
+  it('「山田でお願いします」', () => {
+    expect(extractName('黒胡椒チキンビリヤニを2つ、山田でお願いします')).toBe('山田')
+    expect(extractName('山田さんでお願いします')).toBe('山田')
+  })
+  it('最初の行が名前だけのもの。名前ではない文は拾わない', () => {
+    expect(extractName('山田太郎\nチキン2')).toBe('山田太郎')
+    expect(extractName('取り置きをお願いしたいです。大丈夫です。')).toBe('')
+    expect(extractName('10/24でお願いします')).toBe('')
+    expect(extractName('黒胡椒チキンビリヤニ2つお願いします')).toBe('')
+  })
+  it('時間とテイクアウトも拾う', () => {
+    const r = parseReservationText('山田です。12:30頃にテイクアウトで取りに行きます', [])
+    expect(r).toMatchObject({ name: '山田', time: '12:30', takeout: true })
   })
 })
 

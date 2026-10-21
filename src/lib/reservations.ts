@@ -195,7 +195,10 @@ function qtyAfter(text: string, from: number): number {
 }
 
 /** 文面に出てくるメニュー名と数を拾う。メニュー名は、そのまま or 名前の一部（2文字以上の語）で探す。結果は必ず手で直せる前提 */
-export function parseReservationText(text: string, menus: { id: string; name: string }[]): { items: ResItem[]; handle: string; name: string } {
+export function parseReservationText(
+  text: string,
+  menus: { id: string; name: string }[],
+): { items: ResItem[]; handle: string; name: string; time: string; takeout: boolean } {
   let t = text.normalize('NFKC')
   const found: ResItem[] = []
   const norm = menus.map((m) => ({ ...m, n: m.name.normalize('NFKC') }))
@@ -228,9 +231,59 @@ export function parseReservationText(text: string, menus: { id: string; name: st
   found.sort((a, b) => menus.findIndex((m) => m.id === a.menu_id) - menus.findIndex((m) => m.id === b.menu_id))
   const orig = text.normalize('NFKC')
   const handle = orig.match(/@([A-Za-z0-9_.]{2,30})/)?.[1] ?? ''
-  const nameMatch = orig.match(/^([^\n、。,.!！?？@]{1,14}?)(?:です|と申します|といいます|〔|\n|$)/)
-  const name = nameMatch && !/お願い|取り置き|予約/.test(nameMatch[1]) ? nameMatch[1].trim() : ''
-  return { items: found, handle, name }
+  const name = extractName(text)
+  // 時間（12:00・12時）と、テイクアウトの希望も拾う
+  const tm = orig.match(/(\d{1,2})\s*[:：]\s*(\d{2})/) ?? orig.match(/(\d{1,2})\s*時(半)?/)
+  const time = tm ? `${String(Number(tm[1])).padStart(2, '0')}:${tm[2] === '半' || tm[0].endsWith('半') ? '30' : (tm[2] ?? '00').padStart(2, '0')}` : ''
+  const takeout = /テイクアウト|持ち帰り|持帰り/.test(orig)
+  return { items: found, handle, name, time, takeout }
+}
+
+// ---------- DMの文面から名前を探す ----------
+
+// 名前ではないもの（挨拶・お願い・メニュー・数など）
+const NAME_STOP = /お願い|取り置き|取置|予約|よろしく|大丈夫|可能|ありがとう|新規|初めて|はじめて|ですか|でしょう|いかが|ビリヤニ|ソーダ|サワー|食|人|時|分|こんにちは|こんばんは|おはよう|お世話|お疲れ|すみません|失礼|テイクアウト|イートイン|うずら|^はい$|^いいえ$/
+const GREETING = /^(?:こんにちは|こんばんは|おはようございます|はじめまして|初めまして|お世話になります|お疲れ様です|突然すみません|突然失礼します|失礼します)[、,!！\s]*/
+const honorific = (s: string): string => s.replace(/(?:さん|様|ちゃん|くん|君)$/, '').trim()
+const okName = (v: string): boolean => v.length > 0 && v.length <= 20 && !/\d/.test(v) && !NAME_STOP.test(v)
+
+/**
+ * DMをコピーして貼り付けた文面から、お客さんの名前を探す。いくつかの書き方を順に試す:
+ *  1) 「お名前：山田 太郎」「【名前】やまだ」のように、名前と書いてあるもの
+ *  2) 「山田です」「こんばんは、山田太郎と申します」のように、名乗っている文
+ *  3) 「山田でお願いします」
+ *  4) 最初の行が短い名前だけのもの
+ * 見つからなければ空（画面で入力する）
+ */
+export function extractName(text: string): string {
+  const t = text.normalize('NFKC').replace(/\r/g, '')
+  const label = t.match(/(?:お?名前|ご芳名|氏名|ネーム|name)[】」』)）]?\s*(?:は|が)?\s*[:：=→＝・]?\s*[「『【(（]?\s*([^\n、。,!！?？「」『』】)）]{1,16})/i)
+  if (label) {
+    const v = honorific(label[1].replace(/(?:です|でお願いします|でお願い|といいます|と申します).*$/, '').trim())
+    if (okName(v)) return v
+  }
+  const segs = t.split(/[。！!？?\n]/).map((x) => x.trim()).filter(Boolean)
+  for (const seg0 of segs) {
+    const seg = seg0.replace(GREETING, '').trim()
+    const intro = seg.match(/^([^\s、,]{1,10}(?:[ ][^\s、,]{1,10})?)(?:です|と申します|といいます|と言います|と言う者です|と申しますが)$/)
+    if (intro) {
+      const v = honorific(intro[1])
+      if (okName(v)) return v
+    }
+  }
+  // 「、」で区切られた前の部分（メニューなど）があっても、名前の部分だけを見る
+  const clauses = segs.flatMap((x) => x.split(/[、,]/)).map((x) => x.trim()).filter(Boolean)
+  for (const seg0 of clauses) {
+    const seg = seg0.replace(GREETING, '').trim()
+    const by = seg.match(/^(?:名前は)?([^\s、,]{1,10}(?:[ ][^\s、,]{1,10})?)(?:の名前)?で(?:お願い|取り置き|予約)/)
+    if (by) {
+      const v = honorific(by[1])
+      if (okName(v)) return v
+    }
+  }
+  const first = segs[0]?.replace(GREETING, '').trim() ?? ''
+  if (first.length <= 12 && !/[!！?？、。:：]/.test(first) && okName(honorific(first))) return honorific(first)
+  return ''
 }
 
 export function replyText(r: Pick<Reservation, 'name' | 'items' | 'service_date'>, template: string): string {

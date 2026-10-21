@@ -324,8 +324,10 @@ function ReservationForm({
     const r = parseReservationText(text, menus)
     if (r.handle) setHandle(r.handle)
     if (r.name && !name) setName(r.name)
+    if (r.time && !time) setTime(r.time)
+    if (r.takeout) setTakeout(true)
     if (r.items.length) setQty((q) => ({ ...q, ...Object.fromEntries(r.items.map((i) => [i.menu_id as string, i.qty])) }))
-    setPasteMsg(r.items.length ? `${r.items.length}品を読み取りました。間違いがないか確認してください` : 'メニューが見つかりませんでした。下で選んでください')
+    setPasteMsg(!r.name ? `名前が見つかりませんでした。下の「お名前」に入れてください。${r.items.length ? `メニュー${r.items.length}品は読み取りました。` : ''}` : r.items.length ? `${r.items.length}品を読み取りました。間違いがないか確認してください` : 'メニューが見つかりませんでした。下で選んでください')
   }
 
   const save = async () => {

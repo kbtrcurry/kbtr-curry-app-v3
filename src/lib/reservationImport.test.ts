@@ -335,3 +335,16 @@ describe('幅のある時間（12:00〜13:00）は備考へ', () => {
   })
 })
 
+describe('「2週連続」などの数字は食数ではない', () => {
+  it('「ツボウチront 2週連続おかわり」→ 名前「ツボウチront」、1食、備考「2週連続おかわり」、2回目以上', () => {
+    const r = P('- [x] ツボウチront 2週連続おかわり')
+    expect(r).toMatchObject({ name: 'ツボウチront', note: '2週連続おかわり', visitNo: 2, mark: 'check' })
+    expect(r.parts).toEqual([{ qty: 1, big: false, takeout: false }])
+  })
+  it('年・月・週・連続などの数字も食数にしない。「2食」は食数', () => {
+    expect(P('山田 3か月ぶり').parts[0].qty).toBe(1)
+    expect(P('山田 1年ぶり').parts[0].qty).toBe(1)
+    expect(P('山田 2食').parts[0].qty).toBe(2)
+  })
+})
+

@@ -109,7 +109,11 @@ export function parseLedgerLine(raw: string): ParsedRow | null {
   if (!r) return null
   // 「2回目」「すだちからの2回目」＝その人の何回目の来店か（アプリを使う前の来店も含む）。「新規」なら1回目
   const vm = body.normalize('NFKC').match(/(\d+)\s*回目/)
-  const visitNo = vm ? Number(vm[1]) : r.isNew ? 1 : null
+  // 「2週連続」＝先週も今週も来てくれた＝少なくとも2回目
+  const wk = body.normalize('NFKC').match(/(\d+)\s*週連続/)
+  const explicitVisit = vm ? Number(vm[1]) : null
+  const weekVisit = wk ? Number(wk[1]) : null
+  const visitNo = explicitVisit != null || weekVisit != null ? Math.max(explicitVisit ?? 0, weekVisit ?? 0) : r.isNew ? 1 : null
   // 「前回ニラミントか青唐すだちきてくれた人」のような過去の話は、メニューの手がかりにしない
   const menuHint = body.normalize('NFKC').replace(/前回[^\n]*/, ' ').replace(/\S*からの\S*/g, ' ')
   return {
@@ -221,7 +225,7 @@ function parseBody(raw: string): Omit<ParsedRow, 'mark' | 'menuHint' | 'cancelle
   }
   // 食数: 「3食」「×3」、なければ最初の数字（丸数字は NFKC で数字になっている）
   let total: number | null = null
-  const qm = rest.match(/(\d+)\s*食/) ?? rest.match(/[×x*]\s*(\d+)/i) ?? rest.match(/(\d+)(?!\s*(?:回|人目|番|時|分|月|日|歳|:))/)
+  const qm = rest.match(/(\d+)\s*食/) ?? rest.match(/[×x*]\s*(\d+)/i) ?? rest.match(/(\d+)(?!\s*(?:回|人目|番|時|分|月|日|歳|週|年|か月|ヶ月|ヵ月|カ月|連続|:))/)
   if (qm) {
     total = Number(qm[1])
     rest = rest.replace(qm[0], ' ')

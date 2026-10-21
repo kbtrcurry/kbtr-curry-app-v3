@@ -319,3 +319,19 @@ describe('名前は姓と名の2つまで。その先は備考', () => {
   })
 })
 
+describe('幅のある時間（12:00〜13:00）は備考へ', () => {
+  it('食数の13と読まない。時間は備考に入る。来店時間の欄は空', () => {
+    const r = P('片山ライムライチ12:00〜13:00')
+    expect(r.name).toBe('片山ライムライチ')
+    expect(r.parts).toEqual([{ qty: 1, big: false, takeout: false }])
+    expect(r.note).toBe('12:00〜13:00')
+    expect(r.time).toBe('')
+    expect(r.warns.some((w) => w.includes('食数'))).toBe(true)
+  })
+  it('番号つきでも、「～」「時」の書き方でも同じ。単独の時間は、これまでどおり来店時間', () => {
+    expect(P('片山ライムライチ① 新規 12:00～13:00 TO')).toMatchObject({ name: '片山ライムライチ', note: '12:00〜13:00', time: '', isNew: true })
+    expect(P('片山ライムライチ① 12時〜13時').note).toBe('12:00〜13:00')
+    expect(P('片山ライムライチ① 12:00')).toMatchObject({ time: '12:00', note: '' })
+  })
+})
+

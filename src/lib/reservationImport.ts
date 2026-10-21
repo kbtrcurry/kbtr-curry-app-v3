@@ -138,11 +138,19 @@ function parseBody(raw: string): Omit<ParsedRow, 'mark' | 'menuHint' | 'cancelle
   if (/うずら\s*(?:なし|無し|無)|ウズラ\s*(?:なし|無し|無)|うずら抜き/.test(t)) uzura = false
   t = t.replace(/うずら\s*(?:なし|無し|無)|ウズラ\s*(?:なし|無し|無)|うずら抜き/g, ' ').replace(/[◆◇]/g, ' ')
 
-  // 来店時間
+  // 来店時間。「12:00〜13:00」のような幅のある時間は、1つの時間にせず、そのまま備考にする（13を食数と読まないよう、先に外す）
   let time = ''
+  let timeRange = ''
+  const rg = t.match(/(\d{1,2})\s*:\s*(\d{2})\s*[〜~～–−-]\s*(\d{1,2})\s*:\s*(\d{2})/) ??
+    t.match(/(\d{1,2})時(?:\s*(\d{1,2})分)?\s*[〜~～–−-]\s*(\d{1,2})時(?:\s*(\d{1,2})分)?/)
+  if (rg) {
+    timeRange = `${pad(Number(rg[1]))}:${pad(Number(rg[2] ?? 0))}〜${pad(Number(rg[3]))}:${pad(Number(rg[4] ?? 0))}`
+    t = t.replace(rg[0], ' ')
+  }
   const m1 = t.match(/(\d{1,2})\s*[:：]\s*(\d{2})/)
   const m2 = t.match(/(\d{1,2})\s*時(?:\s*(\d{1,2})\s*分|半)?/)
   const nameEndCandidates: number[] = []
+  if (rg) nameEndCandidates.push(rg.index ?? 0)
   if (m1) {
     time = `${pad(Number(m1[1]))}:${m1[2]}`
     nameEndCandidates.push(m1.index ?? 0)
@@ -246,7 +254,8 @@ function parseBody(raw: string): Omit<ParsedRow, 'mark' | 'menuHint' | 'cancelle
   if (parts.length === 0) parts.push({ qty: total ?? 1, big: false, takeout: false })
 
   if (!name) warns.push('名前が見つかりません')
-  const note = rest.replace(/[()（）[\]【】:：、,，.。・\s]+/g, ' ').trim()
+  const noteBody = rest.replace(/[()（）[\]【】:：、,，.。・\s]+/g, ' ').trim()
+  const note = [timeRange, noteBody].filter(Boolean).join(' ')
   return { line, name, platform, isNew, time, uzura, parts, note, warns, index }
 }
 

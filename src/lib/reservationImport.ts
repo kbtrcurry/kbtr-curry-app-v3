@@ -35,16 +35,24 @@ const BIG_RE = /大盛り?\s*(?:(\d+)\s*食?)?/
 // イートイン／テイクアウトの語（前に「大盛り」、後ろに数があってもよい）。TOは大文字のみ（名前の中の to と区別）
 const DINE_RE = /(大盛り?)?\s*(イートイン|店内|テイクアウト|持ち帰り|持帰り|(?<![A-Za-z])TO(?![A-Za-z]))\s*(?:(\d+)\s*食?)?/g
 
-// 行頭のチェックマークなど（名前の前に付いている）
-const MARK_RE = /^[\s\u3000]*([✅✔✓☑☐☒❌✗✘⬜🔲]\uFE0F?)[\s\u3000]*/u
+// 行頭のしるし（名前の前に付いている）: ✅✔✓☑＝来店済み、☐など＝空のチェック欄、×＝うずらなし
+const MARK_RE = /^[\s\u3000]*([✅✔✓☑☐☒❌✗✘✕✖×⬜🔲]\uFE0F?)[\s\u3000]*/u
 const CHECKED = new Set(['✅', '✔', '✓', '☑'])
 const BLANK = new Set(['☐', '⬜', '🔲'])
 
 export function parseLedgerLine(raw: string): ParsedRow | null {
-  const mm = raw.match(MARK_RE)
-  const sym = mm ? mm[1].replace('\uFE0F', '') : ''
-  const markFromSymbol: ParsedRow['mark'] = mm ? (CHECKED.has(sym) ? 'check' : BLANK.has(sym) ? 'blank' : 'cross') : null
-  let body = mm ? raw.slice(mm[0].length) : raw
+  // 行頭のしるしは、いくつ続いていてもすべて外す（例：「✅×山田」）
+  let rest = raw
+  const syms: string[] = []
+  for (;;) {
+    const mm = rest.match(MARK_RE)
+    if (!mm) break
+    syms.push(mm[1].replace('\uFE0F', ''))
+    rest = rest.slice(mm[0].length)
+  }
+  const crossMark = syms.some((x) => !CHECKED.has(x) && !BLANK.has(x))
+  const markFromSymbol: ParsedRow['mark'] = syms.some((x) => CHECKED.has(x)) ? 'check' : syms.some((x) => BLANK.has(x)) ? 'blank' : null
+  let body = rest
   // 「○」だけの行は、行をあけるために使っているだけなので数えない
   if (/^[\s\u3000○◯〇]*$/.test(body)) return null
   const cancelled = /キャンセル|取り消し|取消|ｷｬﾝｾﾙ/.test(body.normalize('NFKC'))
@@ -72,7 +80,7 @@ export function parseLedgerLine(raw: string): ParsedRow | null {
   return {
     ...r,
     parts: bigMark ? r.parts.map((p) => ({ ...p, big: true })) : r.parts,
-    uzura: noUzuraMark ? false : r.uzura,
+    uzura: noUzuraMark || crossMark ? false : r.uzura,
     line: raw.trim(),
     mark: circle ? 'check' : markFromSymbol,
     cancelled,

@@ -87,7 +87,7 @@ export default function ReservationImport({ existing }: { existing: Reservation[
         if (Object.keys(sold).length === 0) warns.push('この日の売上が見つかりません。日付は合っていますか？')
         // 来なかった人はいない。「キャンセル」と書かれた行だけがキャンセル、あとは（○がなくても）来店済み
         let status: ResStatus = 'picked_up'
-        if (p.cancelled || p.mark === 'cross') status = 'cancelled'
+        if (p.cancelled) status = 'cancelled'
         if (status === 'cancelled') warns.push('キャンセルの行です。台帳には「キャンセル」として入り、取り置き回数には数えません')
         const q = partsQty(p.parts)
         out.push({
@@ -174,7 +174,7 @@ export default function ReservationImport({ existing }: { existing: Reservation[
           <li>1行が1件。丸数字（①②③）は食数です。行の先頭か最後の「○」、行頭のチェック（✅✔など）は、名前に入れず「来店しました」の印として読みます。印がなくても来店済みとして読みます（終盤に来た人など）。「キャンセル」と書かれた行は、キャンセルとして入れます。「○」だけの行は読み飛ばします。</li>
           <li>「新規」だけなら Instagram の新規、「x新規」なら X の新規。書いていなければ Instagram にしています（直せます）。</li>
           <li>何も書いていなければイートイン、「TO」はテイクアウト、「大盛り」は大盛り。</li>
-          <li>「12:00」のような時間は来店予定時間です。名前の前の◆は大盛り、△はうずらなし（木曜24時より後に連絡が来た）として読みます。しるしがなければ、うずら付きです。</li>
+          <li>「12:00」のような時間は来店予定時間です。名前の前の◆は大盛り、△と×はうずらなし（△は木曜24時より後に連絡が来た）として読みます。しるしがなければ、うずら付きです。</li>
           <li>メニューは、その行に書かれた言葉（例：青唐すだち）から決めます。書いていなければ、その日の売上（レシート）のビリヤニの名前を使います。「前回〜」と書かれた過去の話は無視します。</li>
           <li>名前は、ひらがな・カタカナ・全角半角の違いを同じとして、お客さん台帳にまとめます。漢字とかなの同一人物は台帳であとから統合できます。</li>
         </ul>

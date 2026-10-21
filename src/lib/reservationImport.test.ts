@@ -169,3 +169,17 @@ describe('キャンセル', () => {
   })
 })
 
+describe('先頭の×（うずらなし）', () => {
+  it('×はうずらなし。名前には入れず、キャンセルにもしない', () => {
+    const a = P('×山田② 新規12:00')
+    expect(a).toMatchObject({ name: '山田', uzura: false, cancelled: false })
+    expect(a.parts[0].qty).toBe(2)
+    expect(P('✕さくら①')).toMatchObject({ name: 'さくら', uzura: false })
+    expect(P('✅×たろう③')).toMatchObject({ name: 'たろう', uzura: false, mark: 'check' })
+    expect(P('×○はなこ①')).toMatchObject({ name: 'はなこ', uzura: false, mark: 'check' })
+  })
+  it('文中の「×2」は食数のまま', () => {
+    expect(P('山田 ×2').parts[0].qty).toBe(2)
+  })
+})
+

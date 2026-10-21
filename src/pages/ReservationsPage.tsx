@@ -16,6 +16,7 @@ import {
   mergeCustomer,
   uzuraEligible,
   customerLabel,
+  visitCount,
   customerStats,
   deleteReservation,
   normHandle,
@@ -458,7 +459,12 @@ function ReservationCard({
 }) {
   const [copied, setCopied] = useState(false)
   const url = profileUrl(r.platform, r.handle)
-  const label = identityOf(r) ? customerLabel(stat ? { ...stat, reservations: Math.max(0, stat.reservations - 1) } : undefined) : null
+  // この取り置きに「◯回目」が書かれていれば、それを表示。なければ、登録の履歴から数える
+  const label = r.visit_no
+    ? { text: `${r.visit_no}回目の取り置き${r.is_new ? '（新規）' : ''}`, tone: 'ok' as const }
+    : identityOf(r)
+      ? customerLabel(stat ? { ...stat, reservations: Math.max(0, stat.reservations - 1) } : undefined)
+      : null
   const copy = async () => {
     try {
       await navigator.clipboard.writeText(replyText(r, template))
@@ -590,7 +596,7 @@ function CustomerRow({ s, others, all, open, onToggle, onSaved }: { s: CustomerS
             <span className="ml-1.5 text-xs font-normal text-stone-500">{nameOnly ? 'アカウント未登録（名前で管理）' : `${PLATFORM_LABEL[s.platform]} @${s.handle}`}</span>
           </p>
           <p className="text-xs text-stone-500">
-            取り置き{s.reservations}回・受け渡し{s.pickedUp}回{s.noShow > 0 && `・来なかった${s.noShow}回`}
+            来店・取り置き{visitCount(s)}回（登録{s.reservations}件）・受け渡し{s.pickedUp}回{s.noShow > 0 && `・来なかった${s.noShow}回`}
             {s.lastDate && `・最後 ${md(s.lastDate)}`}
           </p>
         </div>

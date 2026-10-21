@@ -14,6 +14,7 @@ type Row = {
   name: string
   platform: Platform
   isNew: boolean
+  visitNo: number | null
   time: string
   uzura: boolean
   parts: Part[]
@@ -103,6 +104,7 @@ export default function ReservationImport({ existing, onOpenDate }: { existing: 
           name: p.name,
           platform: p.platform,
           isNew: p.isNew,
+          visitNo: p.visitNo,
           time: p.time,
           uzura: p.uzura,
           parts: p.parts,
@@ -147,6 +149,7 @@ export default function ReservationImport({ existing, onOpenDate }: { existing: 
           status: r.status,
           visit_time: r.time,
           is_new: r.isNew,
+          visit_no: r.visitNo,
           uzura: r.uzura,
         }
       })
@@ -201,6 +204,7 @@ export default function ReservationImport({ existing, onOpenDate }: { existing: 
       <details className="text-sm text-stone-600">
         <summary className="cursor-pointer text-stone-500 font-semibold">読み取りのきまり</summary>
         <ul className="mt-1.5 space-y-1 list-disc pl-5">
+          <li>「2回目」「すだちからの2回目」のような「◯回目」は、その人の何回目の来店かとして、お客さん台帳の回数に反映します（「新規」は1回目）。</li>
           <li>1行が1食です。同じ名前の人が複数食のときの「名前①」「名前②」「名前③」は、1人目・2人目・3人目の番号（食数ではない）として、続く行を1件にまとめます（それぞれの行の「大盛り」「TO」はそのまま数えます）。「2食」のように書けば、その食数です。行の先頭か最後の「○」、行頭のチェック（✅✔など）は、名前に入れず「来店しました」の印として読みます。印がなくても来店済みとして読みます（終盤に来た人など）。「キャンセル」と書かれた行は、キャンセルとして入れます。「○」だけの行は読み飛ばします。</li>
           <li>「新規」だけなら Instagram の新規、「x新規」なら X の新規。書いていなければ Instagram にしています（直せます）。</li>
           <li>何も書いていなければイートイン、「TO」はテイクアウト、「大盛り」は大盛り。</li>
@@ -325,6 +329,19 @@ export default function ReservationImport({ existing, onOpenDate }: { existing: 
                 <Toggle on={r.isNew} onClick={() => upd(r.id, { isNew: !r.isNew })}>
                   新規
                 </Toggle>
+                <label className="flex items-center gap-1 text-sm text-stone-600">
+                  <input
+                    type="number"
+                    inputMode="numeric"
+                    min={1}
+                    value={r.visitNo ?? ''}
+                    onChange={(e) => upd(r.id, { visitNo: e.target.value ? Math.max(1, Number(e.target.value)) : null })}
+                    placeholder="—"
+                    className="w-14 border border-stone-300 rounded-lg px-2 py-1.5 text-sm text-right"
+                    aria-label="何回目の来店か"
+                  />
+                  回目
+                </label>
                 <Toggle on={r.uzura} onClick={() => upd(r.id, { uzura: !r.uzura })}>
                   うずら
                 </Toggle>

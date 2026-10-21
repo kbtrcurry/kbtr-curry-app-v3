@@ -19,6 +19,8 @@ export type Reservation = {
   visit_time: string
   /** 初めての取り置きのお客さん（メモに「新規」と書いてあったもの、または初回） */
   is_new: boolean
+  /** メモに書かれた「◯回目」（アプリを使う前の来店も含めた、何回目の来店か）。なければ null */
+  visit_no: number | null
   /** うずらアチャール付き（木曜24時までの受付で付く） */
   uzura: boolean
 }
@@ -135,9 +137,14 @@ export type CustomerStat = {
   reservations: number
   pickedUp: number
   noShow: number
+  /** メモの「◯回目」で最も大きいもの */
+  visitNo: number
   lastDate: string
   note: CustomerNote | null
 }
+
+/** 来店・取り置きの回数。登録した件数と、メモの「◯回目」の大きいほう */
+export const visitCount = (s: Pick<CustomerStat, 'reservations' | 'visitNo'>): number => Math.max(s.reservations, s.visitNo)
 
 /** 取り置きの履歴をアカウントごとにまとめる（お客さん台帳） */
 export function customerStats(all: Reservation[], notes: CustomerNote[]): CustomerStat[] {
@@ -147,8 +154,11 @@ export function customerStats(all: Reservation[], notes: CustomerNote[]): Custom
     const idn = identityOf(r)
     if (!idn) continue
     const key = customerKey(idn.platform, idn.handle)
-    const s = m.get(key) ?? { key, platform: idn.platform, handle: idn.handle, name: r.name, reservations: 0, pickedUp: 0, noShow: 0, lastDate: '', note: noteBy.get(key) ?? null }
-    if (r.status !== 'cancelled') s.reservations += 1
+    const s = m.get(key) ?? { key, platform: idn.platform, handle: idn.handle, name: r.name, reservations: 0, pickedUp: 0, noShow: 0, visitNo: 0, lastDate: '', note: noteBy.get(key) ?? null }
+    if (r.status !== 'cancelled') {
+      s.reservations += 1
+      s.visitNo = Math.max(s.visitNo, r.visit_no ?? 0)
+    }
     if (r.status === 'picked_up') s.pickedUp += 1
     if (r.status === 'no_show') s.noShow += 1
     s.lastDate = r.service_date
@@ -157,17 +167,18 @@ export function customerStats(all: Reservation[], notes: CustomerNote[]): Custom
   }
   for (const n of notes) {
     const key = customerKey(n.platform, n.handle)
-    if (!m.has(key)) m.set(key, { key, platform: n.platform, handle: normHandle(n.handle), name: '', reservations: 0, pickedUp: 0, noShow: 0, lastDate: '', note: n })
+    if (!m.has(key)) m.set(key, { key, platform: n.platform, handle: normHandle(n.handle), name: '', reservations: 0, pickedUp: 0, noShow: 0, visitNo: 0, lastDate: '', note: n })
   }
   return [...m.values()].sort((a, b) => b.pickedUp - a.pickedUp || b.lastDate.localeCompare(a.lastDate))
 }
 
 /** 入力中のアカウントについての一言（新規／◯回目／来なかった履歴） */
 export function customerLabel(stat: CustomerStat | undefined): { text: string; tone: 'new' | 'ok' | 'warn' } {
-  if (!stat || stat.reservations === 0) return { text: '新規のお客さん（過去の取り置きなし）', tone: 'new' }
+  const n = stat ? visitCount(stat) : 0
+  if (!stat || n === 0) return { text: '新規のお客さん（過去の取り置きなし）', tone: 'new' }
   if (stat.noShow > 0 || stat.note?.flag === 'watch')
-    return { text: `${stat.reservations}回目の取り置き ・ 来なかった ${stat.noShow}回${stat.note?.flag === 'watch' ? ' ・ 要注意の印あり' : ''}`, tone: 'warn' }
-  return { text: `${stat.reservations + 1}回目の取り置き ・ 受け渡し ${stat.pickedUp}回${stat.note?.posted_review ? ' ・ 感想の投稿あり' : ''}`, tone: 'ok' }
+    return { text: `${n}回目の取り置き ・ 来なかった ${stat.noShow}回${stat.note?.flag === 'watch' ? ' ・ 要注意の印あり' : ''}`, tone: 'warn' }
+  return { text: `${n + 1}回目の取り置き ・ 受け渡し ${stat.pickedUp}回${stat.note?.posted_review ? ' ・ 感想の投稿あり' : ''}`, tone: 'ok' }
 }
 
 // ---------- DM の文面を読み取る ----------
@@ -305,7 +316,8 @@ export async function saveMenuStock(date: string, stock: Record<string, number |
   }
 }
 
-export type ReservationInput = Omit<Reservation, 'id' | 'created_at' | 'status' | 'visit_time' | 'is_new' | 'uzura'> & {
+export type ReservationInput = Omit<Reservation, 'id' | 'created_at' | 'status' | 'visit_time' | 'is_new' | 'uzura' | 'visit_no'> & {
+  visit_no?: number | null
   id?: string
   status?: ResStatus
   visit_time?: string

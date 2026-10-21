@@ -8,6 +8,7 @@ import {
   reserveSummary,
   customerStats,
   customerLabel,
+  visitCount,
   normHandle,
   replyText,
   DEFAULT_REPLY,
@@ -32,6 +33,7 @@ const R = (over: Partial<Reservation>): Reservation => ({
   created_at: '',
   visit_time: '',
   is_new: false,
+  visit_no: null,
   uzura: true,
   ...over,
 })
@@ -121,6 +123,21 @@ describe('大盛りは1.5食として残り食数に反映', () => {
     expect(reserveSummary([r], 36).qty).toBe(3.5)
     expect(fmtPortions(3.5)).toBe('3.5')
     expect(fmtPortions(4)).toBe('4')
+  })
+})
+
+describe('メモの「◯回目」を台帳の回数に反映', () => {
+  it('登録した件数と、メモの「◯回目」の大きいほうを回数にする', () => {
+    const stats = customerStats([R({ handle: '', name: 'シゲノ タイキ', platform: 'other', visit_no: 2, status: 'picked_up' })], [])
+    expect(stats[0].reservations).toBe(1)
+    expect(stats[0].visitNo).toBe(2)
+    expect(visitCount(stats[0])).toBe(2)
+  })
+  it('次の取り置きの案内は「3回目」になる。キャンセルの行の回数は使わない', () => {
+    const s = customerStats([R({ handle: '', name: 'シゲノ タイキ', platform: 'other', visit_no: 2, status: 'picked_up' })], [])[0]
+    expect(customerLabel(s).text).toContain('3回目')
+    const c = customerStats([R({ handle: '', name: 'さくら', platform: 'other', visit_no: 5, status: 'cancelled' })], [])[0]
+    expect(c.visitNo).toBe(0)
   })
 })
 

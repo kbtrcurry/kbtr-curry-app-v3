@@ -30,6 +30,8 @@ export type ParsedRow = {
   menuHint: string
   /** 何行を1件にまとめたか（①②③の行をまとめたとき） */
   mergedLines?: number
+  /** メモの「2回目」など、何回目の来店か。「新規」なら1。なければ null */
+  visitNo: number | null
 }
 
 const pad = (n: number) => String(n).padStart(2, '0')
@@ -102,6 +104,9 @@ export function parseLedgerLine(raw: string): ParsedRow | null {
   // 名前の先頭などに付くしるし: ◆＝大盛り、△＝うずらなし（木曜24時より後に連絡が来た）
   const r = parseBody(body)
   if (!r) return null
+  // 「2回目」「すだちからの2回目」＝その人の何回目の来店か（アプリを使う前の来店も含む）。「新規」なら1回目
+  const vm = body.normalize('NFKC').match(/(\d+)\s*回目/)
+  const visitNo = vm ? Number(vm[1]) : r.isNew ? 1 : null
   // 「前回ニラミントか青唐すだちきてくれた人」のような過去の話は、メニューの手がかりにしない
   const menuHint = body.normalize('NFKC').replace(/前回[^\n]*/, ' ').replace(/\S*からの\S*/g, ' ')
   return {
@@ -111,11 +116,12 @@ export function parseLedgerLine(raw: string): ParsedRow | null {
     line: raw.trim(),
     mark: circle ? 'check' : markFromSymbol,
     cancelled,
+    visitNo,
     menuHint,
   }
 }
 
-function parseBody(raw: string): Omit<ParsedRow, 'mark' | 'menuHint' | 'cancelled'> | null {
+function parseBody(raw: string): Omit<ParsedRow, 'mark' | 'menuHint' | 'cancelled' | 'visitNo'> | null {
   // ①②③は食数ではなく「同じ名前の人の何人目か」。1行＝1食。番号は外して読む（同じ長さの空白にして、名前の位置を変えない）
   const circ = raw.match(/[\u2460-\u2473]/)
   const index = circ ? (circ[0].codePointAt(0) ?? 0x2460) - 0x245f : null
@@ -362,6 +368,7 @@ export function groupIndexed(rows: ParsedRow[]): ParsedRow[] {
       index: g[0].index,
       menuHint: g.map((x) => x.menuHint).join(' '),
       mergedLines: g.length,
+      visitNo: g.reduce<number | null>((m, x) => (x.visitNo == null ? m : Math.max(m ?? 0, x.visitNo)), null),
     }
   })
 }

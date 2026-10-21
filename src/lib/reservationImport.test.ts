@@ -285,3 +285,18 @@ describe('メモをコピーしたときの「- [x]」と、「からの」の�
   })
 })
 
+describe('「◯回目」（何回目の来店か）', () => {
+  const G = (lines: string[]) => groupIndexed(lines.map((l) => parseLedgerLine(l)!).filter(Boolean))
+  it('「すだちからの2回目」は2回目。まとめた行でも2回目', () => {
+    expect(P('- [x] シゲノ　タイキ①すだちからの2回目').visitNo).toBe(2)
+    const g = G(['- [x] シゲノ　タイキ①すだちからの2回目', '- [x] シゲノ　タイキ②すだちからの2回目'])
+    expect(g[0].visitNo).toBe(2)
+    expect(g[0].parts.reduce((a, p) => a + p.qty, 0)).toBe(2)
+  })
+  it('新規は1回目。書かれていなければなし', () => {
+    expect(P('山田① 新規').visitNo).toBe(1)
+    expect(P('山田①').visitNo).toBeNull()
+    expect(P('山田① 3回目').visitNo).toBe(3)
+  })
+})
+

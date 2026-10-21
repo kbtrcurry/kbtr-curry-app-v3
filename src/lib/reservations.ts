@@ -27,7 +27,7 @@ export type Reservation = {
 export type CustomerNote = { platform: Platform; handle: string; flag: 'none' | 'regular' | 'watch'; posted_review: boolean; note: string }
 
 export const PLATFORM_LABEL: Record<Platform, string> = { x: 'X', instagram: 'Instagram', other: 'その他' }
-export const STATUS_LABEL: Record<ResStatus, string> = { reserved: '取り置き中', picked_up: '受け渡し済み', no_show: '来なかった', cancelled: 'キャンセル' }
+export const STATUS_LABEL: Record<ResStatus, string> = { reserved: '取り置き中', picked_up: '来店済み', no_show: '来なかった', cancelled: 'キャンセル' }
 
 // ---------- 計算（純粋関数） ----------
 
@@ -183,7 +183,7 @@ export function customerLabel(stat: CustomerStat | undefined): { text: string; t
   if (!stat || n === 0) return { text: '新規のお客さん（過去の取り置きなし）', tone: 'new' }
   if (stat.noShow > 0 || stat.note?.flag === 'watch')
     return { text: `${n}回目の取り置き ・ 来なかった ${stat.noShow}回${stat.note?.flag === 'watch' ? ' ・ 要注意の印あり' : ''}`, tone: 'warn' }
-  return { text: `${n + 1}回目の取り置き ・ 受け渡し ${stat.pickedUp}回${stat.note?.posted_review ? ' ・ 感想の投稿あり' : ''}`, tone: 'ok' }
+  return { text: `${n + 1}回目の取り置き ・ 来店 ${stat.pickedUp}回${stat.note?.posted_review ? ' ・ 感想の投稿あり' : ''}`, tone: 'ok' }
 }
 
 // ---------- DM の文面を読み取る ----------

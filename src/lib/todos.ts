@@ -115,7 +115,7 @@ export function buildTodos(i: TodoInput, today: string): Todo[] {
       id: 'reserve',
       level: 'info',
       title: `取り置き ${i.reserveCount}件（${fmtPortions(i.reserveQty ?? 0)}食）・${md(i.reserveDate)}`,
-      detail: '受け渡しの準備と、返信が済んでいるかを確認できます。',
+      detail: '来店の準備と、返信が済んでいるかを確認できます。',
       to: '/reserve',
       cta: '取り置きを見る',
     })

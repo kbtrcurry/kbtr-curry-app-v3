@@ -132,7 +132,7 @@ export default function PosPage() {
   const totalLeft = Object.entries(poolLeft).reduce((a, [id, n]) => (portionOf(menus.find((m) => m.id === id)?.name ?? '') > 0 ? a + Math.max(0, n) : a), 0)
   const hasStock = Object.keys(stock).length > 0
 
-  // 取り置きの受け渡し: 品目をカートに入れ、取り置きを「受け渡し済み」にする（残り数の計算は変わらない）
+  // 取り置きの来店: 品目をカートに入れ、取り置きを「来店済み」にする（残り数の計算は変わらない）
   const handOver = async (r: Reservation) => {
     setQty((prev) => {
       const next = { ...prev }
@@ -143,7 +143,7 @@ export default function PosPage() {
       await setReservationStatus(r.id, 'picked_up')
       invalidateRes()
     } catch {
-      // 通信できないときも、レジには入れておく（あとで取り置きリストから受け渡し済みにする）
+      // 通信できないときも、レジには入れておく（あとで取り置きリストから来店済みにする）
     }
   }
 

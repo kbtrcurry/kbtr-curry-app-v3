@@ -84,6 +84,13 @@ export default function ReservationsPage() {
   // 登録のある営業日（新しい順）。過去の日を開いて、直したり消したりするため
   const pastDates = [...new Set((allRes.data ?? []).map((r) => r.service_date))].sort().reverse().slice(0, 40)
   const reserved = reservedByMenu(list)
+  // 並び順: これから来る人（来店時間の早い順。時間なしは最後）→ 来店済み → キャンセルなど
+  const sortedList = [...list].sort((a, b) => {
+    const rank = (r: Reservation) => (r.status === 'reserved' ? 0 : r.status === 'picked_up' ? 1 : 2)
+    if (rank(a) !== rank(b)) return rank(a) - rank(b)
+    if (a.status === 'reserved') return (a.visit_time || '99:99').localeCompare(b.visit_time || '99:99') || a.created_at.localeCompare(b.created_at)
+    return a.created_at.localeCompare(b.created_at)
+  })
 
   if (loading) return <Spinner />
   if (!session) {
@@ -98,11 +105,7 @@ export default function ReservationsPage() {
   }
 
   return (
-    <div className="p-4 pb-28 max-w-2xl mx-auto space-y-4">
-      <h1 className="text-xl font-bold text-amber-800 flex items-center gap-2">
-        <Users className="w-5 h-5" /> 取り置き
-      </h1>
-
+    <div className="px-3 pt-3 pb-28 max-w-2xl mx-auto space-y-2.5">
       <div className="flex gap-1.5">
         {(
           [
@@ -114,7 +117,7 @@ export default function ReservationsPage() {
           <button
             key={k}
             onClick={() => setTab(k)}
-            className={`flex-1 py-2.5 rounded-full text-sm font-semibold ${tab === k ? 'bg-amber-700 text-[#faf9f5]' : 'bg-stone-100 text-stone-600'}`}
+            className={`flex-1 py-2 rounded-full text-sm font-semibold ${tab === k ? 'bg-amber-700 text-[#faf9f5]' : 'bg-stone-100 text-stone-600'}`}
           >
             {label}
           </button>
@@ -123,79 +126,56 @@ export default function ReservationsPage() {
 
       {tab === 'list' && (
         <>
-          <section className="bg-white border border-stone-200 rounded-2xl p-4 space-y-3">
-            <div className="flex items-center gap-2 flex-wrap">
-              <button onClick={() => setDate(nextSaturday(today))} className="px-3 py-1.5 rounded-full bg-stone-100 text-sm font-semibold text-stone-700">
-                次の土曜
-              </button>
-              <button onClick={() => setDate(today)} className="px-3 py-1.5 rounded-full bg-stone-100 text-sm font-semibold text-stone-700">
-                今日
-              </button>
-              <input
-                type="date"
-                value={effectiveDate}
-                onChange={(e) => e.target.value && setDate(e.target.value)}
-                className="border border-stone-300 rounded-lg px-2 py-1.5 text-sm"
-              />
-              <span className="text-sm font-bold text-stone-800">
-                {md(effectiveDate)}（{weekday(effectiveDate)}）の営業
-              </span>
-            </div>
-            {pastDates.length > 0 && (
-              <div className="flex gap-1.5 overflow-x-auto -mx-1 px-1 pb-1">
-                {pastDates.map((d) => (
-                  <button
-                    key={d}
-                    onClick={() => setDate(d)}
-                    className={`shrink-0 px-3 py-1.5 rounded-full text-sm font-semibold ${d === effectiveDate ? 'bg-amber-700 text-[#faf9f5]' : 'bg-stone-100 text-stone-600'}`}
-                  >
-                    {md(d)}
-                  </button>
-                ))}
-              </div>
-            )}
-            <div className="grid grid-cols-3 gap-2 text-center">
-              <div className="rounded-xl bg-stone-50 p-2.5">
-                <p className="text-xs text-stone-500">取り置き</p>
-                <p className="text-xl font-extrabold text-stone-900">{fmtPortions(summary.qty)}食</p>
-                <p className="text-xs text-stone-500">{summary.count}件</p>
-              </div>
-              <div className="rounded-xl bg-stone-50 p-2.5">
-                <p className="text-xs text-stone-500">上限（変更できます）</p>
-                <input
-                  type="number"
-                  inputMode="numeric"
-                  value={cap}
-                  onChange={(e) => setCap(Math.max(0, Number(e.target.value) || 0))}
-                  className="w-full text-center text-xl font-extrabold bg-transparent border-b border-stone-300 text-stone-900"
-                  aria-label="取り置きの上限（食）"
-                />
-              </div>
-              <div className={`rounded-xl p-2.5 ${summary.left <= 0 ? 'bg-red-50' : 'bg-stone-50'}`}>
-                <p className="text-xs text-stone-500">受付できる残り</p>
-                <p className={`text-xl font-extrabold ${summary.left <= 0 ? 'text-red-600' : 'text-green-700'}`}>{fmtPortions(Math.max(0, summary.left))}食</p>
-                {summary.left < 0 && <p className="text-xs text-red-600">{fmtPortions(-summary.left)}食オーバー</p>}
-              </div>
-            </div>
-            {Object.keys(stock.data ?? {}).length > 0 && (
-              <p className="text-xs text-stone-500">
-                用意数：
-                {(menus.data ?? [])
-                  .filter((m) => stock.data?.[m.id] != null)
-                  .map((m) => `${m.name} ${stock.data![m.id]}食（取り置き ${reserved[m.id] ?? 0}）`)
-                  .join(' ／ ')}
-              </p>
-            )}
-          </section>
-
-          {!adding && !editing && (
-            <button
-              onClick={() => setAdding(true)}
-              className="w-full flex items-center justify-center gap-1.5 bg-amber-700 text-[#faf9f5] py-3.5 rounded-xl font-bold text-base"
-            >
-              <Plus className="w-5 h-5" /> 取り置きを追加
+          <div className="flex items-center gap-1.5 overflow-x-auto -mx-3 px-3 pb-0.5">
+            <button onClick={() => setDate(nextSaturday(today))} className="shrink-0 px-3 py-1.5 rounded-full bg-stone-100 text-sm font-semibold text-stone-700">
+              次の土曜
             </button>
-          )}
+            <button onClick={() => setDate(today)} className="shrink-0 px-3 py-1.5 rounded-full bg-stone-100 text-sm font-semibold text-stone-700">
+              今日
+            </button>
+            <input
+              type="date"
+              value={effectiveDate}
+              onChange={(e) => e.target.value && setDate(e.target.value)}
+              className="shrink-0 border border-stone-300 rounded-lg px-2 py-1 text-sm"
+              aria-label="営業日"
+            />
+            {pastDates
+              .filter((d) => d !== effectiveDate)
+              .map((d) => (
+                <button key={d} onClick={() => setDate(d)} className="shrink-0 px-2.5 py-1.5 rounded-full bg-stone-100 text-sm font-semibold text-stone-600">
+                  {md(d)}
+                </button>
+              ))}
+          </div>
+
+          <div className="flex items-center gap-x-3 gap-y-1 flex-wrap text-sm">
+            <span className="font-bold text-stone-900">
+              {md(effectiveDate)}（{weekday(effectiveDate)}）
+            </span>
+            <span className="text-stone-700">
+              <b>{summary.count}</b>件 <b>{fmtPortions(summary.qty)}</b>食
+            </span>
+            <span className={summary.left <= 0 ? 'text-red-600 font-bold' : 'text-green-700 font-bold'}>
+              残り{fmtPortions(Math.max(0, summary.left))}食{summary.left < 0 && `（${fmtPortions(-summary.left)}食オーバー）`}
+            </span>
+            <label className="flex items-center gap-1 text-xs text-stone-500">
+              上限
+              <input
+                type="number"
+                inputMode="numeric"
+                value={cap}
+                onChange={(e) => setCap(Math.max(0, Number(e.target.value) || 0))}
+                className="w-12 text-center text-sm font-bold bg-transparent border-b border-stone-300 text-stone-900"
+                aria-label="取り置きの上限（食）"
+              />
+            </label>
+            {!adding && !editing && (
+              <button onClick={() => setAdding(true)} className="ml-auto flex items-center gap-1 bg-amber-700 text-[#faf9f5] px-3 py-1.5 rounded-lg font-bold text-sm">
+                <Plus className="w-4 h-4" /> 追加
+              </button>
+            )}
+          </div>
 
           {(adding || editing) && (
             <ReservationForm
@@ -220,9 +200,9 @@ export default function ReservationsPage() {
           {dayRes.error && <p className="text-sm text-red-600">読み込みに失敗しました: {(dayRes.error as Error).message}</p>}
           {!dayRes.isLoading && list.length === 0 && !adding && <p className="text-center text-stone-500 text-sm py-6">この日の取り置きはまだありません。</p>}
 
-          <div className="space-y-3">
-            {list.map((r) => (
-              <ReservationCard
+          <div className="border border-stone-200 rounded-xl overflow-hidden divide-y divide-stone-100 bg-white">
+            {sortedList.map((r) => (
+              <ReservationRow
                 key={r.id}
                 r={r}
                 stat={(() => {
@@ -243,6 +223,21 @@ export default function ReservationsPage() {
               />
             ))}
           </div>
+
+          {Object.keys(stock.data ?? {}).length > 0 && (
+            <details className="bg-white border border-stone-200 rounded-xl px-3 py-2">
+              <summary className="text-sm font-semibold text-stone-700 cursor-pointer">この日の用意数と取り置き</summary>
+              <ul className="mt-1.5 text-sm text-stone-700 space-y-0.5">
+                {(menus.data ?? [])
+                  .filter((m) => stock.data?.[m.id] != null)
+                  .map((m) => (
+                    <li key={m.id}>
+                      {m.name}：用意 {stock.data![m.id]}（取り置き {reserved[m.id] ?? 0}）
+                    </li>
+                  ))}
+              </ul>
+            </details>
+          )}
 
           <details className="bg-white border border-stone-200 rounded-xl px-3 py-2">
             <summary className="text-sm font-semibold text-stone-700 cursor-pointer">返信文のひな形</summary>
@@ -474,6 +469,84 @@ function ReservationForm({
 
 // ---------- 取り置き1件 ----------
 
+// 品目の短い表記: ビリヤニ通常=「通」、大盛り=「大」、それ以外は名前の頭。TOは末尾に「T」
+function shortItems(items: ResItem[]): string {
+  const short = (n: string) => (/大盛/.test(n) ? '大' : /ビリヤ|biryani/i.test(n) ? '通' : n.replace(/^スパイス/, '').slice(0, 3))
+  const m = new Map<string, number>()
+  for (const i of items) {
+    const k = `${short(i.name)}${i.takeout ? 'T' : ''}`
+    m.set(k, (m.get(k) ?? 0) + i.qty)
+  }
+  return [...m.entries()].map(([k, q]) => `${k}${q}`).join(' ')
+}
+
+// 取り置き1件を1行で。右の「来店済み」ボタンは大きめ。行（名前のあたり）をタップすると、詳しい内容・編集・削除が開く
+function ReservationRow({
+  r,
+  stat,
+  template,
+  onEdit,
+  onDelete,
+  onStatus,
+}: {
+  r: Reservation
+  stat: CustomerStat | undefined
+  template: string
+  onEdit: () => void
+  onDelete: () => void
+  onStatus: (s: ResStatus) => Promise<void>
+}) {
+  const [open, setOpen] = useState(false)
+  const [busy, setBusy] = useState(false)
+  const done = r.status === 'picked_up'
+  const off = r.status === 'cancelled' || r.status === 'no_show'
+  const go = async () => {
+    setBusy(true)
+    try {
+      await onStatus('picked_up')
+    } finally {
+      setBusy(false)
+    }
+  }
+  return (
+    <div className={done ? 'bg-green-100/40' : ''}>
+      <div className="flex items-stretch">
+        <button onClick={() => setOpen((v) => !v)} aria-expanded={open} className={`flex-1 min-w-0 flex items-center gap-1.5 pl-2.5 pr-1 text-left ${off ? 'opacity-50' : ''}`} style={{ minHeight: 38 }}>
+          <span className="font-bold text-[15px] text-stone-900 truncate max-w-[7.5em] shrink">{r.name || '（名前なし）'}</span>
+          <span className="text-[13px] text-stone-700 whitespace-nowrap">{shortItems(r.items)}</span>
+          <span className="flex items-center gap-1 text-[11px] font-bold leading-none min-w-0">
+            {r.is_new && <span className="text-sky-700">新</span>}
+            {!r.uzura && <span className="text-red-500">うずなし</span>}
+            {r.visit_time && <span className="text-stone-500 font-normal">{r.visit_time}</span>}
+            {r.note && <span className="text-stone-400 font-normal">✎</span>}
+            {off && <span className="text-stone-500">{STATUS_LABEL[r.status]}</span>}
+          </span>
+        </button>
+        {r.status === 'reserved' ? (
+          <button
+            onClick={() => void go()}
+            disabled={busy}
+            className="shrink-0 w-[88px] my-1 mr-1 rounded-lg bg-amber-700 text-[#faf9f5] text-sm font-bold active:scale-95 transition-transform disabled:opacity-60"
+            aria-label={`${r.name || '取り置き'}を来店済みにする`}
+          >
+            来店済み
+          </button>
+        ) : done ? (
+          <span className="shrink-0 w-[88px] flex items-center justify-center text-xs font-bold text-green-700">✓ 来店済み</span>
+        ) : (
+          <span className="shrink-0 w-[88px]" />
+        )}
+      </div>
+      {open && (
+        <div className="px-2 pb-2">
+          <ReservationCard r={r} stat={stat} template={template} onEdit={onEdit} onDelete={onDelete} onStatus={onStatus} />
+        </div>
+      )}
+    </div>
+  )
+}
+
+
 function ReservationCard({
   r,
   stat,
@@ -539,7 +612,7 @@ function ReservationCard({
         {r.status === 'reserved' ? (
           <>
             <button onClick={() => void onStatus('picked_up')} className="flex items-center gap-1 text-sm font-bold bg-amber-700 text-[#faf9f5] rounded-lg px-3 py-2">
-              <Check className="w-4 h-4" /> 受け渡し済み
+              <Check className="w-4 h-4" /> 来店済み
             </button>
             <button onClick={() => void onStatus('no_show')} className="text-sm font-semibold border border-stone-300 text-stone-600 rounded-lg px-3 py-2">
               来なかった
@@ -628,7 +701,7 @@ function CustomerRow({ s, others, all, open, onToggle, onSaved }: { s: CustomerS
             <span className="ml-1.5 text-xs font-normal text-stone-500">{nameOnly ? 'アカウント未登録（名前で管理）' : `${PLATFORM_LABEL[s.platform]} @${s.handle}`}</span>
           </p>
           <p className="text-xs text-stone-500">
-            来店・取り置き{visitCount(s)}回（登録{s.reservations}件）・受け渡し{s.pickedUp}回{s.noShow > 0 && `・来なかった${s.noShow}回`}
+            来店・取り置き{visitCount(s)}回（登録{s.reservations}件）・来店済み{s.pickedUp}回{s.noShow > 0 && `・来なかった${s.noShow}回`}
             {s.lastDate && `・最後 ${md(s.lastDate)}`}
           </p>
         </div>

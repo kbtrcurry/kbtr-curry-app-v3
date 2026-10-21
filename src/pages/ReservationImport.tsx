@@ -399,7 +399,7 @@ export default function ReservationImport({ existing, onOpenDate }: { existing: 
               <button onClick={() => void save()} disabled={busy || chosen.length === 0 || noMenu > 0} className="w-full py-3.5 rounded-xl bg-amber-700 text-[#faf9f5] font-bold disabled:opacity-40">
                 {busy ? '取り込み中…' : `${chosen.length}件を取り込む（お客さん ${customers}人）`}
               </button>
-              <p className="text-xs text-stone-500 mt-1 text-center">{noMenu > 0 ? `メニューが未選択の行が${noMenu}件あります。選んでください。` : '各行の「状態」のとおりに入ります（キャンセル以外は受け渡し済み）。'}</p>
+              <p className="text-xs text-stone-500 mt-1 text-center">{noMenu > 0 ? `メニューが未選択の行が${noMenu}件あります。選んでください。` : '各行の「状態」のとおりに入ります（キャンセル以外は来店済み）。'}</p>
             </div>
           )}
         </section>

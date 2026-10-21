@@ -331,7 +331,10 @@ function ReservationForm({
   const idn = identityOf({ platform, handle, name })
   const stat = idn ? statBy.get(customerKey(idn.platform, idn.handle)) : undefined
   const label = idn ? customerLabel(stat) : null
-  const items: ResItem[] = menus.flatMap((m) => [
+  // 直す取り置きに、いまはオフのメニューが入っているときも、消えないよう一覧に足す（新しく選べるのは、オンのメニューだけ）
+  const offMenus = [...new Map((editing?.items ?? []).filter((i) => i.menu_id && !menus.some((m) => m.id === i.menu_id)).map((i) => [i.menu_id as string, { id: i.menu_id as string, name: i.name, price: 0 }])).values()]
+  const menuRows = [...menus, ...offMenus]
+  const items: ResItem[] = menuRows.flatMap((m) => [
     ...((eat[m.id] ?? 0) > 0 ? [{ menu_id: m.id, name: m.name, qty: eat[m.id], takeout: false }] : []),
     ...((to[m.id] ?? 0) > 0 ? [{ menu_id: m.id, name: m.name, qty: to[m.id], takeout: true }] : []),
   ])
@@ -433,7 +436,7 @@ function ReservationForm({
       )}
 
       <div className="divide-y divide-stone-100 border border-stone-200 rounded-xl">
-        {menus.map((m) => (
+        {menuRows.map((m) => (
           <div key={m.id} className="px-3 py-2 space-y-1.5">
             <p className="text-sm text-stone-800">
               {m.name}

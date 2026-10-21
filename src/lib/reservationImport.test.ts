@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parseLedgerLine, splitByDate, pickDayMenus, ledgerKey, menuFromHint } from './reservationImport'
+import { parseLedgerLine, splitByDate, pickDayMenus, ledgerKey, menuFromHint, groupIndexed } from './reservationImport'
 
 const P = (s: string) => parseLedgerLine(s)!
 
@@ -9,15 +9,16 @@ describe('parseLedgerLine（実際のメモの書き方）', () => {
     expect(r).toMatchObject({ name: '○○', platform: 'instagram', isNew: true, time: '12:00', uzura: true })
     expect(r.parts).toEqual([{ qty: 1, big: false, takeout: false }])
   })
-  it('丸数字は食数。③＝3食、TOはテイクアウト', () => {
+  it('丸数字は食数ではなく「何人目か」の番号。1行＝1食。TOはテイクアウト', () => {
     const r = P('○○③ 新規12:00TO')
-    expect(r.parts).toEqual([{ qty: 3, big: false, takeout: true }])
+    expect(r.index).toBe(3)
+    expect(r.parts).toEqual([{ qty: 1, big: false, takeout: true }])
     expect(r.name).toBe('○○')
   })
   it('xなら X の新規', () => {
     const r = P('やまだ② x新規 13:30')
     expect(r).toMatchObject({ name: 'やまだ', platform: 'x', isNew: true, time: '13:30' })
-    expect(r.parts[0].qty).toBe(2)
+    expect(r.parts[0].qty).toBe(1)
   })
   it('新規の語がなければ新規ではない。時間がなければ空', () => {
     const r = P('岡本①')
@@ -38,7 +39,7 @@ describe('parseLedgerLine（実際のメモの書き方）', () => {
     expect(P('さくら②').uzura).toBe(true)
   })
   it('大盛りの数。数がなければ全部大盛り', () => {
-    expect(P('たろう③ 大盛り1').parts).toEqual([
+    expect(P('たろう 3食 大盛り1').parts).toEqual([
       { qty: 1, big: true, takeout: false },
       { qty: 2, big: false, takeout: false },
     ])
@@ -134,14 +135,14 @@ describe('名前の先頭のしるし', () => {
   it('◆は大盛り、△はうずらなし（木曜24時より後の連絡）。名前には入れない', () => {
     const a = P('✅◆山田② 新規12:00')
     expect(a.name).toBe('山田')
-    expect(a.parts).toEqual([{ qty: 2, big: true, takeout: false }])
+    expect(a.parts).toEqual([{ qty: 1, big: true, takeout: false }])
     expect(a.uzura).toBe(true)
     const b = P('△さくら① TO')
     expect(b).toMatchObject({ name: 'さくら', uzura: false })
     expect(b.parts).toEqual([{ qty: 1, big: false, takeout: true }])
     const c = P('◆△たろう③')
     expect(c).toMatchObject({ name: 'たろう', uzura: false })
-    expect(c.parts[0]).toMatchObject({ qty: 3, big: true })
+    expect(c.parts[0]).toMatchObject({ qty: 1, big: true })
   })
 })
 
@@ -173,7 +174,7 @@ describe('先頭の×（うずらなし）', () => {
   it('×はうずらなし。名前には入れず、キャンセルにもしない', () => {
     const a = P('×山田② 新規12:00')
     expect(a).toMatchObject({ name: '山田', uzura: false, cancelled: false })
-    expect(a.parts[0].qty).toBe(2)
+    expect(a.parts[0].qty).toBe(1)
     expect(P('✕さくら①')).toMatchObject({ name: 'さくら', uzura: false })
     expect(P('✅×たろう③')).toMatchObject({ name: 'たろう', uzura: false, mark: 'check' })
     expect(P('×○はなこ①')).toMatchObject({ name: 'はなこ', uzura: false, mark: 'check' })
@@ -201,7 +202,7 @@ describe('姓と名の間に空白がある名前', () => {
     const a = P('おおの　ようじ② 新規12:00')
     expect(a.name).toBe('おおの ようじ')
     expect(a.note).toBe('')
-    expect(a.parts[0].qty).toBe(2)
+    expect(a.parts[0].qty).toBe(1)
     expect(P('✅○ 大野 洋二① TO').name).toBe('大野 洋二')
     expect(P('おおの　ようじ').name).toBe('おおの ようじ')
   })
@@ -210,6 +211,46 @@ describe('姓と名の間に空白がある名前', () => {
     expect(a.name).toBe('山田')
     expect(P('山田 青唐すだち').name).toBe('山田')
     expect(P('山田 青唐すだち').note).toBe('青唐すだち')
+  })
+})
+
+describe('①②③の行を1件にまとめる（同じ名前の人の複数食）', () => {
+  const G = (lines: string[]) => groupIndexed(lines.map((l) => parseLedgerLine(l)!).filter(Boolean))
+  it('片山さん3食: イートイン大盛り1・イートイン普通1・テイクアウト1', () => {
+    const g = G(['片山ライムライチ①大盛り', '片山ライムライチ②', '片山ライムライチ③TO'])
+    expect(g).toHaveLength(1)
+    expect(g[0].name).toBe('片山ライムライチ')
+    expect(g[0].parts).toEqual([
+      { qty: 1, big: true, takeout: false },
+      { qty: 1, big: false, takeout: false },
+      { qty: 1, big: false, takeout: true },
+    ])
+    expect(g[0].mergedLines).toBe(3)
+  })
+  it('時間・新規・うずらなしは行からまとめる', () => {
+    const g = G(['○○① 新規12:00', '○○② 新規12:00', '○○③ 新規12:00TO'])
+    expect(g).toHaveLength(1)
+    expect(g[0]).toMatchObject({ isNew: true, time: '12:00', uzura: true })
+    expect(g[0].parts).toEqual([
+      { qty: 2, big: false, takeout: false },
+      { qty: 1, big: false, takeout: true },
+    ])
+    expect(G(['山田① ', '山田②×'.replace('×', '') + ' うずらなし'])[0].uzura).toBe(false)
+  })
+  it('番号が1に戻る・名前が違うときは別の人（同姓同名の別人など）', () => {
+    expect(G(['岡本①', '岡本②', '岡本①', '岡本②']).map((x) => x.parts.reduce((a, p) => a + p.qty, 0))).toEqual([2, 2])
+    expect(G(['岡本①', '山田②']).length).toBe(2)
+    expect(G(['岡本①', '岡本③']).length).toBe(2)
+  })
+  it('番号のない行はそのまま1件。かなの違う同じ名前もまとめる', () => {
+    expect(G(['岡本', '岡本']).length).toBe(2)
+    expect(G(['やまだ①', 'ヤマダ②']).length).toBe(1)
+  })
+  it('1人ぶんだけキャンセルなら、その1食を除く。全部キャンセルならキャンセル', () => {
+    const a = G(['山田①', '山田② キャンセル'])
+    expect(a[0].parts.reduce((s, p) => s + p.qty, 0)).toBe(1)
+    expect(a[0].cancelled).toBe(false)
+    expect(G(['山田① キャンセル', '山田② キャンセル'])[0].cancelled).toBe(true)
   })
 })
 

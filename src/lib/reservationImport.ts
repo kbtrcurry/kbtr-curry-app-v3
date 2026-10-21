@@ -1,6 +1,6 @@
 // 過去の取り置き台帳（iPhoneのメモ）を読み取る。純粋関数（テスト付き）。
 // 書き方の決まり（ご本人に確認済み）:
-//   ・1行 = 1件。「名前 食数(①②③) 新規 来店時間 TO」の順にゆるく書かれている。①②③は食数（③＝3人分）
+//   ・1行 = 1食。同じ名前の人が複数食のときは、①②③と番号を付けて行を分けて書く（①＝1人目、③＝3人目。食数ではない）。行ごとに「大盛り」「TO」が付く。「2食」のように書けば食数
 //   ・「新規」だけなら Instagram の新規、「x新規」なら X の新規。何も書かなければイートイン
 //   ・来店時間は、あれば書いてある（なければ好きな時間に来店）
 //   ・◆＝大盛り、△＝うずらなし（木曜24時より後に連絡が来た）。「うずらなし」と書いてあればなし。書いていなければうずら付き
@@ -24,8 +24,12 @@ export type ParsedRow = {
   mark: 'check' | 'blank' | 'cross' | null
   /** 「キャンセル」と書かれている（来なかった人は、いままでいない。来なかった場合はキャンセルと書く） */
   cancelled: boolean
+  /** ①②③…の番号（同じ名前の人の何人目か）。食数ではない。なければ null */
+  index: number | null
   /** メニューを決める手がかりの文（「前回〜」の部分は除く） */
   menuHint: string
+  /** 何行を1件にまとめたか（①②③の行をまとめたとき） */
+  mergedLines?: number
 }
 
 const pad = (n: number) => String(n).padStart(2, '0')
@@ -97,7 +101,10 @@ export function parseLedgerLine(raw: string): ParsedRow | null {
 }
 
 function parseBody(raw: string): Omit<ParsedRow, 'mark' | 'menuHint' | 'cancelled'> | null {
-  const line = raw.trim()
+  // ①②③は食数ではなく「同じ名前の人の何人目か」。1行＝1食。番号は外して読む（同じ長さの空白にして、名前の位置を変えない）
+  const circ = raw.match(/[\u2460-\u2473]/)
+  const index = circ ? (circ[0].codePointAt(0) ?? 0x2460) - 0x245f : null
+  const line = raw.trim().replace(/[\u2460-\u2473]/g, ' ')
   if (!line) return null
   let t = line.normalize('NFKC')
   const warns: string[] = []
@@ -125,7 +132,8 @@ function parseBody(raw: string): Omit<ParsedRow, 'mark' | 'menuHint' | 'cancelle
 
   // 名前はここまで（最初の数字・「新規」・SNS名・食事の種類の語より前）
   const markers = [/\d/, /新規/, /instagram|インスタ|(?<![A-Za-z])ig(?![A-Za-z])/i, /twitter|ツイッター/i, /(?<![A-Za-z])x\s*新規/i, /イートイン|店内|テイクアウト|持ち帰り|持帰り/, /(?<![A-Za-z])TO(?![A-Za-z])/, /大盛/, /前回|以前|いつも|リピ|メモ|備考|[※＊*（([【]/, /ビリヤニ|ビリヤーニ|ソーダ|サワー|青唐|すだち|黒胡椒|ニラ|ミント|マトン|キーマ|チキン|アチャール|うずら|ウズラ/]
-  const nameSrc = line.normalize('NFKC').replace(/[◆◇]/g, ' ').replace(/うずら\s*(?:なし|無し|無)/g, ' ')
+  // 位置がずれないよう、文字を削らずに探す（うずら・◆は、文字数が同じ空白に置き換える）
+  const nameSrc = line.normalize('NFKC')
   for (const re of markers) {
     const i = nameSrc.search(re)
     if (i >= 0) nameEndCandidates.push(i)
@@ -197,7 +205,7 @@ function parseBody(raw: string): Omit<ParsedRow, 'mark' | 'menuHint' | 'cancelle
     if (total == null && missing > 0) warns.push('食数が書かれていないので、各1食として読みました')
   } else {
     const q = total ?? 1
-    if (total == null) warns.push('食数が見つかりません（1食にしています）')
+    if (total == null && index == null) warns.push('食数が見つかりません（1食にしています）')
     if (bigN != null && bigN > 0) {
       const b = Math.min(bigN, q)
       parts.push({ qty: b, big: true, takeout: false })
@@ -208,7 +216,7 @@ function parseBody(raw: string): Omit<ParsedRow, 'mark' | 'menuHint' | 'cancelle
 
   if (!name) warns.push('名前が見つかりません')
   const note = rest.replace(/[()（）[\]【】:：、,，.。・\s]+/g, ' ').trim()
-  return { line, name, platform, isNew, time, uzura, parts, note, warns }
+  return { line, name, platform, isNew, time, uzura, parts, note, warns, index }
 }
 
 // ---------- 営業日ごとに分ける ----------
@@ -279,5 +287,67 @@ export function menuFromHint(hint: string, candidates: string[]): string | null 
     }
   }
   return best
+}
+
+// ---------- ①②③の行を1件にまとめる ----------
+
+function mergeParts(parts: Part[]): Part[] {
+  const out: Part[] = []
+  for (const p of parts) {
+    const same = out.find((x) => x.big === p.big && x.takeout === p.takeout)
+    if (same) same.qty += p.qty
+    else out.push({ ...p })
+  }
+  return out
+}
+
+/**
+ * 同じ名前の人が複数食のときは「名前①」「名前②」「名前③」と行を分けて書いてある（番号は1人目・2人目…）。
+ * 番号が1つずつ増えながら続く、同じ名前の行を、1件の取り置き（複数食）にまとめる。
+ * 番号が1に戻る・名前が違う・番号が飛ぶときは別の人（同姓同名の別人など）として分ける。
+ */
+export function groupIndexed(rows: ParsedRow[]): ParsedRow[] {
+  const groups: ParsedRow[][] = []
+  let cur: ParsedRow[] = []
+  let lastIdx = 0
+  let key = ''
+  for (const r of rows) {
+    const k = kanaKey(r.name)
+    const continues = cur.length > 0 && r.index != null && k !== '' && k === key && r.index === lastIdx + 1
+    if (continues) cur.push(r)
+    else {
+      if (cur.length) groups.push(cur)
+      cur = [r]
+    }
+    key = k
+    lastIdx = r.index ?? 0
+  }
+  if (cur.length) groups.push(cur)
+
+  return groups.map((g) => {
+    if (g.length === 1) return g[0]
+    const allCancelled = g.every((x) => x.cancelled)
+    // 1人ぶんだけキャンセルした行は、その1食を除く
+    const live = allCancelled ? g : g.filter((x) => !x.cancelled)
+    const notes = [...new Set(g.map((x) => x.note).filter(Boolean))]
+    const warns = [...new Set(g.flatMap((x) => x.warns))]
+    const first = g.find((x) => x.isNew) ?? g[0]
+    return {
+      line: g.map((x) => x.line).join('\n'),
+      name: g[0].name,
+      platform: first.platform,
+      isNew: g.some((x) => x.isNew),
+      time: g.find((x) => x.time)?.time ?? '',
+      uzura: g.every((x) => x.uzura),
+      parts: mergeParts(live.flatMap((x) => x.parts)),
+      note: notes.join(' / '),
+      warns,
+      mark: g.some((x) => x.mark === 'check') ? 'check' : (g[0].mark ?? null),
+      cancelled: allCancelled,
+      index: g[0].index,
+      menuHint: g.map((x) => x.menuHint).join(' '),
+      mergedLines: g.length,
+    }
+  })
 }
 

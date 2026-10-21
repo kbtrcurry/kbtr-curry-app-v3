@@ -3,7 +3,7 @@ import { ClipboardPaste, FileUp } from 'lucide-react'
 import { useAllMenus } from '../lib/masterData'
 import { useClosedSessions, useReceiptLines } from '../lib/analytics'
 import { insertReservations, kanaKey, PLATFORM_LABEL, STATUS_LABEL, useInvalidateReservations, type Platform, type ResItem, type Reservation, type ResStatus } from '../lib/reservations'
-import { ledgerKey, menuFromHint, parseLedgerLine, pickDayMenus, splitByDate, type Part } from '../lib/reservationImport'
+import { groupIndexed, ledgerKey, menuFromHint, parseLedgerLine, pickDayMenus, splitByDate, type Part } from '../lib/reservationImport'
 
 type Row = {
   id: string
@@ -76,10 +76,11 @@ export default function ReservationImport({ existing }: { existing: Reservation[
       const dm = pickDayMenus(sold)
       const soldRegular = Object.keys(sold).filter((x) => /ビリヤニ/.test(x) && !/大盛/.test(x))
       const candidates = [...new Set([...soldRegular, ...menuNames])]
-      const parsed = b.lines.map((l) => parseLedgerLine(l)).filter((x): x is NonNullable<typeof x> => !!x)
+      const parsed = groupIndexed(b.lines.map((l) => parseLedgerLine(l)).filter((x): x is NonNullable<typeof x> => !!x))
       let count = 0
       for (const p of parsed) {
         const warns = [...p.warns]
+        if (p.mergedLines) warns.unshift(`${p.mergedLines}行（①〜${p.mergedLines}）を、1件${partsQty(p.parts)}食にまとめました`)
         const hinted = menuFromHint(p.menuHint, candidates)
         const menuName = hinted ?? dm.regular ?? ''
         if (!hinted && dm.ambiguous) warns.push('その日は通常サイズのビリヤニが複数売れています。メニューを確認してください')
@@ -171,7 +172,7 @@ export default function ReservationImport({ existing }: { existing: Reservation[
       <details className="text-sm text-stone-600">
         <summary className="cursor-pointer text-stone-500 font-semibold">読み取りのきまり</summary>
         <ul className="mt-1.5 space-y-1 list-disc pl-5">
-          <li>1行が1件。丸数字（①②③）は食数です。行の先頭か最後の「○」、行頭のチェック（✅✔など）は、名前に入れず「来店しました」の印として読みます。印がなくても来店済みとして読みます（終盤に来た人など）。「キャンセル」と書かれた行は、キャンセルとして入れます。「○」だけの行は読み飛ばします。</li>
+          <li>1行が1食です。同じ名前の人が複数食のときの「名前①」「名前②」「名前③」は、1人目・2人目・3人目の番号（食数ではない）として、続く行を1件にまとめます（それぞれの行の「大盛り」「TO」はそのまま数えます）。「2食」のように書けば、その食数です。行の先頭か最後の「○」、行頭のチェック（✅✔など）は、名前に入れず「来店しました」の印として読みます。印がなくても来店済みとして読みます（終盤に来た人など）。「キャンセル」と書かれた行は、キャンセルとして入れます。「○」だけの行は読み飛ばします。</li>
           <li>「新規」だけなら Instagram の新規、「x新規」なら X の新規。書いていなければ Instagram にしています（直せます）。</li>
           <li>何も書いていなければイートイン、「TO」はテイクアウト、「大盛り」は大盛り。</li>
           <li>「12:00」のような時間は来店予定時間です。名前の前の◆は大盛り、△と×はうずらなし（△は木曜24時より後に連絡が来た）として読みます。しるしがなければ、うずら付きです。</li>

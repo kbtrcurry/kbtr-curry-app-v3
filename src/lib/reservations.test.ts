@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
   parseReservationText,
   extractName,
+  headcountOf,
   remainingPools,
   resPortions,
   fmtPortions,
@@ -194,6 +195,46 @@ describe('取り置きの枠への数え方（ビリヤニ通常=1、大盛り=1
   it('用意数のあるソーダは、自分の用意数を1個ずつ使う（枠の重みは関係しない）', () => {
     const menus = [{ id: 's', name: 'スパイスソーダ' }]
     expect(remainingPools(menus, { s: 10 }, { s: 3 }, { s: 2 }, {}).left).toEqual({ s: 5 })
+  })
+})
+
+describe('「2名です」「普通盛り」から、その月のビリヤニを決める', () => {
+  const march = [
+    { id: 'n', name: '黒胡椒チキンビリヤニ' },
+    { id: 'b', name: '黒胡椒チキンビリヤニ 大盛り' },
+    { id: 's', name: 'スパイスソーダ' },
+  ]
+  const names = (r: { items: { name: string; qty: number }[] }) => r.items.map((i) => `${i.name}×${i.qty}`)
+  it('「2名です」→ 通常サイズのビリヤニ2食', () => {
+    expect(names(parseReservationText('山田です。2名でお願いします', march))).toEqual(['黒胡椒チキンビリヤニ×2'])
+    expect(names(parseReservationText('山田です。二人です', march))).toEqual(['黒胡椒チキンビリヤニ×2'])
+  })
+  it('「普通盛り」「通常盛り」「通常」→ 通常サイズのビリヤニ', () => {
+    for (const w of ['普通盛り', '通常盛り', '通常', '通常サイズ', '普通']) expect(names(parseReservationText(`山田です。${w}でお願いします`, march))).toEqual(['黒胡椒チキンビリヤニ×1'])
+  })
+  it('人数のうち大盛りの数を書けば、残りは通常', () => {
+    expect(names(parseReservationText('3名です。大盛り1でお願いします', march))).toEqual(['黒胡椒チキンビリヤニ×2', '黒胡椒チキンビリヤニ 大盛り×1'])
+    expect(names(parseReservationText('大盛りでお願いします', march))).toEqual(['黒胡椒チキンビリヤニ 大盛り×1'])
+  })
+  it('ビリヤニの名前は月ごとに変わる。その月にオンのビリヤニになる', () => {
+    const april = [
+      { id: 'h', name: 'HYDチキンカッチビリヤニ' },
+      { id: 'hb', name: 'HYDチキンカッチビリヤニ 大盛り' },
+      { id: 's', name: 'スパイスソーダ' },
+    ]
+    expect(names(parseReservationText('2名です', april))).toEqual(['HYDチキンカッチビリヤニ×2'])
+    expect(names(parseReservationText('普通盛りで。大盛り1', april))).toEqual(['HYDチキンカッチビリヤニ×1', 'HYDチキンカッチビリヤニ 大盛り×1'])
+  })
+  it('名前で書かれていれば、その品。人数が別にあれば、数は人数にそろえる。ソーダは別に拾う', () => {
+    expect(names(parseReservationText('黒胡椒チキンビリヤニで2名です', march))).toEqual(['黒胡椒チキンビリヤニ×2'])
+    expect(names(parseReservationText('黒胡椒チキンビリヤニ3つとスパイスソーダ1つ', march))).toEqual(['黒胡椒チキンビリヤニ×3', 'スパイスソーダ×1'])
+    expect(names(parseReservationText('2名です。スパイスソーダ1つ', march))).toEqual(['黒胡椒チキンビリヤニ×2', 'スパイスソーダ×1'])
+  })
+  it('ビリヤニの手がかりが何もなければ、何も足さない。2人目などの数字は人数にしない', () => {
+    expect(parseReservationText('取り置きお願いします', march).items).toEqual([])
+    expect(headcountOf('2人目です')).toBeNull()
+    expect(headcountOf('12:00に3名で行きます')).toBe(3)
+    expect(headcountOf('ふたりで')).toBe(2)
   })
 })
 

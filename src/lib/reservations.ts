@@ -219,7 +219,8 @@ export function parseReservationText(
   // 2) 名前の一部（2文字以上の語）で書かれているもの。他のメニューの正式名と同じ語は、まぎらわしいので使わない
   for (const m of norm) {
     if (done.has(m.id)) continue
-    const tokens = m.n.split(/[\s・/（）()]+/).filter((x) => x.length >= 2 && !fullNames.has(x))
+    // 「大盛り」「ビリヤニ」はどのビリヤニにも付く言葉なので、メニューを決める手がかりにしない（大盛りなどは、あとの処理で見る）
+    const tokens = m.n.split(/[\s・/（）()]+/).filter((x) => x.length >= 2 && !fullNames.has(x) && !/^(?:大盛り?|ビリヤニ|ビリヤーニ)$/.test(x))
     for (const tok of tokens) {
       const at = t.indexOf(tok)
       if (at < 0) continue
@@ -228,9 +229,10 @@ export function parseReservationText(
       break
     }
   }
+  const orig = text.normalize('NFKC')
+  addBiryaniFromWords(orig, menus, found)
   // 画面で見る順（メニューの並び順）にそろえる
   found.sort((a, b) => menus.findIndex((m) => m.id === a.menu_id) - menus.findIndex((m) => m.id === b.menu_id))
-  const orig = text.normalize('NFKC')
   const handle = orig.match(/@([A-Za-z0-9_.]{2,30})/)?.[1] ?? ''
   const name = extractName(text)
   // 時間（12:00・12時）と、テイクアウトの希望も拾う
@@ -456,4 +458,58 @@ export async function mergeCustomer(from: CustomerStat, to: CustomerStat, all: R
   const patch = toNameOnly ? { name: to.name } : { name: to.name, platform: to.platform, handle: to.handle }
   const { error } = await supabase.from('reservations').update(patch).in('id', ids)
   if (error) throw error
+}
+
+// ---------- 「2名です」「普通盛り」から、その月のビリヤニを決める ----------
+
+const isBiryani = (n: string): boolean => /ビリヤ|biryani/i.test(n)
+const KANJI_COUNT: Record<string, number> = { 一: 1, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9 }
+
+/** 「2名」「二人」「ふたり」などの人数。なければ null */
+export function headcountOf(text: string): number | null {
+  const t = text.normalize('NFKC')
+  const d = t.match(/(\d{1,2})\s*(?:名|人)(?!目|前後)/)
+  if (d) return Number(d[1])
+  const k = t.match(/([一二三四五六七八九])\s*(?:名|人)(?!目)/)
+  if (k) return KANJI_COUNT[k[1]]
+  if (/ひとり|お一人/.test(t)) return 1
+  if (/ふたり/.test(t)) return 2
+  return null
+}
+
+/**
+ * メニュー名が書かれていなくても、その月に登録されている（オンの）ビリヤニに結びつける。
+ *  ・「2名です」「3人」→ 通常サイズのビリヤニをその人数ぶん
+ *  ・「普通盛り」「通常盛り」「通常」→ 通常サイズのビリヤニ
+ *  ・「大盛り」→ 大盛りのビリヤニ（「大盛り1」のように数があれば、その数だけ大盛り、残りは通常）
+ * ビリヤニの名前は月ごとに変わるので、渡されたメニュー（オンのもの）から探す。
+ */
+function addBiryaniFromWords(orig: string, menus: { id: string; name: string }[], found: ResItem[]): void {
+  const base = menus.find((m) => isBiryani(m.name) && !/大盛/.test(m.name))
+  if (!base) return
+  const big =
+    menus.find((m) => /大盛/.test(m.name) && m.name.replace(/[\s\u3000]*大盛り?[\s\u3000]*/g, ' ').trim() === base.name.trim()) ??
+    menus.find((m) => /大盛/.test(m.name) && isBiryani(m.name))
+  const hc = headcountOf(orig)
+  const regularWord = /普通盛り?|通常盛り?|通常サイズ|通常|普通|並盛り?/.test(orig)
+  const bigMention = orig.match(/大盛り?\s*(?:[×x*]\s*)?(\d+)?/)
+  const hasBiryani = found.some((f) => isBiryani(f.name))
+  const addTo = (menu: { id: string; name: string }, qty: number) => {
+    if (qty <= 0) return
+    const ex = found.find((f) => f.menu_id === menu.id)
+    if (ex) ex.qty = Math.max(ex.qty, qty)
+    else found.push({ menu_id: menu.id, name: menu.name, qty })
+  }
+  // すでに名前で見つかったビリヤニがあり、数が1のままで、人数が書かれていれば、人数にそろえる
+  if (hasBiryani) {
+    const bir = found.filter((f) => isBiryani(f.name))
+    if (hc != null && bir.length === 1 && bir[0].qty === 1) bir[0].qty = hc
+    return
+  }
+  const generic = /ビリヤニ|ビリヤーニ/.test(orig)
+  if (hc == null && !regularWord && !bigMention && !generic) return
+  const bigN = bigMention ? (bigMention[1] ? Number(bigMention[1]) : hc ?? 1) : 0
+  if (big && bigN > 0) addTo(big, bigN)
+  const regN = hc != null ? Math.max(0, hc - (big ? bigN : 0)) : regularWord || generic || !bigMention ? 1 : 0
+  if (!(bigMention && !bigMention[1] && !regularWord)) addTo(base, regN)
 }

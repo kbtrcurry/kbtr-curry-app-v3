@@ -47,11 +47,26 @@ const BLANK = new Set(['☐', '⬜', '🔲'])
 // 行頭の箇条書きの点（◦ • ・ など）。読まずに外す。外した後に何もなければ、その行は飛ばす
 const BULLET_RE = /^[\s\u3000]*[◦•・·‧∙▪▫]+[\s\u3000]*/
 
+// メモをコピーすると付いてくる、チェックボックス「- [x]」「- [ ]」と、箇条書きの「- 」「* 」
+const CHECKBOX_RE = /^[\s\u3000]*(?:[-*+•][\s\u3000]*)?\[([xX✓✔ ]?)\][\s\u3000]*/
+const DASH_RE = /^[\s\u3000]*[-*+][\s\u3000]+/
+
 export function parseLedgerLine(raw: string): ParsedRow | null {
   // 行頭のしるしは、いくつ続いていてもすべて外す（例：「✅×山田」）
   let rest = raw
   const syms: string[] = []
   for (;;) {
+    const cb = rest.match(CHECKBOX_RE)
+    if (cb) {
+      syms.push(cb[1] && cb[1].trim() ? '✅' : '☐')
+      rest = rest.slice(cb[0].length)
+      continue
+    }
+    const dash = rest.match(DASH_RE)
+    if (dash) {
+      rest = rest.slice(dash[0].length)
+      continue
+    }
     const bl = rest.match(BULLET_RE)
     if (bl) {
       rest = rest.slice(bl[0].length)
@@ -88,7 +103,7 @@ export function parseLedgerLine(raw: string): ParsedRow | null {
   const r = parseBody(body)
   if (!r) return null
   // 「前回ニラミントか青唐すだちきてくれた人」のような過去の話は、メニューの手がかりにしない
-  const menuHint = body.normalize('NFKC').replace(/前回[^\n]*/, ' ')
+  const menuHint = body.normalize('NFKC').replace(/前回[^\n]*/, ' ').replace(/\S*からの\S*/g, ' ')
   return {
     ...r,
     parts: bigMark ? r.parts.map((p) => ({ ...p, big: true })) : r.parts,
@@ -131,7 +146,7 @@ function parseBody(raw: string): Omit<ParsedRow, 'mark' | 'menuHint' | 'cancelle
   t = t.replace(/頃|ごろ|来店予定|来店|予定|くらい/g, ' ')
 
   // 名前はここまで（最初の数字・「新規」・SNS名・食事の種類の語より前）
-  const markers = [/\d/, /新規/, /instagram|インスタ|(?<![A-Za-z])ig(?![A-Za-z])/i, /twitter|ツイッター/i, /(?<![A-Za-z])x\s*新規/i, /イートイン|店内|テイクアウト|持ち帰り|持帰り/, /(?<![A-Za-z])TO(?![A-Za-z])/, /大盛/, /前回|以前|いつも|リピ|メモ|備考|[※＊*（([【]/, /ビリヤニ|ビリヤーニ|ソーダ|サワー|青唐|すだち|黒胡椒|ニラ|ミント|マトン|キーマ|チキン|アチャール|うずら|ウズラ/]
+  const markers = [/\S*からの/, /\d/, /新規/, /instagram|インスタ|(?<![A-Za-z])ig(?![A-Za-z])/i, /twitter|ツイッター/i, /(?<![A-Za-z])x\s*新規/i, /イートイン|店内|テイクアウト|持ち帰り|持帰り/, /(?<![A-Za-z])TO(?![A-Za-z])/, /大盛/, /前回|以前|いつも|リピ|メモ|備考|[※＊*（([【]/, /ビリヤニ|ビリヤーニ|ソーダ|サワー|青唐|すだち|黒胡椒|ニラ|ミント|マトン|キーマ|チキン|アチャール|うずら|ウズラ/]
   // 位置がずれないよう、文字を削らずに探す（うずら・◆は、文字数が同じ空白に置き換える）
   const nameSrc = line.normalize('NFKC')
   for (const re of markers) {
@@ -182,7 +197,7 @@ function parseBody(raw: string): Omit<ParsedRow, 'mark' | 'menuHint' | 'cancelle
   }
   // 食数: 「3食」「×3」、なければ最初の数字（丸数字は NFKC で数字になっている）
   let total: number | null = null
-  const qm = rest.match(/(\d+)\s*食/) ?? rest.match(/[×x*]\s*(\d+)/i) ?? rest.match(/(\d+)/)
+  const qm = rest.match(/(\d+)\s*食/) ?? rest.match(/[×x*]\s*(\d+)/i) ?? rest.match(/(\d+)(?!\s*(?:回|人目|番|時|分|月|日|歳|:))/)
   if (qm) {
     total = Number(qm[1])
     rest = rest.replace(qm[0], ' ')

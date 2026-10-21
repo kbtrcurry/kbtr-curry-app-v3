@@ -254,3 +254,34 @@ describe('①②③の行を1件にまとめる（同じ名前の人の複数食
   })
 })
 
+describe('メモをコピーしたときの「- [x]」と、「からの」の備考', () => {
+  const G = (lines: string[]) => groupIndexed(lines.map((l) => parseLedgerLine(l)!).filter(Boolean))
+  it('「- [x] 」は来店済みのしるし。名前に入れない', () => {
+    expect(P('- [x] 山田① 新規')).toMatchObject({ name: '山田', mark: 'check', isNew: true })
+    expect(P('- [ ] 山田①').mark).toBe('blank')
+    expect(P('* [X] 山田①').mark).toBe('check')
+    expect(P('- 山田①').name).toBe('山田')
+  })
+  it('「2回目」の数字は食数ではない。1行＝1食のまま、2行で2食', () => {
+    const g = G(['- [x] シゲノ　タイキ①すだちからの2回目', '- [x] シゲノ　タイキ②すだちからの2回目'])
+    expect(g).toHaveLength(1)
+    expect(g[0].name).toBe('シゲノ タイキ')
+    expect(g[0].parts.reduce((a, p) => a + p.qty, 0)).toBe(2)
+    expect(g[0].isNew).toBe(false)
+    expect(g[0].platform).toBe('instagram')
+    expect(g[0].note).toBe('すだちからの2回目')
+    expect(g[0].mergedLines).toBe(2)
+  })
+  it('「からの」以降は備考。名前にもメニューの手がかりにも入れない', () => {
+    const r = P('- [x] からさわ インフルからのリベンジ')
+    expect(r.name).toBe('からさわ')
+    expect(r.note).toBe('インフルからのリベンジ')
+    expect(r.parts).toEqual([{ qty: 1, big: false, takeout: false }])
+    expect(r.menuHint).not.toContain('インフル')
+    expect(menuFromHint(P('山田① すだちからの2回目').menuHint, ['青唐すだちチキンビリヤニ', '黒胡椒チキンビリヤニ'])).toBeNull()
+  })
+  it('「2食」のような書き方は、これまでどおり食数', () => {
+    expect(P('山田 2食').parts[0].qty).toBe(2)
+  })
+})
+

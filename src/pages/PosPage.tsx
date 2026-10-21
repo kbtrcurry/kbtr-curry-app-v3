@@ -22,6 +22,7 @@ import { todayStr } from '../lib/accounting'
 import {
   normHandle,
   fmtPortions,
+  portionOf,
   remainingPools,
   reservedByMenu,
   resPortions,
@@ -127,7 +128,8 @@ export default function PosPage() {
   for (const r of activeReceipts) for (const l of r.lines) if (l.menuId) sold[l.menuId] = (sold[l.menuId] ?? 0) + l.qty
   // 大盛りは1.5食として、通常サイズの用意数から引く
   const { left, poolLeft } = remainingPools(menus, stock, sold, reservedByMenu(todayRes), qty)
-  const totalLeft = Object.values(poolLeft).reduce((a, n) => a + Math.max(0, n), 0)
+  // 「残り◯食」はビリヤニ（通常1・大盛り1.5）だけの合計。ソーダ・容器代などは数えない
+  const totalLeft = Object.entries(poolLeft).reduce((a, [id, n]) => (portionOf(menus.find((m) => m.id === id)?.name ?? '') > 0 ? a + Math.max(0, n) : a), 0)
   const hasStock = Object.keys(stock).length > 0
 
   // 取り置きの受け渡し: 品目をカートに入れ、取り置きを「受け渡し済み」にする（残り数の計算は変わらない）

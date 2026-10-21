@@ -14,7 +14,7 @@ import {
 import { todayStr, useInvalidateJournal } from '../lib/accounting'
 import { useStoredState } from '../lib/persistState'
 import { fmtQty, groupBySupplier, ingredientNeeds } from '../lib/prepPlan'
-import { reservedByMenu, saveMenuStock, useInvalidateReservations, useMenuStock, useReservations } from '../lib/reservations'
+import { fmtPortions, portionOf, reservedByMenu, saveMenuStock, useInvalidateReservations, useMenuStock, useReservations } from '../lib/reservations'
 
 const yen = (n: number) => `¥${Math.round(n).toLocaleString()}`
 const md = (d: string) => `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}`
@@ -75,7 +75,8 @@ export default function PrepPage() {
   const total = rows.reduce((a, r) => a + (r.cost ?? 0), 0)
   const unpriced = rows.filter((r) => r.cost == null).length
   const reserved = reservedByMenu(res.data ?? [])
-  const totalServings = (menus.data ?? []).reduce((a, m) => a + (menuQty[m.id] ?? 0), 0)
+  // 合計の食数は、ビリヤニ（通常1・大盛り1.5）だけ。ソーダ・容器代などは数えない
+  const totalServings = (menus.data ?? []).reduce((a, m) => a + (menuQty[m.id] ?? 0) * portionOf(m.name), 0)
 
   const saveStock = async () => {
     setBusy(true)
@@ -172,7 +173,7 @@ export default function PrepPage() {
         </div>
         <div className="flex items-center justify-between">
           <p className="text-sm text-stone-600">
-            合計 <b className="text-stone-900 text-base">{totalServings}</b> 食
+            合計 <b className="text-stone-900 text-base">{fmtPortions(totalServings)}</b> 食
           </p>
           <button
             onClick={() => void saveStock()}

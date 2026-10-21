@@ -3,6 +3,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { supabase } from './supabase'
 import { monthRange, todayStr } from './accounting'
+import { fmtPortions, portionOf } from './reservations'
 
 export type TodoLevel = 'warn' | 'info'
 export type Todo = { id: string; level: TodoLevel; title: string; detail?: string; to: string; cta: string }
@@ -113,7 +114,7 @@ export function buildTodos(i: TodoInput, today: string): Todo[] {
     out.push({
       id: 'reserve',
       level: 'info',
-      title: `取り置き ${i.reserveCount}件（${i.reserveQty}食）・${md(i.reserveDate)}`,
+      title: `取り置き ${i.reserveCount}件（${fmtPortions(i.reserveQty ?? 0)}食）・${md(i.reserveDate)}`,
       detail: '受け渡しの準備と、返信が済んでいるかを確認できます。',
       to: '/reserve',
       cta: '取り置きを見る',
@@ -200,9 +201,10 @@ export async function fetchTodoInput(): Promise<TodoInput> {
     week.setDate(week.getDate() + 7)
     const wk = `${week.getFullYear()}-${String(week.getMonth() + 1).padStart(2, '0')}-${String(week.getDate()).padStart(2, '0')}`
     const { data: rs } = await supabase.from('reservations').select('service_date, items').eq('status', 'reserved').gte('service_date', today).lte('service_date', wk).order('service_date')
-    const list = (rs ?? []) as { service_date: string; items: { qty: number }[] }[]
+    const list = (rs ?? []) as { service_date: string; items: { qty: number; name: string }[] }[]
     reserveCount = list.length
-    reserveQty = list.reduce((a, r) => a + r.items.reduce((b, i) => b + i.qty, 0), 0)
+    // 食数はビリヤニ（通常1・大盛り1.5）だけ。ソーダ・容器代などは数えない
+    reserveQty = list.reduce((a, r) => a + r.items.reduce((b, i) => b + i.qty * portionOf(i.name), 0), 0)
     reserveDate = list[0]?.service_date ?? null
     const near = new Date()
     near.setDate(near.getDate() + ((6 - near.getDay() + 7) % 7))

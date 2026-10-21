@@ -110,7 +110,11 @@ export function remainingPools(
   const pool: Record<string, string> = {}
   const weight = (m: MenuLite) => (pool[m.id] === m.id ? 1 : portionOf(m.name) || 1)
   for (const m of menus) pool[m.id] = poolOf(m, menus, stock)
-  for (const m of menus) used[pool[m.id]] = (used[pool[m.id]] ?? 0) + weight(m) * ((sold[m.id] ?? 0) + (reserved[m.id] ?? 0) + (cart[m.id] ?? 0))
+  // 取り置きに入れたソーダ・容器代など（ビリヤニ以外）は、残りには0として数える（引かない）
+  for (const m of menus) {
+    const rsv = portionOf(m.name) > 0 ? reserved[m.id] ?? 0 : 0
+    used[pool[m.id]] = (used[pool[m.id]] ?? 0) + weight(m) * ((sold[m.id] ?? 0) + rsv + (cart[m.id] ?? 0))
+  }
   const poolLeft: Record<string, number> = {}
   const left: Record<string, number> = {}
   for (const m of menus) {

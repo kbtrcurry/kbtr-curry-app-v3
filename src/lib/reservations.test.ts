@@ -194,7 +194,7 @@ describe('取り置きの枠への数え方（ビリヤニ通常=1、大盛り=1
   })
   it('用意数のあるソーダは、自分の用意数を1個ずつ使う（枠の重みは関係しない）', () => {
     const menus = [{ id: 's', name: 'スパイスソーダ' }]
-    expect(remainingPools(menus, { s: 10 }, { s: 3 }, { s: 2 }, {}).left).toEqual({ s: 5 })
+    expect(remainingPools(menus, { s: 10 }, { s: 3 }, { s: 2 }, {}).left).toEqual({ s: 7 }) // 取り置きのソーダは引かない
   })
 })
 
@@ -257,6 +257,25 @@ describe('名前のあとに「1食」が続くDM', () => {
   it('名前ではない文は、名前にしない', () => {
     expect(extractName('2食お願いします')).toBe('')
     expect(extractName('取り置き 1食お願いします')).toBe('')
+  })
+})
+
+describe('ビリヤニ以外は、取り置きに入れても残り食数に0として数える', () => {
+  const menus = [
+    { id: 'n', name: '黒胡椒チキンビリヤニ' },
+    { id: 'b', name: '黒胡椒チキンビリヤニ 大盛り' },
+    { id: 's', name: 'スパイスソーダ' },
+    { id: 'c', name: 'テイクアウト容器代' },
+  ]
+  it('取り置きのソーダ・容器代は、残りを減らさない。ビリヤニは通常1・大盛り1.5', () => {
+    const r = remainingPools(menus, { n: 36, s: 20 }, {}, { n: 2, b: 2, s: 5, c: 3 }, {})
+    // ビリヤニ 2 + 2×1.5 = 5 食 → 残り31。ソーダは取り置きでは減らない（20のまま）
+    expect(r.poolLeft.n).toBe(31)
+    expect(r.poolLeft.s).toBe(20)
+    expect(r.left.s).toBe(20)
+  })
+  it('レジで実際に売れたソーダは、これまでどおり本数で減る', () => {
+    expect(remainingPools(menus, { s: 20 }, { s: 4 }, { s: 5 }, {}).left.s).toBe(16)
   })
 })
 

@@ -282,9 +282,25 @@ export async function saveReservation(r: ReservationInput): Promise<void> {
 }
 
 /** 過去の台帳をまとめて入れる（取り込み用） */
-export async function insertReservations(rows: ReservationInput[]): Promise<void> {
-  if (rows.length === 0) return
-  const { error } = await supabase.from('reservations').insert(rows.map((r) => ({ ...r, handle: normHandle(r.handle) })))
+/** 過去の台帳をまとめて入れる。入れた行のIDを返す（あとで取り消せるように） */
+export async function insertReservations(rows: ReservationInput[]): Promise<string[]> {
+  if (rows.length === 0) return []
+  const { data, error } = await supabase
+    .from('reservations')
+    .insert(rows.map((r) => ({ ...r, handle: normHandle(r.handle) })))
+    .select('id')
+  if (error) throw error
+  return (data ?? []).map((r: { id: string }) => r.id)
+}
+
+export async function deleteReservationsByIds(ids: string[]): Promise<void> {
+  if (ids.length === 0) return
+  const { error } = await supabase.from('reservations').delete().in('id', ids)
+  if (error) throw error
+}
+
+export async function deleteReservationsByDate(date: string): Promise<void> {
+  const { error } = await supabase.from('reservations').delete().eq('service_date', date)
   if (error) throw error
 }
 

@@ -1,8 +1,10 @@
 import { useMemo, useState } from 'react'
 import { ClipboardPaste, FileUp } from 'lucide-react'
 import { useAllMenus } from '../lib/masterData'
+import { ConfirmModal } from '../components/ConfirmModal'
+import { useStoredState } from '../lib/persistState'
 import { useClosedSessions, useReceiptLines } from '../lib/analytics'
-import { insertReservations, kanaKey, PLATFORM_LABEL, STATUS_LABEL, useInvalidateReservations, type Platform, type ResItem, type Reservation, type ResStatus } from '../lib/reservations'
+import { deleteReservationsByDate, deleteReservationsByIds, insertReservations, kanaKey, resQty, PLATFORM_LABEL, STATUS_LABEL, useInvalidateReservations, type Platform, type ResItem, type Reservation, type ResStatus } from '../lib/reservations'
 import { groupIndexed, ledgerKey, menuFromHint, parseLedgerLine, pickDayMenus, splitByDate, type Part } from '../lib/reservationImport'
 
 type Row = {
@@ -26,7 +28,10 @@ const md = (d: string) => `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}`
 const partsQty = (p: Part[]) => p.reduce((a, x) => a + x.qty, 0)
 
 // 過去の台帳（iPhoneのメモ）を貼り付けて、確認してから取り込む。営業日ごとに分け、その日のビリヤニの名前はレシートから補う。
-export default function ReservationImport({ existing }: { existing: Reservation[] }) {
+export default function ReservationImport({ existing, onOpenDate }: { existing: Reservation[]; onOpenDate: (date: string) => void }) {
+  // 直前の取り込み（間違えたときに、まとめて取り消せるよう、入れた行のIDを控える）
+  const [last, setLast] = useStoredState<{ at: string; ids: string[] }>('kbtr_v3_last_import', { at: '', ids: [] })
+  const [confirm, setConfirm] = useState<{ message: string; run: () => Promise<void> } | null>(null)
   const [text, setText] = useState('')
   const [fallbackDate, setFallbackDate] = useState('')
   const [rows, setRows] = useState<Row[] | null>(null)
@@ -145,7 +150,8 @@ export default function ReservationImport({ existing }: { existing: Reservation[
           uzura: r.uzura,
         }
       })
-      await insertReservations(inputs)
+      const ids = await insertReservations(inputs)
+      setLast({ at: new Date().toISOString(), ids })
       invalidate()
       setMsg(`${inputs.length}件を台帳に取り込みました（お客さん ${customers}人ぶん）`)
       setRows(null)
@@ -156,6 +162,29 @@ export default function ReservationImport({ existing }: { existing: Reservation[
       setBusy(false)
     }
   }
+
+  const undoLast = () =>
+    setConfirm({
+      message: `直前の取り込み（${last.ids.length}件）を、すべて取り消します。\n取り込んだあとに直した内容も消えます。`,
+      run: async () => {
+        await deleteReservationsByIds(last.ids)
+        setLast({ at: '', ids: [] })
+        invalidate()
+        setMsg('直前の取り込みを取り消しました')
+      },
+    })
+
+  // 取り込み済みの営業日（過去のもの）ごとの件数
+  const byDate = useMemo(() => {
+    const m = new Map<string, { count: number; qty: number }>()
+    for (const r of existing) {
+      const g = m.get(r.service_date) ?? { count: 0, qty: 0 }
+      g.count += 1
+      g.qty += r.status === 'cancelled' ? 0 : resQty(r)
+      m.set(r.service_date, g)
+    }
+    return [...m.entries()].sort((a, b) => b[0].localeCompare(a[0]))
+  }, [existing])
 
   const onFile = async (f: File | undefined) => {
     if (!f) return
@@ -208,6 +237,65 @@ export default function ReservationImport({ existing }: { existing: Reservation[
       </div>
 
       {msg && <p className="text-sm font-semibold text-green-700 bg-green-100 rounded-lg px-3 py-2">{msg}</p>}
+
+      {last.ids.length > 0 && (
+        <div className="flex items-center gap-2 rounded-xl border border-amber-400 bg-amber-50 px-3 py-2.5">
+          <p className="flex-1 text-sm text-amber-900">
+            直前に {last.ids.length}件 取り込みました。間違えたときは、まとめて取り消せます。
+          </p>
+          <button onClick={undoLast} className="shrink-0 text-sm font-bold text-[#faf9f5] bg-amber-700 rounded-lg px-3 py-2">
+            取り消す
+          </button>
+          <button onClick={() => setLast({ at: '', ids: [] })} aria-label="このお知らせを閉じる" className="shrink-0 text-stone-500 px-1 text-lg">
+            ×
+          </button>
+        </div>
+      )}
+
+      {byDate.length > 0 && (
+        <details className="bg-white border border-stone-200 rounded-xl px-3 py-2" open={last.ids.length > 0}>
+          <summary className="text-sm font-semibold text-stone-700 cursor-pointer">登録済みの営業日（開いて直す・日ごとに消す）</summary>
+          <ul className="mt-2 divide-y divide-stone-100">
+            {byDate.map(([d, g]) => (
+              <li key={d} className="py-2 flex items-center gap-2">
+                <span className="flex-1 text-sm text-stone-800">
+                  <b>{md(d)}</b> ・ {g.count}件・{g.qty}食
+                </span>
+                <button onClick={() => onOpenDate(d)} className="text-sm font-semibold border border-stone-300 text-stone-700 rounded-lg px-3 py-1.5">
+                  開く・直す
+                </button>
+                <button
+                  onClick={() =>
+                    setConfirm({
+                      message: `${md(d)} の取り置き ${g.count}件を、すべて削除します。\n元に戻せません。`,
+                      run: async () => {
+                        await deleteReservationsByDate(d)
+                        invalidate()
+                        setMsg(`${md(d)} の取り置きを削除しました`)
+                      },
+                    })
+                  }
+                  className="text-sm font-semibold border border-red-200 text-red-500 rounded-lg px-3 py-1.5"
+                >
+                  この日を消す
+                </button>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
+
+      {confirm && (
+        <ConfirmModal
+          message={confirm.message}
+          onCancel={() => setConfirm(null)}
+          onConfirm={() => {
+            const run = confirm.run
+            setConfirm(null)
+            void run().catch((e) => setMsg(e instanceof Error ? e.message : '削除できませんでした'))
+          }}
+        />
+      )}
 
       {rows && (
         <section className="space-y-3">

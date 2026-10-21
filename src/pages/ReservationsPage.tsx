@@ -56,7 +56,7 @@ export default function ReservationsPage() {
   const { session, loading, loginWithGoogle } = useAuth()
   const today = todayStr()
   const [date, setDate] = useStoredState('kbtr_v3_res_date', nextSaturday(today))
-  const effectiveDate = date < today ? nextSaturday(today) : date
+  const effectiveDate = date
   const [tab, setTab] = useState<Tab>('list')
   const [cap, setCap] = useStoredState('kbtr_v3_reserve_cap', 36)
   const [template, setTemplate] = useStoredState('kbtr_v3_reply_template', DEFAULT_REPLY)
@@ -78,6 +78,8 @@ export default function ReservationsPage() {
   const stats = useMemo(() => customerStats(allRes.data ?? [], notes.data ?? []), [allRes.data, notes.data])
   const statBy = useMemo(() => new Map(stats.map((s) => [s.key, s])), [stats])
   const summary = reserveSummary(list, cap)
+  // 登録のある営業日（新しい順）。過去の日を開いて、直したり消したりするため
+  const pastDates = [...new Set((allRes.data ?? []).map((r) => r.service_date))].sort().reverse().slice(0, 40)
   const reserved = reservedByMenu(list)
 
   if (loading) return <Spinner />
@@ -136,6 +138,19 @@ export default function ReservationsPage() {
                 {md(effectiveDate)}（{weekday(effectiveDate)}）の営業
               </span>
             </div>
+            {pastDates.length > 0 && (
+              <div className="flex gap-1.5 overflow-x-auto -mx-1 px-1 pb-1">
+                {pastDates.map((d) => (
+                  <button
+                    key={d}
+                    onClick={() => setDate(d)}
+                    className={`shrink-0 px-3 py-1.5 rounded-full text-sm font-semibold ${d === effectiveDate ? 'bg-amber-700 text-[#faf9f5]' : 'bg-stone-100 text-stone-600'}`}
+                  >
+                    {md(d)}
+                  </button>
+                ))}
+              </div>
+            )}
             <div className="grid grid-cols-3 gap-2 text-center">
               <div className="rounded-xl bg-stone-50 p-2.5">
                 <p className="text-xs text-stone-500">取り置き</p>
@@ -240,7 +255,15 @@ export default function ReservationsPage() {
       )}
 
       {tab === 'customers' && <CustomerLedger stats={stats} all={allRes.data ?? []} onSaved={invalidate} />}
-      {tab === 'import' && <ReservationImport existing={allRes.data ?? []} />}
+      {tab === 'import' && (
+        <ReservationImport
+          existing={allRes.data ?? []}
+          onOpenDate={(d) => {
+            setDate(d)
+            setTab('list')
+          }}
+        />
+      )}
       {del.toast}
     </div>
   )
@@ -267,6 +290,7 @@ function ReservationForm({
   const [handle, setHandle] = useState(editing?.handle ?? '')
   const [name, setName] = useState(editing?.name ?? '')
   const [qty, setQty] = useState<Record<string, number>>(() => Object.fromEntries((editing?.items ?? []).filter((i) => i.menu_id).map((i) => [i.menu_id as string, i.qty])))
+  const [svcDate, setSvcDate] = useState(editing?.service_date ?? date)
   const [note, setNote] = useState(editing?.note ?? '')
   const [time, setTime] = useState(editing?.visit_time ?? '')
   const [takeout, setTakeout] = useState(editing ? editing.items.some((i) => i.takeout) : false)
@@ -314,7 +338,7 @@ function ReservationForm({
     setBusy(true)
     setError(null)
     try {
-      await saveReservation({ id: editing?.id, service_date: editing?.service_date ?? date, platform, handle, name: name.trim(), items, note, status: editing?.status, visit_time: time, uzura, is_new: editing ? editing.is_new : !stat })
+      await saveReservation({ id: editing?.id, service_date: svcDate, platform, handle, name: name.trim(), items, note, status: editing?.status, visit_time: time, uzura, is_new: editing ? editing.is_new : !stat })
       onSaved()
     } catch (e) {
       setError(e instanceof Error ? e.message : '保存できませんでした')
@@ -340,6 +364,11 @@ function ReservationForm({
         </button>
         {pasteMsg && <p className="text-xs text-stone-600">{pasteMsg}</p>}
       </div>
+
+      <label className="flex items-center gap-2 text-sm text-stone-600">
+        営業日
+        <input type="date" value={svcDate} onChange={(e) => e.target.value && setSvcDate(e.target.value)} className="border border-stone-300 rounded-lg px-2 py-1.5 text-sm" />
+      </label>
 
       <div className="flex rounded-lg border border-stone-300 overflow-hidden">
         {(Object.keys(PLATFORM_LABEL) as Platform[]).map((p) => (

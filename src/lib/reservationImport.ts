@@ -18,6 +18,10 @@ export type ParsedRow = {
   parts: Part[]
   note: string
   warns: string[]
+  /** 行頭のしるし: check=チェック（来店済み）／blank=空のチェック欄／cross=×／null=なし */
+  mark: 'check' | 'blank' | 'cross' | null
+  /** メニューを決める手がかりの文（「前回〜」の部分は除く） */
+  menuHint: string
 }
 
 const pad = (n: number) => String(n).padStart(2, '0')
@@ -27,7 +31,24 @@ const BIG_RE = /大盛り?\s*(?:(\d+)\s*食?)?/
 // イートイン／テイクアウトの語（前に「大盛り」、後ろに数があってもよい）。TOは大文字のみ（名前の中の to と区別）
 const DINE_RE = /(大盛り?)?\s*(イートイン|店内|テイクアウト|持ち帰り|持帰り|(?<![A-Za-z])TO(?![A-Za-z]))\s*(?:(\d+)\s*食?)?/g
 
+// 行頭のチェックマークなど（名前の前に付いている）
+const MARK_RE = /^[\s\u3000]*([✅✔✓☑☐☒❌✗✘⬜🔲]\uFE0F?)[\s\u3000]*/u
+const CHECKED = new Set(['✅', '✔', '✓', '☑'])
+const BLANK = new Set(['☐', '⬜', '🔲'])
+
 export function parseLedgerLine(raw: string): ParsedRow | null {
+  const mm = raw.match(MARK_RE)
+  const sym = mm ? mm[1].replace('\uFE0F', '') : ''
+  const mark: ParsedRow['mark'] = mm ? (CHECKED.has(sym) ? 'check' : BLANK.has(sym) ? 'blank' : 'cross') : null
+  const body = mm ? raw.slice(mm[0].length) : raw
+  const r = parseBody(body)
+  if (!r) return null
+  // 「前回ニラミントか青唐すだちきてくれた人」のような過去の話は、メニューの手がかりにしない
+  const menuHint = body.normalize('NFKC').replace(/前回[^\n]*/, ' ')
+  return { ...r, line: raw.trim(), mark, menuHint }
+}
+
+function parseBody(raw: string): Omit<ParsedRow, 'mark' | 'menuHint'> | null {
   const line = raw.trim()
   if (!line) return null
   let t = line.normalize('NFKC')
@@ -184,3 +205,26 @@ export function pickDayMenus(sold: Record<string, number>): DayMenu {
 export function ledgerKey(date: string, name: string, qty: number, time: string): string {
   return `${date}|${kanaKey(name)}|${qty}|${time}`
 }
+
+/** 手がかりの文と、メニュー名の共通部分（ビリヤニ・大盛りは除く）が3文字以上あるものを選ぶ。長く合うほうを優先 */
+export function menuFromHint(hint: string, candidates: string[]): string | null {
+  const h = hint.normalize('NFKC').replace(/ビリヤニ|ビリヤーニ|大盛り?/g, ' ')
+  let best: string | null = null
+  let bestLen = 2
+  for (const c of candidates) {
+    const n = c.normalize('NFKC').replace(/ビリヤニ|ビリヤーニ|大盛り?/g, ' ')
+    let longest = 0
+    for (let i = 0; i < n.length; i++) {
+      for (let len = longest + 1; i + len <= n.length; len++) {
+        if (h.includes(n.slice(i, i + len))) longest = len
+        else break
+      }
+    }
+    if (longest > bestLen) {
+      best = c
+      bestLen = longest
+    }
+  }
+  return best
+}
+

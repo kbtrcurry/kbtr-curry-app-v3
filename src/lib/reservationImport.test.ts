@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { parseLedgerLine, splitByDate, pickDayMenus, ledgerKey } from './reservationImport'
+import { parseLedgerLine, splitByDate, pickDayMenus, ledgerKey, menuFromHint } from './reservationImport'
 
 const P = (s: string) => parseLedgerLine(s)!
 
@@ -88,5 +88,31 @@ describe('pickDayMenus / ledgerKey', () => {
   })
   it('名前のかなの違いは同じ印になる', () => {
     expect(ledgerKey('2026-10-18', 'ヤマダ', 2, '12:00')).toBe(ledgerKey('2026-10-18', 'やまだ', 2, '12:00'))
+  })
+})
+
+describe('行頭のチェックマーク', () => {
+  it('✅ や ✔ は名前に入れず、来店済みのしるしとして読む', () => {
+    const a = P('✅山田① 新規12:00')
+    expect(a).toMatchObject({ name: '山田', mark: 'check', isNew: true, time: '12:00' })
+    expect(P('✔️ さくら② TO').name).toBe('さくら')
+    expect(P('☐ たろう①')).toMatchObject({ name: 'たろう', mark: 'blank' })
+    expect(P('山田①').mark).toBeNull()
+  })
+  it('備考の「前回〜」は、メニューの手がかりから外す', () => {
+    const r = P('✅山田① 前回ニラミントか青唐すだちきてくれた人')
+    expect(r.menuHint).not.toContain('青唐')
+    expect(P('✅山田① 黒胡椒').menuHint).toContain('黒胡椒')
+  })
+})
+
+describe('menuFromHint', () => {
+  const c = ['黒胡椒チキンビリヤニ', '青唐すだちチキンビリヤニ', 'ニラとミントのマトンキーマビリヤニ']
+  it('行の中に書かれたメニューの言葉から選ぶ', () => {
+    expect(menuFromHint('山田① 青唐すだち', c)).toBe('青唐すだちチキンビリヤニ')
+    expect(menuFromHint('山田① ニラミント', c)).toBe('ニラとミントのマトンキーマビリヤニ')
+  })
+  it('手がかりがなければ null', () => {
+    expect(menuFromHint('山田① 新規', c)).toBeNull()
   })
 })

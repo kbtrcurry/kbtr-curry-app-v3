@@ -2,9 +2,8 @@ import { useMemo, useState } from 'react'
 import { ClipboardPaste, FileUp } from 'lucide-react'
 import { useAllMenus } from '../lib/masterData'
 import { useClosedSessions, useReceiptLines } from '../lib/analytics'
-import { todayStr } from '../lib/accounting'
-import { insertReservations, kanaKey, PLATFORM_LABEL, useInvalidateReservations, type Platform, type ResItem, type Reservation } from '../lib/reservations'
-import { ledgerKey, parseLedgerLine, pickDayMenus, splitByDate, type Part } from '../lib/reservationImport'
+import { insertReservations, kanaKey, PLATFORM_LABEL, STATUS_LABEL, useInvalidateReservations, type Platform, type ResItem, type Reservation, type ResStatus } from '../lib/reservations'
+import { ledgerKey, menuFromHint, parseLedgerLine, pickDayMenus, splitByDate, type Part } from '../lib/reservationImport'
 
 type Row = {
   id: string
@@ -20,6 +19,7 @@ type Row = {
   note: string
   warns: string[]
   dup: boolean
+  status: ResStatus
 }
 
 const md = (d: string) => `${Number(d.slice(5, 7))}/${Number(d.slice(8, 10))}`
@@ -62,21 +62,35 @@ export default function ReservationImport({ existing }: { existing: Reservation[
 
   const parse = () => {
     const blocks = splitByDate(text)
+    if (blocks.some((b) => !b.date) && !fallbackDate) {
+      setRows(null)
+      setMsg('日付の行（例：10/17）が見つからないので、上の「日付の行がないとき」で営業日を選んでから、もう一度「読み取る」を押してください。')
+      return
+    }
     const out: Row[] = []
     const info: { date: string; header: string; count: number }[] = []
     let n = 0
     for (const b of blocks) {
-      const date = b.date ?? (fallbackDate || todayStr())
+      const date = b.date ?? fallbackDate
       const sold = soldByDate[date] ?? {}
       const dm = pickDayMenus(sold)
+      const soldRegular = Object.keys(sold).filter((x) => /ビリヤニ/.test(x) && !/大盛/.test(x))
+      const candidates = [...new Set([...soldRegular, ...menuNames])]
+      const parsed = b.lines.map((l) => parseLedgerLine(l)).filter((x): x is NonNullable<typeof x> => !!x)
+      const hasCheck = parsed.some((x) => x.mark === 'check')
       let count = 0
-      for (const line of b.lines) {
-        const p = parseLedgerLine(line)
-        if (!p) continue
+      for (const p of parsed) {
         const warns = [...p.warns]
-        if (!b.date && !fallbackDate) warns.push('日付の行がないので、上の「日付」を選んでください')
-        if (dm.ambiguous) warns.push('その日は通常サイズのビリヤニが複数売れています。メニューを確認してください')
-        if (!dm.regular) warns.push('その日のビリヤニが売上から分かりません。メニューを選んでください')
+        const hinted = menuFromHint(p.menuHint, candidates)
+        const menuName = hinted ?? dm.regular ?? ''
+        if (!hinted && dm.ambiguous) warns.push('その日は通常サイズのビリヤニが複数売れています。メニューを確認してください')
+        if (!menuName) warns.push('その日のビリヤニが売上から分かりません。メニューを選んでください')
+        if (Object.keys(sold).length === 0) warns.push('この日の売上が見つかりません。日付は合っていますか？')
+        // 行頭のしるし: ✓＝来店済み、×＝来なかった、空の欄は（他にチェックがあれば）来なかった扱い
+        let status: ResStatus = 'picked_up'
+        if (p.mark === 'cross') status = 'no_show'
+        if (p.mark === 'blank' && hasCheck) status = 'no_show'
+        if (p.mark === 'cross' || (p.mark === 'blank' && hasCheck)) warns.push('チェックがないので「来なかった」にしています。キャンセルなら直してください')
         const q = partsQty(p.parts)
         out.push({
           id: `r${n++}`,
@@ -88,10 +102,11 @@ export default function ReservationImport({ existing }: { existing: Reservation[
           time: p.time,
           uzura: p.uzura,
           parts: p.parts,
-          menuName: dm.regular ?? menuNames[0] ?? '',
+          menuName,
           note: p.note,
           warns,
           dup: existingKeys.has(ledgerKey(date, p.name, q, p.time)),
+          status,
         })
         count++
       }
@@ -106,6 +121,7 @@ export default function ReservationImport({ existing }: { existing: Reservation[
 
   const chosen = (rows ?? []).filter((r) => r.include)
   const customers = new Set(chosen.map((r) => kanaKey(r.name)).filter(Boolean)).size
+  const noMenu = chosen.filter((r) => !r.menuName).length
 
   const save = async () => {
     setBusy(true)
@@ -124,7 +140,7 @@ export default function ReservationImport({ existing }: { existing: Reservation[
           name: r.name,
           items,
           note: r.note,
-          status: 'picked_up' as const,
+          status: r.status,
           visit_time: r.time,
           is_new: r.isNew,
           uzura: r.uzura,
@@ -157,11 +173,11 @@ export default function ReservationImport({ existing }: { existing: Reservation[
       <details className="text-sm text-stone-600">
         <summary className="cursor-pointer text-stone-500 font-semibold">読み取りのきまり</summary>
         <ul className="mt-1.5 space-y-1 list-disc pl-5">
-          <li>1行が1件。丸数字（①②③）は食数です。</li>
+          <li>1行が1件。丸数字（①②③）は食数です。行頭のチェック（✅✔など）は名前に入れず、来店済みのしるしとして読みます（チェックがない行は「来なかった」にするので、状態を確認してください）。</li>
           <li>「新規」だけなら Instagram の新規、「x新規」なら X の新規。書いていなければ Instagram にしています（直せます）。</li>
           <li>何も書いていなければイートイン、「TO」はテイクアウト、「大盛り」は大盛り。</li>
           <li>「12:00」のような時間は来店予定時間。◆はうずらアチャール付き、「うずらなし」は付かない。書いていなければ付きです。</li>
-          <li>メニューは、その日の売上（レシート）のビリヤニの名前から入れます。複数の種類が売れていた日は選び直せます。</li>
+          <li>メニューは、その行に書かれた言葉（例：青唐すだち）から決めます。書いていなければ、その日の売上（レシート）のビリヤニの名前を使います。「前回〜」と書かれた過去の話は無視します。</li>
           <li>名前は、ひらがな・カタカナ・全角半角の違いを同じとして、お客さん台帳にまとめます。漢字とかなの同一人物は台帳であとから統合できます。</li>
         </ul>
       </details>
@@ -250,7 +266,15 @@ export default function ReservationImport({ existing }: { existing: Reservation[
                   <span className="text-sm text-stone-700">{r.parts.map((p) => `${p.big ? '大盛り' : '通常'}${p.takeout ? 'TO' : 'イートイン'}${p.qty}食`).join(' ＋ ')}</span>
                 )}
               </div>
-              <select value={r.menuName} onChange={(e) => upd(r.id, { menuName: e.target.value })} className="w-full border border-stone-300 rounded-lg px-2 py-1.5 text-sm bg-white" aria-label="メニュー">
+              <select value={r.status} onChange={(e) => upd(r.id, { status: e.target.value as ResStatus })} className={`w-full border rounded-lg px-2 py-1.5 text-sm bg-white ${r.status === 'picked_up' ? 'border-stone-300' : 'border-amber-500'}`} aria-label="状態">
+                {(['picked_up', 'no_show', 'cancelled'] as ResStatus[]).map((st) => (
+                  <option key={st} value={st}>
+                    状態：{STATUS_LABEL[st]}
+                  </option>
+                ))}
+              </select>
+              <select value={r.menuName} onChange={(e) => upd(r.id, { menuName: e.target.value })} className={`w-full border rounded-lg px-2 py-1.5 text-sm bg-white ${r.menuName ? 'border-stone-300' : 'border-red-500'}`} aria-label="メニュー">
+                {!r.menuName && <option value="">メニューを選んでください</option>}
                 {[...new Set([r.menuName, ...Object.keys(soldByDate[r.date] ?? {}).filter((n) => /ビリヤニ/.test(n) && !/大盛/.test(n)), ...menuNames].filter(Boolean))].map((n) => (
                   <option key={n} value={n}>
                     {n}
@@ -268,10 +292,10 @@ export default function ReservationImport({ existing }: { existing: Reservation[
 
           {rows.length > 0 && (
             <div className="sticky bottom-[calc(4.75rem+env(safe-area-inset-bottom,0px))] md:bottom-3 z-20 -mx-4 px-4 py-2 bg-[var(--page-bg)] border-t border-stone-200">
-              <button onClick={() => void save()} disabled={busy || chosen.length === 0} className="w-full py-3.5 rounded-xl bg-amber-700 text-[#faf9f5] font-bold disabled:opacity-40">
+              <button onClick={() => void save()} disabled={busy || chosen.length === 0 || noMenu > 0} className="w-full py-3.5 rounded-xl bg-amber-700 text-[#faf9f5] font-bold disabled:opacity-40">
                 {busy ? '取り込み中…' : `${chosen.length}件を取り込む（お客さん ${customers}人）`}
               </button>
-              <p className="text-xs text-stone-500 mt-1 text-center">過去の台帳なので、すべて「受け渡し済み」として入ります。</p>
+              <p className="text-xs text-stone-500 mt-1 text-center">{noMenu > 0 ? `メニューが未選択の行が${noMenu}件あります。選んでください。` : '各行の「状態」のとおりに入ります（チェックありは受け渡し済み）。'}</p>
             </div>
           )}
         </section>

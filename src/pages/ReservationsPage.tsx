@@ -24,7 +24,8 @@ import {
   replyText,
   reserveSummary,
   reservedByMenu,
-  resQty,
+  resPortions,
+  fmtPortions,
   saveCustomerNote,
   saveReservation,
   setReservationStatus,
@@ -154,7 +155,7 @@ export default function ReservationsPage() {
             <div className="grid grid-cols-3 gap-2 text-center">
               <div className="rounded-xl bg-stone-50 p-2.5">
                 <p className="text-xs text-stone-500">取り置き</p>
-                <p className="text-xl font-extrabold text-stone-900">{summary.qty}食</p>
+                <p className="text-xl font-extrabold text-stone-900">{fmtPortions(summary.qty)}食</p>
                 <p className="text-xs text-stone-500">{summary.count}件</p>
               </div>
               <div className="rounded-xl bg-stone-50 p-2.5">
@@ -170,8 +171,8 @@ export default function ReservationsPage() {
               </div>
               <div className={`rounded-xl p-2.5 ${summary.left <= 0 ? 'bg-red-50' : 'bg-stone-50'}`}>
                 <p className="text-xs text-stone-500">受付できる残り</p>
-                <p className={`text-xl font-extrabold ${summary.left <= 0 ? 'text-red-600' : 'text-green-700'}`}>{Math.max(0, summary.left)}食</p>
-                {summary.left < 0 && <p className="text-xs text-red-600">{-summary.left}食オーバー</p>}
+                <p className={`text-xl font-extrabold ${summary.left <= 0 ? 'text-red-600' : 'text-green-700'}`}>{fmtPortions(Math.max(0, summary.left))}食</p>
+                {summary.left < 0 && <p className="text-xs text-red-600">{fmtPortions(-summary.left)}食オーバー</p>}
               </div>
             </div>
             {Object.keys(stock.data ?? {}).length > 0 && (
@@ -495,7 +496,7 @@ function ReservationCard({
       {label && (
         <p className={`text-xs ${label.tone === 'warn' ? 'text-red-600 font-semibold' : label.tone === 'new' ? 'text-sky-700' : 'text-stone-500'}`}>{label.text}</p>
       )}
-      <p className="text-xs text-stone-500">合計 {resQty(r)}食</p>
+      <p className="text-xs text-stone-500">合計 {fmtPortions(resPortions(r))}食（大盛りは1.5食）</p>
       <div className="flex flex-wrap gap-1.5">
         {r.status === 'reserved' ? (
           <>

@@ -140,6 +140,7 @@ export default function PrepPage() {
         </div>
 
         <p className="text-sm text-stone-600">メニューごとに、何食つくるかを入れてください。必要な材料が下に出ます。</p>
+        <p className="text-xs text-stone-500">レジの「残り食数」では、大盛りは1.5食として数え、通常サイズの食数から引きます。用意数は、通常サイズの欄に入れてください（大盛りの欄は、材料の計算用です）。</p>
 
         {(menus.isLoading || components.isLoading) && <Spinner />}
         <div className="divide-y divide-stone-100 border border-stone-200 rounded-xl">

@@ -21,9 +21,10 @@ import { updateMenu } from '../lib/masterData'
 import { todayStr } from '../lib/accounting'
 import {
   normHandle,
-  remainingByMenu,
+  fmtPortions,
+  remainingPools,
   reservedByMenu,
-  resQty,
+  resPortions,
   setReservationStatus,
   useInvalidateReservations,
   useMenuStock,
@@ -124,8 +125,9 @@ export default function PosPage() {
   const todayRes = (resQ.data ?? []).filter((r) => r.status === 'reserved')
   const sold: Record<string, number> = {}
   for (const r of activeReceipts) for (const l of r.lines) if (l.menuId) sold[l.menuId] = (sold[l.menuId] ?? 0) + l.qty
-  const left = remainingByMenu(stock, sold, reservedByMenu(todayRes), qty)
-  const totalLeft = Object.values(left).reduce((a, n) => a + Math.max(0, n), 0)
+  // 大盛りは1.5食として、通常サイズの用意数から引く
+  const { left, poolLeft } = remainingPools(menus, stock, sold, reservedByMenu(todayRes), qty)
+  const totalLeft = Object.values(poolLeft).reduce((a, n) => a + Math.max(0, n), 0)
   const hasStock = Object.keys(stock).length > 0
 
   // 取り置きの受け渡し: 品目をカートに入れ、取り置きを「受け渡し済み」にする（残り数の計算は変わらない）
@@ -508,12 +510,12 @@ export default function PosPage() {
             <span className="text-sm text-stone-700 flex flex-wrap gap-x-3">
               {hasStock && (
                 <span>
-                  残り <b className="text-stone-900 text-base">{totalLeft}</b> 食
+                  残り <b className="text-stone-900 text-base">{fmtPortions(totalLeft)}</b> 食
                 </span>
               )}
               {todayRes.length > 0 && (
                 <span className="text-amber-700 font-semibold">
-                  取り置き {todayRes.length}件（{todayRes.reduce((a, r) => a + resQty(r), 0)}食）
+                  取り置き {todayRes.length}件（{fmtPortions(todayRes.reduce((a, r) => a + resPortions(r), 0))}食）
                 </span>
               )}
             </span>
@@ -585,8 +587,8 @@ export default function PosPage() {
             )
           }
           const count = qty[m.id] ?? 0
-          const limited = stock[m.id] != null
-          const remain = limited ? left[m.id] : null // カートに入れた分も引いた残り
+          const remain = left[m.id] ?? null // カートに入れた分も引いた残り（用意数がないメニューは null＝制限なし）
+          const limited = remain != null
           const soldOut = limited && (remain as number) <= 0
           return (
             <div

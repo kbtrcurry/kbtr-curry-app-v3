@@ -4,7 +4,7 @@ import { useAllMenus } from '../lib/masterData'
 import { ConfirmModal } from '../components/ConfirmModal'
 import { useStoredState } from '../lib/persistState'
 import { useClosedSessions, useReceiptLines } from '../lib/analytics'
-import { deleteReservationsByDate, deleteReservationsByIds, insertReservations, kanaKey, resQty, PLATFORM_LABEL, STATUS_LABEL, useInvalidateReservations, type Platform, type ResItem, type Reservation, type ResStatus } from '../lib/reservations'
+import { deleteReservationsByDate, deleteReservationsByIds, insertReservations, kanaKey, resPortions, fmtPortions, PLATFORM_LABEL, STATUS_LABEL, useInvalidateReservations, type Platform, type ResItem, type Reservation, type ResStatus } from '../lib/reservations'
 import { groupIndexed, ledgerKey, menuFromHint, parseLedgerLine, pickDayMenus, splitByDate, type Part } from '../lib/reservationImport'
 
 type Row = {
@@ -180,7 +180,7 @@ export default function ReservationImport({ existing, onOpenDate }: { existing: 
     for (const r of existing) {
       const g = m.get(r.service_date) ?? { count: 0, qty: 0 }
       g.count += 1
-      g.qty += r.status === 'cancelled' ? 0 : resQty(r)
+      g.qty += r.status === 'cancelled' ? 0 : resPortions(r)
       m.set(r.service_date, g)
     }
     return [...m.entries()].sort((a, b) => b[0].localeCompare(a[0]))
@@ -259,7 +259,7 @@ export default function ReservationImport({ existing, onOpenDate }: { existing: 
             {byDate.map(([d, g]) => (
               <li key={d} className="py-2 flex items-center gap-2">
                 <span className="flex-1 text-sm text-stone-800">
-                  <b>{md(d)}</b> ・ {g.count}件・{g.qty}食
+                  <b>{md(d)}</b> ・ {g.count}件・{fmtPortions(g.qty)}食
                 </span>
                 <button onClick={() => onOpenDate(d)} className="text-sm font-semibold border border-stone-300 text-stone-700 rounded-lg px-3 py-1.5">
                   開く・直す

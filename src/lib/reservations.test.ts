@@ -1,7 +1,9 @@
 import { describe, it, expect } from 'vitest'
 import {
   parseReservationText,
-  remainingByMenu,
+  remainingPools,
+  resPortions,
+  fmtPortions,
   reservedByMenu,
   reserveSummary,
   customerStats,
@@ -58,8 +60,9 @@ describe('残り数と取り置き', () => {
   it('用意数 − 売れた数 − 取り置き中 − カート。用意数なしは対象外', () => {
     const res = [R({}), R({ status: 'picked_up' }), R({ status: 'cancelled' })]
     expect(reservedByMenu(res)).toEqual({ m1: 2 })
-    expect(remainingByMenu({ m1: 10 }, { m1: 3 }, { m1: 2 }, { m1: 1 })).toEqual({ m1: 4 })
-    expect(remainingByMenu({ m1: 1 }, { m1: 3 }, {})).toEqual({ m1: -2 })
+    const ms = [{ id: 'm1', name: '黒胡椒チキンビリヤニ' }]
+    expect(remainingPools(ms, { m1: 10 }, { m1: 3 }, { m1: 2 }, { m1: 1 }).left).toEqual({ m1: 4 })
+    expect(remainingPools(ms, { m1: 1 }, { m1: 3 }, {}).left).toEqual({ m1: -2 })
   })
   it('受付状況: キャンセル・来なかった は数えない', () => {
     const s = reserveSummary([R({}), R({ status: 'picked_up', items: [{ menu_id: 'm1', name: '', qty: 3 }] }), R({ status: 'no_show' })], 10)
@@ -87,3 +90,36 @@ describe('replyText', () => {
     expect(replyText(R({}), DEFAULT_REPLY)).toContain('太郎様 10/24')
   })
 })
+
+describe('大盛りは1.5食として残り食数に反映', () => {
+  const menus = [
+    { id: 'n', name: '黒胡椒チキンビリヤニ' },
+    { id: 'b', name: '黒胡椒チキンビリヤニ 大盛り' },
+    { id: 's', name: 'スパイスソーダ' },
+  ]
+  it('通常サイズの用意数を共有し、大盛り1つで1.5食減る', () => {
+    const r = remainingPools(menus, { n: 36 }, { n: 10, b: 4 }, {}, {})
+    // 10 + 4×1.5 = 16 食使った → 残り20食。大盛りは 20 ÷ 1.5 = 13
+    expect(r.poolLeft).toEqual({ n: 20 })
+    expect(r.left).toEqual({ n: 20, b: 13 })
+  })
+  it('取り置き中・カートの大盛りも1.5食で引く。ソーダのように用意数のないものは制限なし', () => {
+    const r = remainingPools(menus, { n: 10 }, {}, { b: 2 }, { b: 1, n: 1 })
+    // 大盛り3×1.5 + 通常1 = 5.5 → 残り4.5。通常は4、大盛りは 4.5÷1.5 = 3
+    expect(r.poolLeft.n).toBeCloseTo(4.5)
+    expect(r.left).toEqual({ n: 4, b: 3 })
+    expect(r.left.s).toBeUndefined()
+  })
+  it('大盛りだけに用意数があるときは、その数を大盛りの数で使う（1.5倍しない）', () => {
+    const r = remainingPools(menus, { b: 5 }, { b: 2 }, {}, {})
+    expect(r.left).toEqual({ b: 3 })
+  })
+  it('取り置きの食数も大盛りは1.5食。表示は整数なら小数なし', () => {
+    const r = R({ items: [{ menu_id: 'n', name: '黒胡椒チキンビリヤニ', qty: 2 }, { menu_id: 'b', name: '黒胡椒チキンビリヤニ 大盛り', qty: 1 }] })
+    expect(resPortions(r)).toBe(3.5)
+    expect(reserveSummary([r], 36).qty).toBe(3.5)
+    expect(fmtPortions(3.5)).toBe('3.5')
+    expect(fmtPortions(4)).toBe('4')
+  })
+})
+

@@ -60,6 +60,14 @@ export function profileUrl(platform: Platform, handle: string): string | null {
 
 export const resQty = (r: Pick<Reservation, 'items'>): number => r.items.reduce((a, i) => a + i.qty, 0)
 
+/** 大盛りは1.5食として数える（残り食数・受付の枠に使う） */
+export const BIG_PORTION = 1.5
+export const portionOf = (menuName: string): number => (/大盛/.test(menuName) ? BIG_PORTION : 1)
+/** 取り置き1件の食数（大盛りを1.5食で数える） */
+export const resPortions = (r: Pick<Reservation, 'items'>): number => r.items.reduce((a, i) => a + i.qty * portionOf(i.name), 0)
+/** 1.5 のような食数を表示用に（整数なら小数なし） */
+export const fmtPortions = (n: number): string => (Number.isInteger(n) ? String(n) : (Math.round(n * 10) / 10).toFixed(1))
+
 /** 取り置き中（まだ受け取っていない）の、メニュー別の数 */
 export function reservedByMenu(list: Reservation[]): Record<string, number> {
   const out: Record<string, number> = {}
@@ -70,22 +78,51 @@ export function reservedByMenu(list: Reservation[]): Record<string, number> {
   return out
 }
 
-/** レジの残り数 = 用意数 − 売れた数 − 取り置き中 − カートに入れた数。用意数を決めていないメニューは null（制限なし） */
-export function remainingByMenu(
+type MenuLite = { id: string; name: string }
+
+/** どの用意数（プール）から引くメニューか。「大盛り」は、同じ名前の通常サイズに用意数があれば、その用意数を使う */
+export function poolOf(m: MenuLite, menus: MenuLite[], stock: Record<string, number>): string {
+  if (!/大盛/.test(m.name)) return m.id
+  const baseName = m.name.replace(/[\s\u3000]*大盛り?[\s\u3000]*/g, ' ').trim()
+  const base =
+    menus.find((x) => x.id !== m.id && !/大盛/.test(x.name) && x.name.trim() === baseName) ??
+    menus.find((x) => x.id !== m.id && !/大盛/.test(x.name) && baseName !== '' && x.name.startsWith(baseName))
+  return base && stock[base.id] != null ? base.id : m.id
+}
+
+/**
+ * レジの残り数。用意数（食）から、売れた数・取り置き中・カートに入れた数を引く。
+ * 大盛りは1.5食として引く。大盛りには専用の用意数を決めなくても、通常サイズの用意数を共有する。
+ * left: メニューごとの残り（大盛りは、残りの食数 ÷ 1.5 の切り捨て）。用意数のないメニューは含めない（制限なし）
+ * poolLeft: 用意数ごとの残り食数
+ */
+export function remainingPools(
+  menus: MenuLite[],
   stock: Record<string, number>,
   sold: Record<string, number>,
   reserved: Record<string, number>,
   cart: Record<string, number> = {},
-): Record<string, number> {
-  const out: Record<string, number> = {}
-  for (const [id, q] of Object.entries(stock)) out[id] = q - (sold[id] ?? 0) - (reserved[id] ?? 0) - (cart[id] ?? 0)
-  return out
+): { left: Record<string, number>; poolLeft: Record<string, number> } {
+  const used: Record<string, number> = {}
+  const pool: Record<string, string> = {}
+  const weight = (m: MenuLite) => (pool[m.id] === m.id ? 1 : portionOf(m.name))
+  for (const m of menus) pool[m.id] = poolOf(m, menus, stock)
+  for (const m of menus) used[pool[m.id]] = (used[pool[m.id]] ?? 0) + weight(m) * ((sold[m.id] ?? 0) + (reserved[m.id] ?? 0) + (cart[m.id] ?? 0))
+  const poolLeft: Record<string, number> = {}
+  const left: Record<string, number> = {}
+  for (const m of menus) {
+    const p = pool[m.id]
+    if (stock[p] == null) continue
+    poolLeft[p] = stock[p] - (used[p] ?? 0)
+    left[m.id] = Math.floor(poolLeft[p] / weight(m) + 1e-9)
+  }
+  return { left, poolLeft }
 }
 
 export type ReserveSummary = { count: number; qty: number; cap: number; left: number }
 export function reserveSummary(list: Reservation[], cap: number): ReserveSummary {
   const active = list.filter((r) => r.status === 'reserved' || r.status === 'picked_up')
-  const qty = active.reduce((a, r) => a + resQty(r), 0)
+  const qty = active.reduce((a, r) => a + resPortions(r), 0)
   return { count: active.length, qty, cap, left: cap - qty }
 }
 

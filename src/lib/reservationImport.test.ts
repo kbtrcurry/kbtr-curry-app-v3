@@ -183,3 +183,16 @@ describe('先頭の×（うずらなし）', () => {
   })
 })
 
+describe('行頭の点（◦）', () => {
+  it('◦は読まない。そのあとが空白なら、その行は飛ばす', () => {
+    expect(parseLedgerLine('◦')).toBeNull()
+    expect(parseLedgerLine('◦   ')).toBeNull()
+    expect(parseLedgerLine('• ')).toBeNull()
+    expect(parseLedgerLine('◦ ○')).toBeNull()
+  })
+  it('◦のあとに名前があれば、それを読む', () => {
+    expect(P('◦山田② 新規12:00')).toMatchObject({ name: '山田', isNew: true, time: '12:00' })
+    expect(P('◦ ✅×さくら①')).toMatchObject({ name: 'さくら', uzura: false, mark: 'check' })
+  })
+})
+

@@ -40,11 +40,19 @@ const MARK_RE = /^[\s\u3000]*([✅✔✓☑☐☒❌✗✘✕✖×⬜🔲]\uFE0F
 const CHECKED = new Set(['✅', '✔', '✓', '☑'])
 const BLANK = new Set(['☐', '⬜', '🔲'])
 
+// 行頭の箇条書きの点（◦ • ・ など）。読まずに外す。外した後に何もなければ、その行は飛ばす
+const BULLET_RE = /^[\s\u3000]*[◦•・·‧∙▪▫]+[\s\u3000]*/
+
 export function parseLedgerLine(raw: string): ParsedRow | null {
   // 行頭のしるしは、いくつ続いていてもすべて外す（例：「✅×山田」）
   let rest = raw
   const syms: string[] = []
   for (;;) {
+    const bl = rest.match(BULLET_RE)
+    if (bl) {
+      rest = rest.slice(bl[0].length)
+      continue
+    }
     const mm = rest.match(MARK_RE)
     if (!mm) break
     syms.push(mm[1].replace('\uFE0F', ''))
@@ -54,7 +62,7 @@ export function parseLedgerLine(raw: string): ParsedRow | null {
   const markFromSymbol: ParsedRow['mark'] = syms.some((x) => CHECKED.has(x)) ? 'check' : syms.some((x) => BLANK.has(x)) ? 'blank' : null
   let body = rest
   // 「○」だけの行は、行をあけるために使っているだけなので数えない
-  if (/^[\s\u3000○◯〇]*$/.test(body)) return null
+  if (/^[\s\u3000○◯〇◦•・·‧∙▪▫]*$/.test(body)) return null
   const cancelled = /キャンセル|取り消し|取消|ｷｬﾝｾﾙ/.test(body.normalize('NFKC'))
   if (cancelled) body = body.normalize('NFKC').replace(/キャンセル|取り消し|取消/g, ' ')
   const bigMark = body.includes('◆')

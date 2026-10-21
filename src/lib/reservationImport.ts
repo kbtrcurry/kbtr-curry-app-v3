@@ -46,6 +46,9 @@ const MARK_RE = /^[\s\u3000]*([✅✔✓☑☐☒❌✗✘✕✖×⬜🔲]\uFE0F
 const CHECKED = new Set(['✅', '✔', '✓', '☑'])
 const BLANK = new Set(['☐', '⬜', '🔲'])
 
+// 備考によく出る言葉（名前のあとに空白で続くもの）。名前の一部にはしない
+const NOTE_WORD = /先月|今月|前回|今回|昨日|先週|今週|リベンジ|再来|リピ|久しぶり|ぶり|紹介|友達|友人|常連|インフル|風邪|回目|からの|予約|取り置き|遅れ|遅刻|変更|追加|お願い|来る|来て/
+
 // 行頭の箇条書きの点（◦ • ・ など）。読まずに外す。外した後に何もなければ、その行は飛ばす
 const BULLET_RE = /^[\s\u3000]*[◦•・·‧∙▪▫]+[\s\u3000]*/
 
@@ -149,7 +152,8 @@ function parseBody(raw: string): Omit<ParsedRow, 'mark' | 'menuHint' | 'cancelle
     nameEndCandidates.push(m2.index ?? 0)
     t = t.replace(m2[0], ' ')
   }
-  t = t.replace(/頃|ごろ|来店予定|来店|予定|くらい/g, ' ')
+  // 時間のあとの「頃」「来店予定」だけ外す（「初来店」などの備考は残す）
+  t = t.replace(/頃|ごろ|来店予定|くらい/g, ' ')
 
   // 名前はここまで（最初の数字・「新規」・SNS名・食事の種類の語より前）
   const markers = [/\S*からの/, /\d/, /新規/, /instagram|インスタ|(?<![A-Za-z])ig(?![A-Za-z])/i, /twitter|ツイッター/i, /(?<![A-Za-z])x\s*新規/i, /イートイン|店内|テイクアウト|持ち帰り|持帰り/, /(?<![A-Za-z])TO(?![A-Za-z])/, /大盛/, /前回|以前|いつも|リピ|メモ|備考|[※＊*（([【]/, /ビリヤニ|ビリヤーニ|ソーダ|サワー|青唐|すだち|黒胡椒|ニラ|ミント|マトン|キーマ|チキン|アチャール|うずら|ウズラ/]
@@ -170,7 +174,13 @@ function parseBody(raw: string): Omit<ParsedRow, 'mark' | 'menuHint' | 'cancelle
     return line.length
   })()
   // 姓と名の間の空白（全角・半角）は名前の一部。ひとつの半角空白にそろえる
-  const name = line.slice(0, origEnd).replace(/[\s\u3000]+/g, ' ').trim()
+  let name = line.slice(0, origEnd).replace(/[\s\u3000]+/g, ' ').trim()
+  // 名前は、姓と名の2つまで（「ホシノ カズマ 先月からの2回目」→ 名前は「ホシノ カズマ」、残りは備考）。
+  // ただし2つ目が備考の言葉（先月・リベンジ…）なら、名前は1つだけ
+  {
+    const tk = name.split(' ')
+    if (tk.length >= 3 || (tk.length === 2 && NOTE_WORD.test(tk[1]))) name = (NOTE_WORD.test(tk[1]) ? tk.slice(0, 1) : tk.slice(0, 2)).join(' ')
+  }
 
   // SNSと新規
   let platform: Platform = 'instagram'

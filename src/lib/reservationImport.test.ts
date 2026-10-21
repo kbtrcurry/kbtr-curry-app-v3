@@ -300,3 +300,22 @@ describe('「◯回目」（何回目の来店か）', () => {
   })
 })
 
+describe('名前は姓と名の2つまで。その先は備考', () => {
+  it('「ホシノ カズマ 先月からの2回目」→ 名前「ホシノ カズマ」、備考「先月からの2回目」、2回目', () => {
+    const r = P('- [x] ホシノ　カズマ 先月からの2回目')
+    expect(r).toMatchObject({ name: 'ホシノ カズマ', note: '先月からの2回目', visitNo: 2, mark: 'check' })
+    expect(r.parts).toEqual([{ qty: 1, big: false, takeout: false }])
+  })
+  it('目印の言葉がなくても、3つ以上続けば、最初の2つが名前', () => {
+    expect(P('- [x] ホシノ　カズマ 初来店です よろしく')).toMatchObject({ name: 'ホシノ カズマ', note: '初来店です よろしく' })
+    expect(P('ホシノ カズマ 差し入れ').name).toBe('ホシノ カズマ')
+  })
+  it('2つ目が備考の言葉なら、名前は1つだけ', () => {
+    expect(P('からさわ 先月 久しぶり')).toMatchObject({ name: 'からさわ', note: '先月 久しぶり' })
+    expect(P('からさわ インフルからのリベンジ')).toMatchObject({ name: 'からさわ', note: 'インフルからのリベンジ' })
+  })
+  it('姓と名だけなら、そのまま名前', () => {
+    expect(P('おおの　ようじ').name).toBe('おおの ようじ')
+  })
+})
+

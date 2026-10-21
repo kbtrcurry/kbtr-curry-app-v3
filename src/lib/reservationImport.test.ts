@@ -32,8 +32,8 @@ describe('parseLedgerLine（実際のメモの書き方）', () => {
     ])
     expect(r.warns).toContain('名前が見つかりません')
   })
-  it('うずら: ◆は付き、「うずらなし」はなし、書いていなければ付き', () => {
-    expect(P('さくら② ◆').uzura).toBe(true)
+  it('うずら: 「うずらなし」はなし、書いていなければ付き', () => {
+    expect(P('さくら② ').uzura).toBe(true)
     expect(P('さくら② うずらなし').uzura).toBe(false)
     expect(P('さくら②').uzura).toBe(true)
   })
@@ -127,6 +127,21 @@ describe('○だけの行', () => {
   it('日付ごとの件数にも数えない', () => {
     const b = splitByDate('10/17\n○\n山田① 新規\n○\n', new Date(2026, 9, 21))
     expect(b[0].lines.filter((l) => parseLedgerLine(l)).length).toBe(1)
+  })
+})
+
+describe('名前の先頭のしるし', () => {
+  it('◆は大盛り、△はうずらなし（木曜24時より後の連絡）。名前には入れない', () => {
+    const a = P('✅◆山田② 新規12:00')
+    expect(a.name).toBe('山田')
+    expect(a.parts).toEqual([{ qty: 2, big: true, takeout: false }])
+    expect(a.uzura).toBe(true)
+    const b = P('△さくら① TO')
+    expect(b).toMatchObject({ name: 'さくら', uzura: false })
+    expect(b.parts).toEqual([{ qty: 1, big: false, takeout: true }])
+    const c = P('◆△たろう③')
+    expect(c).toMatchObject({ name: 'たろう', uzura: false })
+    expect(c.parts[0]).toMatchObject({ qty: 3, big: true })
   })
 })
 

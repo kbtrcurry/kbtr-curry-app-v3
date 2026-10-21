@@ -3,7 +3,7 @@
 //   ・1行 = 1件。「名前 食数(①②③) 新規 来店時間 TO」の順にゆるく書かれている。①②③は食数（③＝3人分）
 //   ・「新規」だけなら Instagram の新規、「x新規」なら X の新規。何も書かなければイートイン
 //   ・来店時間は、あれば書いてある（なければ好きな時間に来店）
-//   ・◆＝うずらアチャール付き、「うずらなし」＝なし。書いていなければ付き
+//   ・◆＝大盛り、△＝うずらなし（木曜24時より後に連絡が来た）。「うずらなし」と書いてあればなし。書いていなければうずら付き
 //   ・営業日ごとにメモが分かれている
 import { kanaKey, type Platform } from './reservations'
 
@@ -43,11 +43,21 @@ export function parseLedgerLine(raw: string): ParsedRow | null {
   const body = mm ? raw.slice(mm[0].length) : raw
   // 「○」だけの行は、行をあけるために使っているだけなので数えない
   if (/^[\s\u3000○◯〇]*$/.test(body)) return null
-  const r = parseBody(body)
+  // 名前の先頭などに付くしるし: ◆＝大盛り、△＝うずらなし（木曜24時より後に連絡が来た）
+  const bigMark = body.includes('◆')
+  const noUzuraMark = /[△▲]/.test(body)
+  const r = parseBody(body.replace(/[◆◇△▲]/g, ' '))
   if (!r) return null
   // 「前回ニラミントか青唐すだちきてくれた人」のような過去の話は、メニューの手がかりにしない
   const menuHint = body.normalize('NFKC').replace(/前回[^\n]*/, ' ')
-  return { ...r, line: raw.trim(), mark, menuHint }
+  return {
+    ...r,
+    parts: bigMark ? r.parts.map((p) => ({ ...p, big: true })) : r.parts,
+    uzura: noUzuraMark ? false : r.uzura,
+    line: raw.trim(),
+    mark,
+    menuHint,
+  }
 }
 
 function parseBody(raw: string): Omit<ParsedRow, 'mark' | 'menuHint'> | null {

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { Check, ClipboardPaste, Copy, ExternalLink, Pencil, Plus, Trash2, Users } from 'lucide-react'
 import { useAuth } from '../lib/auth'
 import { Spinner } from '../components/Spinner'
@@ -65,6 +65,13 @@ export default function ReservationsPage() {
   const [template, setTemplate] = useStoredState('kbtr_v3_reply_template', DEFAULT_REPLY)
   const [editing, setEditing] = useState<Reservation | null>(null)
   const [adding, setAdding] = useState(false)
+  // 状態を変えた直後に、5秒だけ「元に戻す」を出す（押し間違い対策）
+  const [undo, setUndo] = useState<{ id: string; prev: ResStatus; text: string } | null>(null)
+  useEffect(() => {
+    if (!undo) return
+    const t = setTimeout(() => setUndo(null), 6000)
+    return () => clearTimeout(t)
+  }, [undo])
   const invalidate = useInvalidateReservations()
 
   const menus = useActiveMenus()
@@ -217,8 +224,10 @@ export default function ReservationsPage() {
                 }}
                 onDelete={() => del.request(r.id, r.name || r.handle || '取り置き')}
                 onStatus={async (s) => {
+                  const prev = r.status
                   await setReservationStatus(r.id, s)
                   invalidate()
+                  setUndo({ id: r.id, prev, text: `${r.name || '取り置き'}：${STATUS_LABEL[prev]} → ${STATUS_LABEL[s]}` })
                 }}
               />
             ))}
@@ -263,6 +272,24 @@ export default function ReservationsPage() {
         />
       )}
       {del.toast}
+      {undo && (
+        <div className="fixed left-0 right-0 bottom-[calc(5.5rem+env(safe-area-inset-bottom,0px))] md:bottom-6 z-[60] flex justify-center px-4 pointer-events-none">
+          <div className="pointer-events-auto flex items-center gap-3 bg-stone-900 text-stone-50 border border-stone-300 rounded-xl px-4 py-2.5 shadow-lg max-w-md w-full">
+            <span className="flex-1 min-w-0 truncate text-sm">{undo.text}</span>
+            <button
+              onClick={async () => {
+                const u = undo
+                setUndo(null)
+                await setReservationStatus(u.id, u.prev)
+                invalidate()
+              }}
+              className="text-sm font-bold text-amber-800 shrink-0 px-2 py-1"
+            >
+              元に戻す
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -504,7 +531,7 @@ function shortItems(items: ResItem[]): { key: string; kind: string; label: strin
   return [...m.entries()].map(([k, v]) => ({ key: k, kind: v.kind, label: `${v.label}${v.qty}`, takeout: v.takeout }))
 }
 
-// 取り置き1件を1行で。右の「来店済み」ボタンは大きめ。行（名前のあたり）をタップすると、詳しい内容・編集・削除が開く
+// 取り置き1件を1行で。右のボタンは、いまの状態（来店前／来店済み）を表す切り替え。行（名前のあたり）をタップすると、詳しい内容・編集・削除が開く
 function ReservationRow({
   r,
   stat,
@@ -524,10 +551,11 @@ function ReservationRow({
   const [busy, setBusy] = useState(false)
   const done = r.status === 'picked_up'
   const off = r.status === 'cancelled' || r.status === 'no_show'
-  const go = async () => {
+  // 来店前 → 来店済み。来店済み・キャンセル・来なかった → 来店前（押し間違いは、もう一度押せば戻る）
+  const toggle = async () => {
     setBusy(true)
     try {
-      await onStatus('picked_up')
+      await onStatus(r.status === 'reserved' ? 'picked_up' : 'reserved')
     } finally {
       setBusy(false)
     }
@@ -553,20 +581,20 @@ function ReservationRow({
             {off && <span className="text-[11px] font-bold text-stone-500">{STATUS_LABEL[r.status]}</span>}
           </span>
         </button>
-        {r.status === 'reserved' ? (
-          <button
-            onClick={() => void go()}
-            disabled={busy}
-            className="shrink-0 w-[88px] my-[2px] mr-1 rounded-lg bg-amber-700 text-[#faf9f5] text-sm font-bold active:scale-95 transition-transform disabled:opacity-60"
-            aria-label={`${r.name || '取り置き'}を来店済みにする`}
-          >
-            来店済み
-          </button>
-        ) : done ? (
-          <span className="shrink-0 w-[88px] flex items-center justify-center text-xs font-bold text-green-700">✓ 来店済み</span>
-        ) : (
-          <span className="shrink-0 w-[88px]" />
-        )}
+        <button
+          onClick={() => void toggle()}
+          disabled={busy}
+          className={`shrink-0 w-[88px] my-[2px] mr-1 rounded-lg text-sm font-bold active:scale-95 transition-transform disabled:opacity-60 ${
+            done
+              ? 'bg-green-600 text-white'
+              : r.status === 'reserved'
+                ? 'bg-transparent text-amber-700 border-2 border-amber-600'
+                : 'bg-stone-200 text-stone-600'
+          }`}
+          aria-label={`${r.name || '取り置き'}は${STATUS_LABEL[r.status]}。押すと${done ? STATUS_LABEL.reserved : r.status === 'reserved' ? STATUS_LABEL.picked_up : STATUS_LABEL.reserved}にします`}
+        >
+          {done ? '✓ 来店済み' : STATUS_LABEL[r.status]}
+        </button>
       </div>
       {open && (
         <div className="px-2 pb-2">
@@ -654,7 +682,7 @@ function ReservationCard({
           </>
         ) : (
           <button onClick={() => void onStatus('reserved')} className="text-sm font-semibold border border-stone-300 text-stone-600 rounded-lg px-3 py-2">
-            取り置き中に戻す
+            来店前に戻す
           </button>
         )}
         <button onClick={() => void copy()} className="flex items-center gap-1 text-sm font-semibold border border-stone-300 text-stone-600 rounded-lg px-3 py-2">

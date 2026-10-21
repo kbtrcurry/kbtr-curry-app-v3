@@ -27,7 +27,7 @@ export type Reservation = {
 export type CustomerNote = { platform: Platform; handle: string; flag: 'none' | 'regular' | 'watch'; posted_review: boolean; note: string }
 
 export const PLATFORM_LABEL: Record<Platform, string> = { x: 'X', instagram: 'Instagram', other: 'その他' }
-export const STATUS_LABEL: Record<ResStatus, string> = { reserved: '取り置き中', picked_up: '来店済み', no_show: '来なかった', cancelled: 'キャンセル' }
+export const STATUS_LABEL: Record<ResStatus, string> = { reserved: '来店前', picked_up: '来店済み', no_show: '来なかった', cancelled: 'キャンセル' }
 
 // ---------- 計算（純粋関数） ----------
 

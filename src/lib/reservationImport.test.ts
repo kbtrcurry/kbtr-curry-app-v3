@@ -116,3 +116,17 @@ describe('menuFromHint', () => {
     expect(menuFromHint('山田① 新規', c)).toBeNull()
   })
 })
+
+describe('○だけの行', () => {
+  it('行をあけるための「○」だけの行は読まない。名前つきの行は読む', () => {
+    expect(parseLedgerLine('○')).toBeNull()
+    expect(parseLedgerLine('  ○ ○  ')).toBeNull()
+    expect(parseLedgerLine('✅○')).toBeNull()
+    expect(parseLedgerLine('○○① 新規12:00')).not.toBeNull()
+  })
+  it('日付ごとの件数にも数えない', () => {
+    const b = splitByDate('10/17\n○\n山田① 新規\n○\n', new Date(2026, 9, 21))
+    expect(b[0].lines.filter((l) => parseLedgerLine(l)).length).toBe(1)
+  })
+})
+

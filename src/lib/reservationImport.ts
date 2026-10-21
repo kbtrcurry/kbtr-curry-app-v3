@@ -41,6 +41,8 @@ export function parseLedgerLine(raw: string): ParsedRow | null {
   const sym = mm ? mm[1].replace('\uFE0F', '') : ''
   const mark: ParsedRow['mark'] = mm ? (CHECKED.has(sym) ? 'check' : BLANK.has(sym) ? 'blank' : 'cross') : null
   const body = mm ? raw.slice(mm[0].length) : raw
+  // 「○」だけの行は、行をあけるために使っているだけなので数えない
+  if (/^[\s\u3000○◯〇]*$/.test(body)) return null
   const r = parseBody(body)
   if (!r) return null
   // 「前回ニラミントか青唐すだちきてくれた人」のような過去の話は、メニューの手がかりにしない

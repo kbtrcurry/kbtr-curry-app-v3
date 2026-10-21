@@ -4,6 +4,7 @@
 //   ・「新規」だけなら Instagram の新規、「x新規」なら X の新規。何も書かなければイートイン
 //   ・来店時間は、あれば書いてある（なければ好きな時間に来店）
 //   ・◆＝大盛り、△＝うずらなし（木曜24時より後に連絡が来た）。「うずらなし」と書いてあればなし。書いていなければうずら付き
+//   ・行の先頭か最後の「○」（1つだけ）は、来店しましたの印。「○」だけの行は、行をあけるためなので読まない
 //   ・営業日ごとにメモが分かれている
 import { kanaKey, type Platform } from './reservations'
 
@@ -39,14 +40,27 @@ const BLANK = new Set(['☐', '⬜', '🔲'])
 export function parseLedgerLine(raw: string): ParsedRow | null {
   const mm = raw.match(MARK_RE)
   const sym = mm ? mm[1].replace('\uFE0F', '') : ''
-  const mark: ParsedRow['mark'] = mm ? (CHECKED.has(sym) ? 'check' : BLANK.has(sym) ? 'blank' : 'cross') : null
-  const body = mm ? raw.slice(mm[0].length) : raw
+  const markFromSymbol: ParsedRow['mark'] = mm ? (CHECKED.has(sym) ? 'check' : BLANK.has(sym) ? 'blank' : 'cross') : null
+  let body = mm ? raw.slice(mm[0].length) : raw
   // 「○」だけの行は、行をあけるために使っているだけなので数えない
   if (/^[\s\u3000○◯〇]*$/.test(body)) return null
-  // 名前の先頭などに付くしるし: ◆＝大盛り、△＝うずらなし（木曜24時より後に連絡が来た）
   const bigMark = body.includes('◆')
   const noUzuraMark = /[△▲]/.test(body)
-  const r = parseBody(body.replace(/[◆◇△▲]/g, ' '))
+  body = body.replace(/[◆◇△▲]/g, ' ')
+  // 先頭か最後の「○」（1つだけ）は、来店しましたの印。名前には入れない（「○○」のように2つ続くのは名前として読む）
+  let circle = false
+  const lead = body.match(/^[\s\u3000]*[○◯〇](?![○◯〇])[\s\u3000]*/)
+  if (lead) {
+    body = body.slice(lead[0].length)
+    circle = true
+  }
+  const trail = body.match(/[\s\u3000]*(?<![○◯〇])[○◯〇][\s\u3000]*$/)
+  if (trail) {
+    body = body.slice(0, trail.index)
+    circle = true
+  }
+  // 名前の先頭などに付くしるし: ◆＝大盛り、△＝うずらなし（木曜24時より後に連絡が来た）
+  const r = parseBody(body)
   if (!r) return null
   // 「前回ニラミントか青唐すだちきてくれた人」のような過去の話は、メニューの手がかりにしない
   const menuHint = body.normalize('NFKC').replace(/前回[^\n]*/, ' ')
@@ -55,7 +69,7 @@ export function parseLedgerLine(raw: string): ParsedRow | null {
     parts: bigMark ? r.parts.map((p) => ({ ...p, big: true })) : r.parts,
     uzura: noUzuraMark ? false : r.uzura,
     line: raw.trim(),
-    mark,
+    mark: circle ? 'check' : markFromSymbol,
     menuHint,
   }
 }

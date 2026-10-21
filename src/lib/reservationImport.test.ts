@@ -145,3 +145,16 @@ describe('名前の先頭のしるし', () => {
   })
 })
 
+describe('先頭・最後の○（来店しました）', () => {
+  it('先頭の○も、最後の○も、来店済みの印。名前には入れない', () => {
+    expect(P('○山田② 新規12:00')).toMatchObject({ name: '山田', mark: 'check', isNew: true, time: '12:00' })
+    expect(P('山田② 新規12:00○')).toMatchObject({ name: '山田', mark: 'check', time: '12:00' })
+    expect(P('山田② 新規 ○').mark).toBe('check')
+    expect(P('◆○山田①')).toMatchObject({ name: '山田', mark: 'check' })
+  })
+  it('印がなければ mark なし。「○○」のように続くものは名前として読む', () => {
+    expect(P('山田②').mark).toBeNull()
+    expect(P('○○① 新規').name).toBe('○○')
+  })
+})
+

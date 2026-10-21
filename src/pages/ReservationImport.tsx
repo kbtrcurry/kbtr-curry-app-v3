@@ -89,8 +89,9 @@ export default function ReservationImport({ existing }: { existing: Reservation[
         // 行頭のしるし: ✓＝来店済み、×＝来なかった、空の欄は（他にチェックがあれば）来なかった扱い
         let status: ResStatus = 'picked_up'
         if (p.mark === 'cross') status = 'no_show'
-        if (p.mark === 'blank' && hasCheck) status = 'no_show'
-        if (p.mark === 'cross' || (p.mark === 'blank' && hasCheck)) warns.push('チェックがないので「来なかった」にしています。キャンセルなら直してください')
+        const noMark = (p.mark === 'blank' || p.mark === null) && hasCheck
+        if (noMark) status = 'no_show'
+        if (p.mark === 'cross' || noMark) warns.push('来店の印（○やチェック）がないので「来なかった」にしています。キャンセルなどなら直してください')
         const q = partsQty(p.parts)
         out.push({
           id: `r${n++}`,
@@ -173,7 +174,7 @@ export default function ReservationImport({ existing }: { existing: Reservation[
       <details className="text-sm text-stone-600">
         <summary className="cursor-pointer text-stone-500 font-semibold">読み取りのきまり</summary>
         <ul className="mt-1.5 space-y-1 list-disc pl-5">
-          <li>1行が1件。丸数字（①②③）は食数です。行頭のチェック（✅✔など）は名前に入れず、来店済みのしるしとして読みます（チェックがない行は「来なかった」にするので、状態を確認してください）。</li>
+          <li>1行が1件。丸数字（①②③）は食数です。行の先頭か最後の「○」、行頭のチェック（✅✔など）は、名前に入れず「来店しました」の印として読みます。同じ日に印のある行があるとき、印のない行は「来なかった」にするので、状態を確認してください。「○」だけの行は読み飛ばします。</li>
           <li>「新規」だけなら Instagram の新規、「x新規」なら X の新規。書いていなければ Instagram にしています（直せます）。</li>
           <li>何も書いていなければイートイン、「TO」はテイクアウト、「大盛り」は大盛り。</li>
           <li>「12:00」のような時間は来店予定時間です。名前の前の◆は大盛り、△はうずらなし（木曜24時より後に連絡が来た）として読みます。しるしがなければ、うずら付きです。</li>

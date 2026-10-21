@@ -93,7 +93,7 @@ export function poolOf(m: MenuLite, menus: MenuLite[], stock: Record<string, num
 /**
  * レジの残り数。用意数（食）から、売れた数・取り置き中・カートに入れた数を引く。
  * 大盛りは1.5食として引く。大盛りには専用の用意数を決めなくても、通常サイズの用意数を共有する。
- * left: メニューごとの残り（大盛りは、残りの食数 ÷ 1.5 の切り捨て）。用意数のないメニューは含めない（制限なし）
+ * left: メニューごとの残り（大盛りは、残りの食数 ÷ 1.5。0.5刻みで、それ以下の端数だけ切り捨て）。用意数のないメニューは含めない（制限なし）
  * poolLeft: 用意数ごとの残り食数
  */
 export function remainingPools(
@@ -114,7 +114,8 @@ export function remainingPools(
     const p = pool[m.id]
     if (stock[p] == null) continue
     poolLeft[p] = stock[p] - (used[p] ?? 0)
-    left[m.id] = Math.floor(poolLeft[p] / weight(m) + 1e-9)
+    // 端数は切り捨てず、0.5刻みで出す（4.5食 → 通常は4.5、大盛りは 3）
+    left[m.id] = Math.floor((poolLeft[p] / weight(m)) * 2 + 1e-9) / 2
   }
   return { left, poolLeft }
 }

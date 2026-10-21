@@ -589,7 +589,8 @@ export default function PosPage() {
           const count = qty[m.id] ?? 0
           const remain = left[m.id] ?? null // カートに入れた分も引いた残り（用意数がないメニューは null＝制限なし）
           const limited = remain != null
-          const soldOut = limited && (remain as number) <= 0
+          // 1食に満たない残り（0.5食など）は、売り切れ扱い（数字は残す）
+          const soldOut = limited && (remain as number) < 1
           return (
             <div
               key={m.id}
@@ -610,7 +611,7 @@ export default function PosPage() {
                 <p className="text-amber-800 font-bold text-lg mt-1">¥{m.price.toLocaleString()}</p>
                 {limited && (
                   <p className={`mt-1 text-sm font-bold ${soldOut ? 'text-red-600' : (remain as number) <= 3 ? 'text-red-500' : 'text-stone-500'}`}>
-                    {soldOut ? '売り切れ' : `残り ${remain}`}
+                    {soldOut ? `売り切れ${(remain as number) > 0 ? `（残り${fmtPortions(remain as number)}）` : ''}` : `残り ${fmtPortions(remain as number)}`}
                   </p>
                 )}
               </button>

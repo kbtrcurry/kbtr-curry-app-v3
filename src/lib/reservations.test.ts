@@ -99,15 +99,16 @@ describe('大盛りは1.5食として残り食数に反映', () => {
   ]
   it('通常サイズの用意数を共有し、大盛り1つで1.5食減る', () => {
     const r = remainingPools(menus, { n: 36 }, { n: 10, b: 4 }, {}, {})
-    // 10 + 4×1.5 = 16 食使った → 残り20食。大盛りは 20 ÷ 1.5 = 13
+    // 10 + 4×1.5 = 16 食使った → 残り20食。大盛りは 20 ÷ 1.5 = 13.33…（0.5刻みで13）
     expect(r.poolLeft).toEqual({ n: 20 })
     expect(r.left).toEqual({ n: 20, b: 13 })
+    expect(remainingPools(menus, { n: 36 }, { n: 10, b: 4 }, { n: 1 }, {}).left.b).toBe(12.5)
   })
   it('取り置き中・カートの大盛りも1.5食で引く。ソーダのように用意数のないものは制限なし', () => {
     const r = remainingPools(menus, { n: 10 }, {}, { b: 2 }, { b: 1, n: 1 })
-    // 大盛り3×1.5 + 通常1 = 5.5 → 残り4.5。通常は4、大盛りは 4.5÷1.5 = 3
+    // 大盛り3×1.5 + 通常1 = 5.5 → 残り4.5。通常は4.5（切り捨てない）、大盛りは 4.5÷1.5 = 3
     expect(r.poolLeft.n).toBeCloseTo(4.5)
-    expect(r.left).toEqual({ n: 4, b: 3 })
+    expect(r.left).toEqual({ n: 4.5, b: 3 })
     expect(r.left.s).toBeUndefined()
   })
   it('大盛りだけに用意数があるときは、その数を大盛りの数で使う（1.5倍しない）', () => {

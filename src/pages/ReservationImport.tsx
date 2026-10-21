@@ -77,7 +77,6 @@ export default function ReservationImport({ existing }: { existing: Reservation[
       const soldRegular = Object.keys(sold).filter((x) => /ビリヤニ/.test(x) && !/大盛/.test(x))
       const candidates = [...new Set([...soldRegular, ...menuNames])]
       const parsed = b.lines.map((l) => parseLedgerLine(l)).filter((x): x is NonNullable<typeof x> => !!x)
-      const hasCheck = parsed.some((x) => x.mark === 'check')
       let count = 0
       for (const p of parsed) {
         const warns = [...p.warns]
@@ -86,12 +85,10 @@ export default function ReservationImport({ existing }: { existing: Reservation[
         if (!hinted && dm.ambiguous) warns.push('その日は通常サイズのビリヤニが複数売れています。メニューを確認してください')
         if (!menuName) warns.push('その日のビリヤニが売上から分かりません。メニューを選んでください')
         if (Object.keys(sold).length === 0) warns.push('この日の売上が見つかりません。日付は合っていますか？')
-        // 行頭のしるし: ✓＝来店済み、×＝来なかった、空の欄は（他にチェックがあれば）来なかった扱い
+        // 来なかった人はいない。「キャンセル」と書かれた行だけがキャンセル、あとは（○がなくても）来店済み
         let status: ResStatus = 'picked_up'
-        if (p.mark === 'cross') status = 'no_show'
-        const noMark = (p.mark === 'blank' || p.mark === null) && hasCheck
-        if (noMark) status = 'no_show'
-        if (p.mark === 'cross' || noMark) warns.push('来店の印（○やチェック）がないので「来なかった」にしています。キャンセルなどなら直してください')
+        if (p.cancelled || p.mark === 'cross') status = 'cancelled'
+        if (status === 'cancelled') warns.push('キャンセルの行です。台帳には「キャンセル」として入り、取り置き回数には数えません')
         const q = partsQty(p.parts)
         out.push({
           id: `r${n++}`,
@@ -174,7 +171,7 @@ export default function ReservationImport({ existing }: { existing: Reservation[
       <details className="text-sm text-stone-600">
         <summary className="cursor-pointer text-stone-500 font-semibold">読み取りのきまり</summary>
         <ul className="mt-1.5 space-y-1 list-disc pl-5">
-          <li>1行が1件。丸数字（①②③）は食数です。行の先頭か最後の「○」、行頭のチェック（✅✔など）は、名前に入れず「来店しました」の印として読みます。同じ日に印のある行があるとき、印のない行は「来なかった」にするので、状態を確認してください。「○」だけの行は読み飛ばします。</li>
+          <li>1行が1件。丸数字（①②③）は食数です。行の先頭か最後の「○」、行頭のチェック（✅✔など）は、名前に入れず「来店しました」の印として読みます。印がなくても来店済みとして読みます（終盤に来た人など）。「キャンセル」と書かれた行は、キャンセルとして入れます。「○」だけの行は読み飛ばします。</li>
           <li>「新規」だけなら Instagram の新規、「x新規」なら X の新規。書いていなければ Instagram にしています（直せます）。</li>
           <li>何も書いていなければイートイン、「TO」はテイクアウト、「大盛り」は大盛り。</li>
           <li>「12:00」のような時間は来店予定時間です。名前の前の◆は大盛り、△はうずらなし（木曜24時より後に連絡が来た）として読みます。しるしがなければ、うずら付きです。</li>
@@ -296,7 +293,7 @@ export default function ReservationImport({ existing }: { existing: Reservation[
               <button onClick={() => void save()} disabled={busy || chosen.length === 0 || noMenu > 0} className="w-full py-3.5 rounded-xl bg-amber-700 text-[#faf9f5] font-bold disabled:opacity-40">
                 {busy ? '取り込み中…' : `${chosen.length}件を取り込む（お客さん ${customers}人）`}
               </button>
-              <p className="text-xs text-stone-500 mt-1 text-center">{noMenu > 0 ? `メニューが未選択の行が${noMenu}件あります。選んでください。` : '各行の「状態」のとおりに入ります（チェックありは受け渡し済み）。'}</p>
+              <p className="text-xs text-stone-500 mt-1 text-center">{noMenu > 0 ? `メニューが未選択の行が${noMenu}件あります。選んでください。` : '各行の「状態」のとおりに入ります（キャンセル以外は受け渡し済み）。'}</p>
             </div>
           )}
         </section>

@@ -5,6 +5,7 @@
 //   ・来店時間は、あれば書いてある（なければ好きな時間に来店）
 //   ・◆＝大盛り、△＝うずらなし（木曜24時より後に連絡が来た）。「うずらなし」と書いてあればなし。書いていなければうずら付き
 //   ・行の先頭か最後の「○」（1つだけ）は、来店しましたの印。「○」だけの行は、行をあけるためなので読まない
+//   ・来なかった人は、いままでいない。キャンセルした人は「キャンセル」と書いてある。○（来店の印）がなくても、終盤に来た人なので来店済み
 //   ・営業日ごとにメモが分かれている
 import { kanaKey, type Platform } from './reservations'
 
@@ -21,6 +22,8 @@ export type ParsedRow = {
   warns: string[]
   /** 行頭のしるし: check=チェック（来店済み）／blank=空のチェック欄／cross=×／null=なし */
   mark: 'check' | 'blank' | 'cross' | null
+  /** 「キャンセル」と書かれている（来なかった人は、いままでいない。来なかった場合はキャンセルと書く） */
+  cancelled: boolean
   /** メニューを決める手がかりの文（「前回〜」の部分は除く） */
   menuHint: string
 }
@@ -44,6 +47,8 @@ export function parseLedgerLine(raw: string): ParsedRow | null {
   let body = mm ? raw.slice(mm[0].length) : raw
   // 「○」だけの行は、行をあけるために使っているだけなので数えない
   if (/^[\s\u3000○◯〇]*$/.test(body)) return null
+  const cancelled = /キャンセル|取り消し|取消|ｷｬﾝｾﾙ/.test(body.normalize('NFKC'))
+  if (cancelled) body = body.normalize('NFKC').replace(/キャンセル|取り消し|取消/g, ' ')
   const bigMark = body.includes('◆')
   const noUzuraMark = /[△▲]/.test(body)
   body = body.replace(/[◆◇△▲]/g, ' ')
@@ -70,11 +75,12 @@ export function parseLedgerLine(raw: string): ParsedRow | null {
     uzura: noUzuraMark ? false : r.uzura,
     line: raw.trim(),
     mark: circle ? 'check' : markFromSymbol,
+    cancelled,
     menuHint,
   }
 }
 
-function parseBody(raw: string): Omit<ParsedRow, 'mark' | 'menuHint'> | null {
+function parseBody(raw: string): Omit<ParsedRow, 'mark' | 'menuHint' | 'cancelled'> | null {
   const line = raw.trim()
   if (!line) return null
   let t = line.normalize('NFKC')

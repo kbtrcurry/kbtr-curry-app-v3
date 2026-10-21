@@ -158,3 +158,14 @@ describe('先頭・最後の○（来店しました）', () => {
   })
 })
 
+describe('キャンセル', () => {
+  it('「キャンセル」と書かれた行だけがキャンセル。名前・備考には入れない', () => {
+    const a = P('山田② キャンセル')
+    expect(a).toMatchObject({ name: '山田', cancelled: true })
+    expect(a.note).toBe('')
+    expect(P('キャンセル さくら①')).toMatchObject({ cancelled: true, name: 'さくら' })
+    expect(P('山田②').cancelled).toBe(false)
+    expect(P('○山田②').cancelled).toBe(false)
+  })
+})
+

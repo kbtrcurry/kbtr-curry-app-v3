@@ -196,3 +196,20 @@ describe('行頭の点（◦）', () => {
   })
 })
 
+describe('姓と名の間に空白がある名前', () => {
+  it('全角・半角の空白で区切られた名前は、まとめて名前にする（備考に入れない）', () => {
+    const a = P('おおの　ようじ② 新規12:00')
+    expect(a.name).toBe('おおの ようじ')
+    expect(a.note).toBe('')
+    expect(a.parts[0].qty).toBe(2)
+    expect(P('✅○ 大野 洋二① TO').name).toBe('大野 洋二')
+    expect(P('おおの　ようじ').name).toBe('おおの ようじ')
+  })
+  it('名前のあとの備考・メニューの言葉は、名前に入れない', () => {
+    const a = P('山田 前回ニラミントきてくれた人')
+    expect(a.name).toBe('山田')
+    expect(P('山田 青唐すだち').name).toBe('山田')
+    expect(P('山田 青唐すだち').note).toBe('青唐すだち')
+  })
+})
+

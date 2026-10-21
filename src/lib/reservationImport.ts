@@ -124,7 +124,7 @@ function parseBody(raw: string): Omit<ParsedRow, 'mark' | 'menuHint' | 'cancelle
   t = t.replace(/頃|ごろ|来店予定|来店|予定|くらい/g, ' ')
 
   // 名前はここまで（最初の数字・「新規」・SNS名・食事の種類の語より前）
-  const markers = [/\d/, /新規/, /instagram|インスタ|(?<![A-Za-z])ig(?![A-Za-z])/i, /twitter|ツイッター/i, /(?<![A-Za-z])x\s*新規/i, /イートイン|店内|テイクアウト|持ち帰り|持帰り/, /(?<![A-Za-z])TO(?![A-Za-z])/, /大盛/, /\s/]
+  const markers = [/\d/, /新規/, /instagram|インスタ|(?<![A-Za-z])ig(?![A-Za-z])/i, /twitter|ツイッター/i, /(?<![A-Za-z])x\s*新規/i, /イートイン|店内|テイクアウト|持ち帰り|持帰り/, /(?<![A-Za-z])TO(?![A-Za-z])/, /大盛/, /前回|以前|いつも|リピ|メモ|備考|[※＊*（([【]/, /ビリヤニ|ビリヤーニ|ソーダ|サワー|青唐|すだち|黒胡椒|ニラ|ミント|マトン|キーマ|チキン|アチャール|うずら|ウズラ/]
   const nameSrc = line.normalize('NFKC').replace(/[◆◇]/g, ' ').replace(/うずら\s*(?:なし|無し|無)/g, ' ')
   for (const re of markers) {
     const i = nameSrc.search(re)
@@ -140,7 +140,8 @@ function parseBody(raw: string): Omit<ParsedRow, 'mark' | 'menuHint' | 'cancelle
     }
     return line.length
   })()
-  const name = line.slice(0, origEnd).replace(/[\s\u3000]+$/, '').trim()
+  // 姓と名の間の空白（全角・半角）は名前の一部。ひとつの半角空白にそろえる
+  const name = line.slice(0, origEnd).replace(/[\s\u3000]+/g, ' ').trim()
 
   // SNSと新規
   let platform: Platform = 'instagram'
@@ -151,8 +152,12 @@ function parseBody(raw: string): Omit<ParsedRow, 'mark' | 'menuHint' | 'cancelle
 
   // 名前の部分を除いて、残りを食数・種類として読む
   let rest = t
-  const nameNorm = name.normalize('NFKC')
-  if (nameNorm && rest.trim().startsWith(nameNorm)) rest = rest.trim().slice(nameNorm.length)
+  // 名前の部分を取り除く（名前の中の空白の数が違っても取れるよう、文字の間の空白を許す）
+  const nameChars = [...name.normalize('NFKC').replace(/\s+/g, '')]
+  if (nameChars.length > 0) {
+    const esc = (c: string) => c.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    rest = rest.replace(new RegExp('^\\s*' + nameChars.map(esc).join('\\s*')), '')
+  }
 
   const segs: { big: boolean; takeout: boolean; n: number | null }[] = []
   rest = rest.replace(DINE_RE, (_m, big, word, n) => {

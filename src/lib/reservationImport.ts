@@ -257,8 +257,18 @@ function parseBody(raw: string): Omit<ParsedRow, 'mark' | 'menuHint' | 'cancelle
   }
   if (parts.length === 0) parts.push({ qty: total ?? 1, big: false, takeout: false })
 
+  let noteBody = rest.replace(/[()（）[\]【】:：、,，.。・\s]+/g, ' ').trim()
+  // 名前の位置に「ミント」「すだち」「新規」のような言葉が来ていて、名前が空になったときは、残った文字の最初を名前にする
+  // （名前だけの行・「新規 山田①」のように目印が名前より前にある行）。備考の言葉（からの・回目…）で始まるなら名前にしない
+  if (!name && noteBody) {
+    const tk = noteBody.split(' ')
+    if (!NOTE_WORD.test(tk[0])) {
+      const take = tk.length >= 2 && !NOTE_WORD.test(tk[1]) ? 2 : 1
+      name = tk.slice(0, take).join(' ')
+      noteBody = tk.slice(take).join(' ')
+    }
+  }
   if (!name) warns.push('名前が見つかりません')
-  const noteBody = rest.replace(/[()（）[\]【】:：、,，.。・\s]+/g, ' ').trim()
   const note = [timeRange, noteBody].filter(Boolean).join(' ')
   return { line, name, platform, isNew, time, uzura, parts, note, warns, index }
 }

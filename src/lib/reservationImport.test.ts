@@ -348,3 +348,21 @@ describe('「2週連続」などの数字は食数ではない', () => {
   })
 })
 
+describe('名前が目印の言葉と同じ・目印が名前より前にあるとき', () => {
+  it('名前だけの行は、メニューの言葉に見える名前でも名前として読む', () => {
+    expect(P('- [x] ミント').name).toBe('ミント')
+    expect(P('- [x] チキン太郎')).toMatchObject({ name: 'チキン太郎', note: '' })
+    expect(P('- [x] すだち 花子')).toMatchObject({ name: 'すだち 花子' })
+  })
+  it('「新規」などが名前より前にあっても、名前を読む', () => {
+    expect(P('新規 山田①')).toMatchObject({ name: '山田', isNew: true })
+    expect(P('x新規 山田 太郎')).toMatchObject({ name: '山田 太郎', platform: 'x', isNew: true })
+  })
+  it('名前がなく、備考だけの行は、名前なしのまま（備考に入れて警告）', () => {
+    const r = P('- [x] すだちからの2回目')
+    expect(r.name).toBe('')
+    expect(r.note).toBe('すだちからの2回目')
+    expect(r.warns).toContain('名前が見つかりません')
+  })
+})
+

@@ -64,7 +64,8 @@ export const resQty = (r: Pick<Reservation, 'items'>): number => r.items.reduce(
 
 /** 大盛りは1.5食として数える（残り食数・受付の枠に使う） */
 export const BIG_PORTION = 1.5
-export const portionOf = (menuName: string): number => (/大盛/.test(menuName) ? BIG_PORTION : 1)
+/** 枠・残り食数への数え方: 大盛りは1.5、ビリヤニの通常サイズは1、それ以外（ソーダ・容器代など）は0 */
+export const portionOf = (menuName: string): number => (/大盛/.test(menuName) ? BIG_PORTION : /ビリヤ|biryani/i.test(menuName) ? 1 : 0)
 /** 取り置き1件の食数（大盛りを1.5食で数える） */
 export const resPortions = (r: Pick<Reservation, 'items'>): number => r.items.reduce((a, i) => a + i.qty * portionOf(i.name), 0)
 /** 1.5 のような食数を表示用に（整数なら小数なし） */
@@ -107,7 +108,7 @@ export function remainingPools(
 ): { left: Record<string, number>; poolLeft: Record<string, number> } {
   const used: Record<string, number> = {}
   const pool: Record<string, string> = {}
-  const weight = (m: MenuLite) => (pool[m.id] === m.id ? 1 : portionOf(m.name))
+  const weight = (m: MenuLite) => (pool[m.id] === m.id ? 1 : portionOf(m.name) || 1)
   for (const m of menus) pool[m.id] = poolOf(m, menus, stock)
   for (const m of menus) used[pool[m.id]] = (used[pool[m.id]] ?? 0) + weight(m) * ((sold[m.id] ?? 0) + (reserved[m.id] ?? 0) + (cart[m.id] ?? 0))
   const poolLeft: Record<string, number> = {}

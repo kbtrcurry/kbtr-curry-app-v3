@@ -27,6 +27,7 @@ import {
   reservedByMenu,
   resPortions,
   fmtPortions,
+  portionOf,
   saveCustomerNote,
   saveReservation,
   setReservationStatus,
@@ -273,6 +274,21 @@ export default function ReservationsPage() {
 
 // ---------- 取り置きの入力 ----------
 
+function Stepper({ label, value, onChange }: { label: string; value: number; onChange: (n: number) => void }) {
+  return (
+    <div className="flex items-center gap-1.5">
+      <span className="text-xs font-semibold text-stone-500 w-8">{label}</span>
+      <button onClick={() => onChange(Math.max(0, value - 1))} aria-label={`${label}を減らす`} className="w-10 h-10 rounded-full bg-stone-100 text-xl font-bold text-stone-600">
+        −
+      </button>
+      <span className="w-6 text-center text-lg font-bold text-stone-900">{value}</span>
+      <button onClick={() => onChange(value + 1)} aria-label={`${label}を増やす`} className="w-10 h-10 rounded-full bg-amber-700 text-xl font-bold text-[#faf9f5]">
+        ＋
+      </button>
+    </div>
+  )
+}
+
 function ReservationForm({
   date,
   editing,
@@ -291,11 +307,20 @@ function ReservationForm({
   const [platform, setPlatform] = useState<Platform>(editing?.platform ?? 'x')
   const [handle, setHandle] = useState(editing?.handle ?? '')
   const [name, setName] = useState(editing?.name ?? '')
-  const [qty, setQty] = useState<Record<string, number>>(() => Object.fromEntries((editing?.items ?? []).filter((i) => i.menu_id).map((i) => [i.menu_id as string, i.qty])))
+  // メニューごとの「店内（イートイン）」「テイクアウト」の数。1つのメニューで両方あってもよい
+  const [eat, setEat] = useState<Record<string, number>>(() => {
+    const o: Record<string, number> = {}
+    for (const i of editing?.items ?? []) if (i.menu_id && !i.takeout) o[i.menu_id] = (o[i.menu_id] ?? 0) + i.qty
+    return o
+  })
+  const [to, setTo] = useState<Record<string, number>>(() => {
+    const o: Record<string, number> = {}
+    for (const i of editing?.items ?? []) if (i.menu_id && i.takeout) o[i.menu_id] = (o[i.menu_id] ?? 0) + i.qty
+    return o
+  })
   const [svcDate, setSvcDate] = useState(editing?.service_date ?? date)
   const [note, setNote] = useState(editing?.note ?? '')
   const [time, setTime] = useState(editing?.visit_time ?? '')
-  const [takeout, setTakeout] = useState(editing ? editing.items.some((i) => i.takeout) : false)
   // 木曜24時までに受けたものには、うずらアチャールが付く
   const [uzura, setUzura] = useState(editing?.uzura ?? uzuraEligible(date, new Date()))
   const [paste, setPaste] = useState('')
@@ -306,8 +331,13 @@ function ReservationForm({
   const idn = identityOf({ platform, handle, name })
   const stat = idn ? statBy.get(customerKey(idn.platform, idn.handle)) : undefined
   const label = idn ? customerLabel(stat) : null
-  const items: ResItem[] = menus.filter((m) => (qty[m.id] ?? 0) > 0).map((m) => ({ menu_id: m.id, name: m.name, qty: qty[m.id], takeout }))
+  const items: ResItem[] = menus.flatMap((m) => [
+    ...((eat[m.id] ?? 0) > 0 ? [{ menu_id: m.id, name: m.name, qty: eat[m.id], takeout: false }] : []),
+    ...((to[m.id] ?? 0) > 0 ? [{ menu_id: m.id, name: m.name, qty: to[m.id], takeout: true }] : []),
+  ])
   const total = items.reduce((a, i) => a + i.qty, 0)
+  // 受付の枠に数える食数（ビリヤニ通常=1、大盛り=1.5、ソーダなどは0）
+  const slots = items.reduce((a, i) => a + i.qty * portionOf(i.name), 0)
 
   const readPaste = async () => {
     // クリップボードから読めるときは貼り付け欄が空でも使えるようにする
@@ -325,8 +355,11 @@ function ReservationForm({
     if (r.handle) setHandle(r.handle)
     if (r.name && !name) setName(r.name)
     if (r.time && !time) setTime(r.time)
-    if (r.takeout) setTakeout(true)
-    if (r.items.length) setQty((q) => ({ ...q, ...Object.fromEntries(r.items.map((i) => [i.menu_id as string, i.qty])) }))
+    if (r.items.length) {
+      // DMに「テイクアウト」とあれば、読み取った品をテイクアウトに。なければ店内
+      const set = r.takeout ? setTo : setEat
+      set((q) => ({ ...q, ...Object.fromEntries(r.items.map((i) => [i.menu_id as string, i.qty])) }))
+    }
     setPasteMsg(!r.name ? `名前が見つかりませんでした。下の「お名前」に入れてください。${r.items.length ? `メニュー${r.items.length}品は読み取りました。` : ''}` : r.items.length ? `${r.items.length}品を読み取りました。間違いがないか確認してください` : 'メニューが見つかりませんでした。下で選んでください')
   }
 
@@ -401,27 +434,21 @@ function ReservationForm({
 
       <div className="divide-y divide-stone-100 border border-stone-200 rounded-xl">
         {menus.map((m) => (
-          <div key={m.id} className="flex items-center gap-2 px-3 py-2">
-            <span className="flex-1 min-w-0 text-sm text-stone-800">{m.name}</span>
-            <button onClick={() => setQty((q) => ({ ...q, [m.id]: Math.max(0, (q[m.id] ?? 0) - 1) }))} className="w-10 h-10 rounded-full bg-stone-100 text-xl font-bold text-stone-600">
-              −
-            </button>
-            <span className="w-6 text-center text-lg font-bold text-stone-900">{qty[m.id] ?? 0}</span>
-            <button onClick={() => setQty((q) => ({ ...q, [m.id]: (q[m.id] ?? 0) + 1 }))} className="w-10 h-10 rounded-full bg-amber-700 text-xl font-bold text-[#faf9f5]">
-              ＋
-            </button>
+          <div key={m.id} className="px-3 py-2 space-y-1.5">
+            <p className="text-sm text-stone-800">
+              {m.name}
+              <span className="ml-1.5 text-xs text-stone-500">{portionOf(m.name) > 0 ? `（枠 ${fmtPortions(portionOf(m.name))}食）` : '（枠に数えない）'}</span>
+            </p>
+            <div className="flex items-center gap-3">
+              <Stepper label="店内" value={eat[m.id] ?? 0} onChange={(n) => setEat((q) => ({ ...q, [m.id]: n }))} />
+              <Stepper label="TO" value={to[m.id] ?? 0} onChange={(n) => setTo((q) => ({ ...q, [m.id]: n }))} />
+            </div>
           </div>
         ))}
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
         <input type="time" value={time} onChange={(e) => setTime(e.target.value)} className="border border-stone-300 rounded-lg px-2 py-2 text-sm" aria-label="来店予定時間（任意）" />
-        <button onClick={() => setTakeout(false)} className={`px-3 py-2 rounded-lg text-sm font-semibold border ${!takeout ? 'bg-amber-700 text-[#faf9f5] border-amber-700' : 'bg-white text-stone-600 border-stone-300'}`}>
-          イートイン
-        </button>
-        <button onClick={() => setTakeout(true)} className={`px-3 py-2 rounded-lg text-sm font-semibold border ${takeout ? 'bg-amber-700 text-[#faf9f5] border-amber-700' : 'bg-white text-stone-600 border-stone-300'}`}>
-          テイクアウト
-        </button>
         <button onClick={() => setUzura((v) => !v)} aria-pressed={uzura} className={`px-3 py-2 rounded-lg text-sm font-semibold border ${uzura ? 'bg-amber-700 text-[#faf9f5] border-amber-700' : 'bg-white text-stone-600 border-stone-300'}`}>
           うずら{uzura ? '付き' : 'なし'}
         </button>
@@ -435,7 +462,7 @@ function ReservationForm({
           やめる
         </button>
         <button onClick={() => void save()} disabled={busy} className="flex-[2] py-3 rounded-xl bg-amber-700 text-[#faf9f5] font-bold disabled:opacity-50">
-          {busy ? '保存中…' : `${total}食を保存`}
+          {busy ? '保存中…' : `${fmtPortions(slots)}食（枠）を保存`}
         </button>
       </div>
     </section>

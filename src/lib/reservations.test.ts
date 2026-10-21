@@ -28,7 +28,7 @@ const R = (over: Partial<Reservation>): Reservation => ({
   platform: 'x',
   handle: 'taro',
   name: '太郎',
-  items: [{ menu_id: 'm1', name: 'ピリヤニ', qty: 2 }],
+  items: [{ menu_id: 'm1', name: 'ビリヤニ', qty: 2 }],
   note: '',
   status: 'reserved',
   created_at: '',
@@ -68,7 +68,7 @@ describe('残り数と取り置き', () => {
     expect(remainingPools(ms, { m1: 1 }, { m1: 3 }, {}).left).toEqual({ m1: -2 })
   })
   it('受付状況: キャンセル・来なかった は数えない', () => {
-    const s = reserveSummary([R({}), R({ status: 'picked_up', items: [{ menu_id: 'm1', name: '', qty: 3 }] }), R({ status: 'no_show' })], 10)
+    const s = reserveSummary([R({}), R({ status: 'picked_up', items: [{ menu_id: 'm1', name: '黒胡椒チキンビリヤニ', qty: 3 }] }), R({ status: 'no_show' })], 10)
     expect(s).toEqual({ count: 2, qty: 5, cap: 10, left: 5 })
   })
 })
@@ -165,6 +165,35 @@ describe('DMの文面から名前を探す', () => {
   it('時間とテイクアウトも拾う', () => {
     const r = parseReservationText('山田です。12:30頃にテイクアウトで取りに行きます', [])
     expect(r).toMatchObject({ name: '山田', time: '12:30', takeout: true })
+  })
+})
+
+describe('取り置きの枠への数え方（ビリヤニ通常=1、大盛り=1.5、それ以外=0）', () => {
+  it('ソーダ・容器代は、枠にも食数にも数えない', () => {
+    const r = R({
+      items: [
+        { menu_id: 'n', name: '黒胡椒チキンビリヤニ', qty: 1 },
+        { menu_id: 'b', name: '黒胡椒チキンビリヤニ 大盛り', qty: 1 },
+        { menu_id: 's', name: 'スパイスソーダ', qty: 3 },
+        { menu_id: 'c', name: 'テイクアウト容器代', qty: 2 },
+      ],
+    })
+    expect(resPortions(r)).toBe(2.5)
+    expect(reserveSummary([r], 36)).toMatchObject({ qty: 2.5, left: 33.5 })
+  })
+  it('1つのメニューで、イートイン1・テイクアウト1と分けて持てる', () => {
+    const r = R({
+      items: [
+        { menu_id: 'n', name: '黒胡椒チキンビリヤニ', qty: 1, takeout: false },
+        { menu_id: 'n', name: '黒胡椒チキンビリヤニ', qty: 1, takeout: true },
+      ],
+    })
+    expect(resPortions(r)).toBe(2)
+    expect(reservedByMenu([R({ items: r.items })])).toEqual({ n: 2 })
+  })
+  it('用意数のあるソーダは、自分の用意数を1個ずつ使う（枠の重みは関係しない）', () => {
+    const menus = [{ id: 's', name: 'スパイスソーダ' }]
+    expect(remainingPools(menus, { s: 10 }, { s: 3 }, { s: 2 }, {}).left).toEqual({ s: 5 })
   })
 })
 

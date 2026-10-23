@@ -624,7 +624,7 @@ function Chip({ kind, children }: { kind: keyof typeof CHIP | string; children: 
   )
 }
 
-type ShortItem = { key: string; kind: string; label: string; takeout: boolean }
+type ShortItem = { key: string; kind: string; label: string; base: string; qty: number; takeout: boolean }
 function shortItems(items: ResItem[]): ShortItem[] {
   const short = (n: string): { kind: string; label: string } =>
     /大盛/.test(n) ? { kind: '大', label: '大' } : /ビリヤ|biryani/i.test(n) ? { kind: '並', label: '並' } : /ソーダ/.test(n) ? { kind: 'ソーダ', label: 'ソーダ' } : /容器/.test(n) ? { kind: '他', label: '容器' } : /サワー/.test(n) ? { kind: '他', label: 'サワー' } : { kind: '他', label: n.replace(/^スパイス/, '').slice(0, 3) }
@@ -636,7 +636,7 @@ function shortItems(items: ResItem[]): ShortItem[] {
     if (cur) cur.qty += i.qty
     else m.set(k, { ...sh, takeout: !!i.takeout, qty: i.qty })
   }
-  return [...m.entries()].map(([k, v]) => ({ key: k, kind: v.kind, label: `${v.label}${fmtPortions(v.qty)}`, takeout: v.takeout }))
+  return [...m.entries()].map(([k, v]) => ({ key: k, kind: v.kind, label: `${v.label}${fmtPortions(v.qty)}`, base: v.label, qty: v.qty, takeout: v.takeout }))
 }
 
 // 品目の1つ分。テイクアウトは、緑の「TO」と品目が、ひとつにつながった1枚のラベルにする
@@ -673,7 +673,13 @@ function ReservationRow({
 }) {
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
-  const items = shortItems(r.items)
+  const all = shortItems(r.items)
+  const sizeRank = (k: string) => (k === '並' ? 0 : 1)
+  const portions = all.filter((it) => it.kind === '並' || it.kind === '大').sort((a, b) => sizeRank(a.kind) - sizeRank(b.kind) || Number(a.takeout) - Number(b.takeout))
+  const extras = all.filter((it) => it.kind !== '並' && it.kind !== '大')
+  // ビリヤニ1食ごとに1行（0.5食などの端数は1行に数える）
+  const lines: (ShortItem | null)[] = portions.flatMap((it) => Array.from({ length: Math.max(1, Math.ceil(it.qty)) }, () => ({ ...it, label: it.base })))
+  if (lines.length === 0) lines.push(null)
   const done = r.status === 'picked_up'
   const off = r.status === 'cancelled' || r.status === 'no_show'
   // 来店前 → 来店済み。来店済み・キャンセル・来なかった → 来店前（押し間違いは、もう一度押せば戻る）
@@ -691,28 +697,28 @@ function ReservationRow({
         <button
           onClick={() => setOpen((v) => !v)}
           aria-expanded={open}
-          className={`flex-1 min-w-0 grid items-center gap-x-1.5 pl-2.5 pr-1 py-[3px] text-left ${off ? 'opacity-50' : ''}`}
-          style={{ minHeight: 35, gridTemplateColumns: '5.4em 3.6rem 3.6rem minmax(0,1fr)' }}
+          className={`flex-1 min-w-0 flex flex-col justify-center pl-2.5 pr-1 py-[3px] text-left ${off ? 'opacity-50' : ''}`}
+          style={{ minHeight: 35 }}
         >
-          <span className="font-bold text-[15px] text-stone-900 truncate">{r.name || '（名前なし）'}</span>
-          {/* 並・大は、どの行でも同じ位置にそろえる */}
-          {(['並', '大'] as const).map((k) => (
-            <span key={k} className="flex flex-col items-start gap-[2px]">
-              {items.filter((it) => it.kind === k).map((it) => (
-                <ItemChip key={it.key} it={it} />
-              ))}
+          {/* 1食＝1行。2食なら2行、3食なら3行。ソーダなど食に数えないものは、1行目に並べる */}
+          {lines.map((ln, idx) => (
+            <span key={idx} className="flex items-center gap-1.5 min-h-[26px]">
+              <span className="w-[5.4em] shrink-0 font-bold text-[15px] text-stone-900 truncate">{idx === 0 ? r.name || '（名前なし）' : ''}</span>
+              {ln && <ItemChip it={ln} />}
+              {idx === 0 && (
+                <span className="flex flex-wrap items-center gap-[3px] min-w-0">
+                  {extras.map((it) => (
+                    <ItemChip key={it.key} it={it} />
+                  ))}
+                  {r.uzura && <Chip kind="うずら">うずら</Chip>}
+                  {r.note && <Chip kind="備考あり">備考あり</Chip>}
+                  {r.is_new && <span className="text-[11px] font-bold text-sky-700">新</span>}
+                  {r.visit_time && <span className="text-[11px] text-stone-500">{r.visit_time}</span>}
+                  {off && <span className="text-[11px] font-bold text-stone-500">{STATUS_LABEL[r.status]}</span>}
+                </span>
+              )}
             </span>
           ))}
-          <span className="flex flex-wrap items-center gap-[3px] min-w-0">
-            {items.filter((it) => it.kind !== '並' && it.kind !== '大').map((it) => (
-              <ItemChip key={it.key} it={it} />
-            ))}
-            {r.uzura && <Chip kind="うずら">うずら</Chip>}
-            {r.note && <Chip kind="備考あり">備考あり</Chip>}
-            {r.is_new && <span className="text-[11px] font-bold text-sky-700">新</span>}
-            {r.visit_time && <span className="text-[11px] text-stone-500">{r.visit_time}</span>}
-            {off && <span className="text-[11px] font-bold text-stone-500">{STATUS_LABEL[r.status]}</span>}
-          </span>
         </button>
         <button
           onClick={() => void toggle()}

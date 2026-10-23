@@ -230,7 +230,7 @@ export default function ReservationsPage() {
 
           <div className="flex items-center gap-1.5 bg-sky-50 border border-sky-200 rounded-xl px-2.5 py-1.5">
             <span className="text-sm font-bold text-sky-800 shrink-0">当日分</span>
-            <span className="text-sm font-bold text-stone-900 w-14 shrink-0">{fmtPortions(walkinQty)}食</span>
+            <span className="text-sm font-bold text-sky-950 w-14 shrink-0" style={{ color: "#0c4a6e" }}>{fmtPortions(walkinQty)}食</span>
             <button onClick={() => void adjustWalkin(-0.5)} disabled={walkinQty <= 0} className="h-9 px-2.5 rounded-lg bg-white border border-stone-300 text-sm font-bold text-stone-600 disabled:opacity-30 active:scale-95">
               −0.5
             </button>
@@ -419,7 +419,9 @@ function ReservationForm({
   const label = idn ? customerLabel(stat) : null
   // 直す取り置きに、いまはオフのメニューが入っているときも、消えないよう一覧に足す（新しく選べるのは、オンのメニューだけ）
   const offMenus = [...new Map((editing?.items ?? []).filter((i) => i.menu_id && !menus.some((m) => m.id === i.menu_id)).map((i) => [i.menu_id as string, { id: i.menu_id as string, name: i.name, price: 0 }])).values()]
-  const menuRows = [...menus, ...offMenus]
+  // ビリヤニ（並→大盛り）を先頭に、そのほかは元の並びで
+  const tileRank = (n: string) => (/大盛/.test(n) ? 1 : portionOf(n) > 0 ? 0 : 2)
+  const menuRows = [...menus, ...offMenus].sort((x, y) => tileRank(x.name) - tileRank(y.name))
   const items: ResItem[] = menuRows.flatMap((m) => [
     ...((eat[m.id] ?? 0) > 0 ? [{ menu_id: m.id, name: m.name, qty: eat[m.id], takeout: false }] : []),
     ...((to[m.id] ?? 0) > 0 ? [{ menu_id: m.id, name: m.name, qty: to[m.id], takeout: true }] : []),

@@ -2,6 +2,9 @@ import { describe, it, expect } from 'vitest'
 import {
   parseReservationText,
   extractName,
+  isWalkin,
+  WALKIN_ITEM,
+  WALKIN_NAME,
   headcountOf,
   remainingPools,
   resPortions,
@@ -276,6 +279,18 @@ describe('ビリヤニ以外は、取り置きに入れても残り食数に0と
   })
   it('レジで実際に売れたソーダは、これまでどおり本数で減る', () => {
     expect(remainingPools(menus, { s: 20 }, { s: 4 }, { s: 5 }, {}).left.s).toBe(16)
+  })
+})
+
+describe('当日分の枠', () => {
+  const walk = { name: WALKIN_NAME, items: [{ menu_id: null, name: WALKIN_ITEM, qty: 2.5 }] }
+  it('0.5食刻みで枠に数える。お客さんの台帳には載せない', () => {
+    expect(isWalkin(walk)).toBe(true)
+    expect(isWalkin({ name: '山田', items: [{ menu_id: 'a', name: '黒胡椒チキンビリヤニ', qty: 1 }] })).toBe(false)
+    expect(resPortions(walk)).toBe(2.5)
+    const r = { id: 'w', created_at: '', service_date: '2026-10-24', platform: 'other', handle: '', note: '', status: 'reserved', visit_time: '', is_new: false, uzura: false, visit_no: null, ...walk } as Reservation
+    expect(customerStats([r], [])).toEqual([])
+    expect(reserveSummary([r], 36).left).toBe(33.5)
   })
 })
 

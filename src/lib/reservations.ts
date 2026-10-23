@@ -68,6 +68,10 @@ export const BIG_PORTION = 1.5
 export const portionOf = (menuName: string): number => (/大盛/.test(menuName) ? BIG_PORTION : /ビリヤ|biryani/i.test(menuName) ? 1 : 0)
 /** 取り置き1件の食数（大盛りを1.5食で数える） */
 export const resPortions = (r: Pick<Reservation, 'items'>): number => r.items.reduce((a, i) => a + i.qty * portionOf(i.name), 0)
+/** 当日分（その日に来るお客さんのために、あらかじめ取っておく枠）。お客さんではないので、台帳には載せない */
+export const WALKIN_NAME = '当日分'
+export const WALKIN_ITEM = 'ビリヤニ（当日・盛り未定）'
+export const isWalkin = (r: Pick<Reservation, 'name' | 'items'>): boolean => r.name === WALKIN_NAME && r.items.length > 0 && r.items.every((i) => i.menu_id === null)
 /** 1.5 のような食数を表示用に（整数なら小数なし） */
 export const fmtPortions = (n: number): string => (Number.isInteger(n) ? String(n) : (Math.round(n * 10) / 10).toFixed(1))
 
@@ -156,6 +160,7 @@ export function customerStats(all: Reservation[], notes: CustomerNote[]): Custom
   const noteBy = new Map(notes.map((n) => [customerKey(n.platform, n.handle), n]))
   const m = new Map<string, CustomerStat>()
   for (const r of [...all].sort((a, b) => a.service_date.localeCompare(b.service_date))) {
+    if (isWalkin(r)) continue
     const idn = identityOf(r)
     if (!idn) continue
     const key = customerKey(idn.platform, idn.handle)

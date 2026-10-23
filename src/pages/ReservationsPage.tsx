@@ -11,6 +11,9 @@ import {
   DEFAULT_REPLY,
   PLATFORM_LABEL,
   STATUS_LABEL,
+  WALKIN_ITEM,
+  WALKIN_NAME,
+  isWalkin,
   customerKey,
   identityOf,
   mergeCustomer,
@@ -55,12 +58,22 @@ const weekday = (d: string) => WEEK[new Date(+d.slice(0, 4), +d.slice(5, 7) - 1,
 type Tab = 'list' | 'customers' | 'import'
 
 // 取り置き: DMで受けたものを控えて、お客さんの履歴（新規か・来なかったことがあるか）を見られるようにする。
+type SortKey = 'time' | 'size' | 'to' | 'uzura'
+const SORTS: [SortKey, string][] = [
+  ['time', '時間'],
+  ['size', '並・大'],
+  ['to', 'TO'],
+  ['uzura', 'うずら'],
+]
+
 export default function ReservationsPage() {
   const { session, loading, loginWithGoogle } = useAuth()
   const today = todayStr()
   const [date, setDate] = useStoredState('kbtr_v3_res_date', nextSaturday(today))
   const effectiveDate = date
   const [tab, setTab] = useState<Tab>('list')
+  const [sortKey, setSortKey] = useStoredState<SortKey>('kbtr_v3_res_sort', 'time')
+  const [sortRev, setSortRev] = useStoredState<boolean>('kbtr_v3_res_sort_rev', false)
   const [cap, setCap] = useStoredState('kbtr_v3_reserve_cap', 36)
   const [template, setTemplate] = useStoredState('kbtr_v3_reply_template', DEFAULT_REPLY)
   const [editing, setEditing] = useState<Reservation | null>(null)
@@ -88,16 +101,47 @@ export default function ReservationsPage() {
   const stats = useMemo(() => customerStats(allRes.data ?? [], notes.data ?? []), [allRes.data, notes.data])
   const statBy = useMemo(() => new Map(stats.map((s) => [s.key, s])), [stats])
   const summary = reserveSummary(list, cap)
+  // 当日分（その日に来るお客さん用に取っておく枠）。名前のある取り置きとは別に数える
+  const walkin = list.find(isWalkin)
+  const walkinQty = walkin ? walkin.items.reduce((a, i) => a + i.qty, 0) : 0
+  const peopleCount = summary.count - (walkin && walkin.status === 'reserved' ? 1 : 0)
+  const adjustWalkin = async (delta: number) => {
+    const next = Math.max(0, Math.round((walkinQty + delta) * 2) / 2)
+    if (next === walkinQty) return
+    if (next === 0 && walkin) await deleteReservation(walkin.id)
+    else
+      await saveReservation({
+        id: walkin?.id,
+        service_date: effectiveDate,
+        platform: 'other',
+        handle: '',
+        name: WALKIN_NAME,
+        items: [{ menu_id: null, name: WALKIN_ITEM, qty: next }],
+        note: '',
+        status: 'reserved',
+        visit_time: '',
+        uzura: false,
+        is_new: false,
+      })
+    invalidate()
+  }
   // 登録のある営業日（新しい順）。過去の日を開いて、直したり消したりするため
   const pastDates = [...new Set((allRes.data ?? []).map((r) => r.service_date))].sort().reverse().slice(0, 40)
   const reserved = reservedByMenu(list)
   // 並び順: これから来る人（来店時間の早い順。時間なしは最後）→ 来店済み → キャンセルなど
-  const sortedList = [...list].sort((a, b) => {
-    const rank = (r: Reservation) => (r.status === 'reserved' ? 0 : r.status === 'picked_up' ? 1 : 2)
-    if (rank(a) !== rank(b)) return rank(a) - rank(b)
-    if (a.status === 'reserved') return (a.visit_time || '99:99').localeCompare(b.visit_time || '99:99') || a.created_at.localeCompare(b.created_at)
-    return a.created_at.localeCompare(b.created_at)
-  })
+  // 並び替え: 盛り（並→大）／TO（ありが上）／うずら（ありが上）。同じ印どうしは来店時間の早い順。もう一度押すと逆順
+  const sortVal = (r: Reservation): number =>
+    sortKey === 'size' ? (r.items.some((i) => /大盛/.test(i.name)) ? 1 : 0) : sortKey === 'to' ? (r.items.some((i) => i.takeout) ? 0 : 1) : sortKey === 'uzura' ? (r.uzura ? 0 : 1) : 0
+  const sortedList = list
+    .filter((r) => !isWalkin(r))
+    .sort((a, b) => {
+      const rank = (r: Reservation) => (r.status === 'reserved' ? 0 : r.status === 'picked_up' ? 1 : 2)
+      if (rank(a) !== rank(b)) return rank(a) - rank(b)
+      const dv = (sortVal(a) - sortVal(b)) * (sortRev ? -1 : 1)
+      if (dv !== 0) return dv
+      if (a.status === 'reserved') return (a.visit_time || '99:99').localeCompare(b.visit_time || '99:99') || a.created_at.localeCompare(b.created_at)
+      return a.created_at.localeCompare(b.created_at)
+    })
 
   if (loading) return <Spinner />
   if (!session) {
@@ -161,7 +205,7 @@ export default function ReservationsPage() {
               {md(effectiveDate)}（{weekday(effectiveDate)}）
             </span>
             <span className="text-stone-700">
-              <b>{summary.count}</b>件 <b>{fmtPortions(summary.qty)}</b>食
+              <b>{peopleCount}</b>件 <b>{fmtPortions(summary.qty)}</b>食{walkinQty > 0 && <span className="text-xs text-stone-500">（当日分{fmtPortions(walkinQty)}食を含む）</span>}
             </span>
             <span className={summary.left <= 0 ? 'text-red-600 font-bold' : 'text-green-700 font-bold'}>
               残り{fmtPortions(Math.max(0, summary.left))}食{summary.left < 0 && `（${fmtPortions(-summary.left)}食オーバー）`}
@@ -182,6 +226,40 @@ export default function ReservationsPage() {
                 <Plus className="w-4 h-4" /> 追加
               </button>
             )}
+          </div>
+
+          <div className="flex items-center gap-1.5 bg-sky-50 border border-sky-200 rounded-xl px-2.5 py-1.5">
+            <span className="text-sm font-bold text-sky-800 shrink-0">当日分</span>
+            <span className="text-sm font-bold text-stone-900 w-14 shrink-0">{fmtPortions(walkinQty)}食</span>
+            <button onClick={() => void adjustWalkin(-0.5)} disabled={walkinQty <= 0} className="h-9 px-2.5 rounded-lg bg-white border border-stone-300 text-sm font-bold text-stone-600 disabled:opacity-30 active:scale-95">
+              −0.5
+            </button>
+            <button onClick={() => void adjustWalkin(0.5)} className="h-9 flex-1 rounded-lg bg-sky-600 text-white text-sm font-bold active:scale-95">
+              ＋0.5食
+            </button>
+            <button onClick={() => void adjustWalkin(1)} className="h-9 flex-1 rounded-lg bg-sky-700 text-white text-sm font-bold active:scale-95">
+              ＋1食
+            </button>
+          </div>
+
+          <div className="flex items-center gap-1.5 text-xs">
+            <span className="text-stone-500 shrink-0">並び替え</span>
+            {SORTS.map(([k, label]) => (
+              <button
+                key={k}
+                onClick={() => {
+                  if (k === sortKey && k !== 'time') setSortRev(!sortRev)
+                  else {
+                    setSortKey(k)
+                    setSortRev(false)
+                  }
+                }}
+                className={`px-3 py-1.5 rounded-full font-semibold ${sortKey === k ? 'bg-amber-700 text-[#faf9f5]' : 'bg-stone-100 text-stone-600'}`}
+              >
+                {label}
+                {sortKey === k && k !== 'time' && (sortRev ? ' ↑' : ' ↓')}
+              </button>
+            ))}
           </div>
 
           {(adding || editing) && (
@@ -296,21 +374,6 @@ export default function ReservationsPage() {
 
 // ---------- 取り置きの入力 ----------
 
-function Stepper({ label, value, onChange }: { label: string; value: number; onChange: (n: number) => void }) {
-  return (
-    <div className="flex items-center gap-1.5">
-      <span className="text-xs font-semibold text-stone-500 w-8">{label}</span>
-      <button onClick={() => onChange(Math.max(0, value - 1))} aria-label={`${label}を減らす`} className="w-10 h-10 rounded-full bg-stone-100 text-xl font-bold text-stone-600">
-        −
-      </button>
-      <span className="w-6 text-center text-lg font-bold text-stone-900">{value}</span>
-      <button onClick={() => onChange(value + 1)} aria-label={`${label}を増やす`} className="w-10 h-10 rounded-full bg-amber-700 text-xl font-bold text-[#faf9f5]">
-        ＋
-      </button>
-    </div>
-  )
-}
-
 function ReservationForm({
   date,
   editing,
@@ -340,6 +403,7 @@ function ReservationForm({
     for (const i of editing?.items ?? []) if (i.menu_id && i.takeout) o[i.menu_id] = (o[i.menu_id] ?? 0) + i.qty
     return o
   })
+  const [mode, setMode] = useState<'eat' | 'to'>('eat')
   const [svcDate, setSvcDate] = useState(editing?.service_date ?? date)
   const [note, setNote] = useState(editing?.note ?? '')
   const [time, setTime] = useState(editing?.visit_time ?? '')
@@ -457,19 +521,53 @@ function ReservationForm({
         </p>
       )}
 
-      <div className="divide-y divide-stone-100 border border-stone-200 rounded-xl">
-        {menuRows.map((m) => (
-          <div key={m.id} className="px-3 py-2 space-y-1.5">
-            <p className="text-sm text-stone-800">
-              {m.name}
-              <span className="ml-1.5 text-xs text-stone-500">{portionOf(m.name) > 0 ? `（枠 ${fmtPortions(portionOf(m.name))}食）` : '（枠に数えない）'}</span>
-            </p>
-            <div className="flex items-center gap-3">
-              <Stepper label="店内" value={eat[m.id] ?? 0} onChange={(n) => setEat((q) => ({ ...q, [m.id]: n }))} />
-              <Stepper label="TO" value={to[m.id] ?? 0} onChange={(n) => setTo((q) => ({ ...q, [m.id]: n }))} />
-            </div>
-          </div>
+      {/* レジと同じ。先に「店内」か「TO」を選び、メニューのタイルを押すと1つ増える */}
+      <div className="flex rounded-xl border-2 border-stone-300 overflow-hidden">
+        {(
+          [
+            ['eat', '店内'],
+            ['to', 'テイクアウト（TO）'],
+          ] as const
+        ).map(([k, label]) => (
+          <button
+            key={k}
+            onClick={() => setMode(k)}
+            aria-pressed={mode === k}
+            className={`flex-1 py-3 text-base font-bold ${mode === k ? (k === 'to' ? 'bg-green-600 text-white' : 'bg-amber-700 text-[#faf9f5]') : 'bg-white text-stone-500'}`}
+          >
+            {label}
+          </button>
         ))}
+      </div>
+      <div className="grid grid-cols-2 gap-2">
+        {menuRows.map((m) => {
+          const e = eat[m.id] ?? 0
+          const t = to[m.id] ?? 0
+          const cur = mode === 'eat' ? e : t
+          const set = mode === 'eat' ? setEat : setTo
+          const on = e + t > 0
+          return (
+            <div key={m.id} className={`relative rounded-2xl border-2 ${on ? 'border-amber-600 bg-amber-50' : 'border-stone-200 bg-white'}`}>
+              <button onClick={() => set((q) => ({ ...q, [m.id]: (q[m.id] ?? 0) + 1 }))} className="w-full min-h-[92px] p-3 pr-12 text-left rounded-2xl flex flex-col justify-between gap-1.5 active:scale-[0.97] transition-transform">
+                <span className="text-[15px] font-bold leading-tight text-stone-900 break-words">{m.name}</span>
+                <span className="flex flex-wrap items-center gap-1">
+                  <span className="text-[11px] text-stone-500">{portionOf(m.name) > 0 ? `枠${fmtPortions(portionOf(m.name))}食` : '枠なし'}</span>
+                  {e > 0 && <span className="px-2 py-[1px] rounded-full bg-amber-700 text-[#faf9f5] text-xs font-bold">店内 {e}</span>}
+                  {t > 0 && <span className="px-2 py-[1px] rounded-full bg-green-600 text-white text-xs font-bold">TO {t}</span>}
+                </span>
+              </button>
+              {cur > 0 && (
+                <button
+                  onClick={() => set((q) => ({ ...q, [m.id]: Math.max(0, (q[m.id] ?? 0) - 1) }))}
+                  aria-label={`${m.name}を1つ減らす`}
+                  className="absolute top-1.5 right-1.5 w-10 h-10 rounded-full bg-white border border-stone-300 text-xl font-bold text-stone-600 active:scale-90"
+                >
+                  −
+                </button>
+              )}
+            </div>
+          )
+        })}
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
@@ -517,7 +615,8 @@ function Chip({ kind, children }: { kind: keyof typeof CHIP | string; children: 
   )
 }
 
-function shortItems(items: ResItem[]): { key: string; kind: string; label: string; takeout: boolean }[] {
+type ShortItem = { key: string; kind: string; label: string; takeout: boolean }
+function shortItems(items: ResItem[]): ShortItem[] {
   const short = (n: string): { kind: string; label: string } =>
     /大盛/.test(n) ? { kind: '大', label: '大' } : /ビリヤ|biryani/i.test(n) ? { kind: '並', label: '並' } : /ソーダ/.test(n) ? { kind: 'ソーダ', label: 'ソーダ' } : /容器/.test(n) ? { kind: '他', label: '容器' } : /サワー/.test(n) ? { kind: '他', label: 'サワー' } : { kind: '他', label: n.replace(/^スパイス/, '').slice(0, 3) }
   const m = new Map<string, { kind: string; label: string; takeout: boolean; qty: number }>()
@@ -528,7 +627,23 @@ function shortItems(items: ResItem[]): { key: string; kind: string; label: strin
     if (cur) cur.qty += i.qty
     else m.set(k, { ...sh, takeout: !!i.takeout, qty: i.qty })
   }
-  return [...m.entries()].map(([k, v]) => ({ key: k, kind: v.kind, label: `${v.label}${v.qty}`, takeout: v.takeout }))
+  return [...m.entries()].map(([k, v]) => ({ key: k, kind: v.kind, label: `${v.label}${fmtPortions(v.qty)}`, takeout: v.takeout }))
+}
+
+// 品目の1つ分。テイクアウトは、緑の「TO」と品目が、ひとつにつながった1枚のラベルにする
+function ItemChip({ it }: { it: ShortItem }) {
+  if (!it.takeout) return <Chip kind={it.kind}>{it.label}</Chip>
+  const c = CHIP[it.kind] ?? CHIP['他']
+  return (
+    <span className="inline-flex items-stretch rounded overflow-hidden text-[12px] font-bold leading-[18px] whitespace-nowrap">
+      <span className="px-1" style={{ background: CHIP.TO.bg, color: CHIP.TO.fg }}>
+        TO
+      </span>
+      <span className="px-1.5" style={{ background: c.bg, color: c.fg }}>
+        {it.label}
+      </span>
+    </span>
+  )
 }
 
 // 取り置き1件を1行で。右のボタンは、いまの状態（来店前／来店済み）を表す切り替え。行（名前のあたり）をタップすると、詳しい内容・編集・削除が開く
@@ -549,6 +664,7 @@ function ReservationRow({
 }) {
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
+  const items = shortItems(r.items)
   const done = r.status === 'picked_up'
   const off = r.status === 'cancelled' || r.status === 'no_show'
   // 来店前 → 来店済み。来店済み・キャンセル・来なかった → 来店前（押し間違いは、もう一度押せば戻る）
@@ -563,17 +679,25 @@ function ReservationRow({
   return (
     <div className={done ? 'bg-green-100/40' : ''}>
       <div className="flex items-stretch">
-        <button onClick={() => setOpen((v) => !v)} aria-expanded={open} className={`flex-1 min-w-0 flex flex-wrap items-center gap-x-1.5 gap-y-[2px] pl-2.5 pr-1 py-[3px] text-left ${off ? 'opacity-50' : ''}`} style={{ minHeight: 35 }}>
-          <span className="font-bold text-[15px] text-stone-900 truncate max-w-[6.5em] shrink-0">{r.name || '（名前なし）'}</span>
-          <span className="flex items-center gap-[3px] shrink-0">
-            {shortItems(r.items).map((it) => (
-              <span key={it.key} className="inline-flex items-center gap-[2px]">
-                {it.takeout && <Chip kind="TO">TO</Chip>}
-                <Chip kind={it.kind}>{it.label}</Chip>
-              </span>
+        <button
+          onClick={() => setOpen((v) => !v)}
+          aria-expanded={open}
+          className={`flex-1 min-w-0 grid items-center gap-x-1.5 pl-2.5 pr-1 py-[3px] text-left ${off ? 'opacity-50' : ''}`}
+          style={{ minHeight: 35, gridTemplateColumns: '5.4em 3.6rem 3.6rem minmax(0,1fr)' }}
+        >
+          <span className="font-bold text-[15px] text-stone-900 truncate">{r.name || '（名前なし）'}</span>
+          {/* 並・大は、どの行でも同じ位置にそろえる */}
+          {(['並', '大'] as const).map((k) => (
+            <span key={k} className="flex flex-col items-start gap-[2px]">
+              {items.filter((it) => it.kind === k).map((it) => (
+                <ItemChip key={it.key} it={it} />
+              ))}
+            </span>
+          ))}
+          <span className="flex flex-wrap items-center gap-[3px] min-w-0">
+            {items.filter((it) => it.kind !== '並' && it.kind !== '大').map((it) => (
+              <ItemChip key={it.key} it={it} />
             ))}
-          </span>
-          <span className="flex items-center gap-[3px] min-w-0">
             {r.uzura && <Chip kind="うずら">うずら</Chip>}
             {r.note && <Chip kind="備考あり">備考あり</Chip>}
             {r.is_new && <span className="text-[11px] font-bold text-sky-700">新</span>}

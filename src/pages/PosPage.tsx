@@ -25,6 +25,7 @@ import {
   portionOf,
   remainingPools,
   reservedByMenu,
+  isWalkin,
   resPortions,
   setReservationStatus,
   useInvalidateReservations,
@@ -123,7 +124,7 @@ export default function PosPage() {
 
   // 売り切れ管理: 用意数 − 売れた数 − 取り置き中 − いまカートに入れた数。用意数を決めていないメニューは制限なし
   const stock = stockQ.data ?? {}
-  const todayRes = (resQ.data ?? []).filter((r) => r.status === 'reserved')
+  const todayRes = (resQ.data ?? []).filter((r) => r.status === 'reserved' && !isWalkin(r))
   const sold: Record<string, number> = {}
   for (const r of activeReceipts) for (const l of r.lines) if (l.menuId) sold[l.menuId] = (sold[l.menuId] ?? 0) + l.qty
   // 大盛りは1.5食として、通常サイズの用意数から引く

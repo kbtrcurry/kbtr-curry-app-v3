@@ -574,6 +574,13 @@ function ReservationForm({
 
       <div className="flex flex-wrap items-center gap-2">
         <input type="time" value={time} onChange={(e) => setTime(e.target.value)} className="border border-stone-300 rounded-lg px-2 py-2 text-sm" aria-label="来店予定時間（任意）" />
+        <button
+          onClick={() => setTime('')}
+          aria-pressed={time === ''}
+          className={`px-3 py-2 rounded-lg text-sm font-semibold border ${time === '' ? 'bg-stone-200 text-stone-700 border-stone-300' : 'bg-white text-amber-700 border-amber-600'}`}
+        >
+          {time === '' ? '時間 指定なし' : '指定なしに戻す'}
+        </button>
         <button onClick={() => setUzura((v) => !v)} aria-pressed={uzura} className={`px-3 py-2 rounded-lg text-sm font-semibold border ${uzura ? 'bg-amber-700 text-[#faf9f5] border-amber-700' : 'bg-white text-stone-600 border-stone-300'}`}>
           うずら{uzura ? '付き' : 'なし'}
         </button>

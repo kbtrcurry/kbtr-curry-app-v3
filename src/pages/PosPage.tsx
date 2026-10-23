@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 import { ShoppingCart, Trash2, Check } from 'lucide-react'
 import { useAuth } from '../lib/auth'
@@ -71,6 +71,10 @@ export default function PosPage() {
   const pendingCount = usePendingCount()
   const queryClient = useQueryClient()
   const [reordering, setReordering] = useState(false)
+  // 並び替え中の並び（メニューID）と、いま指でつかんでいるボタン
+  const [order, setOrder] = useState<string[] | null>(null)
+  const [drag, setDrag] = useState<{ id: string; x: number; y: number; w: number; h: number; dx: number; dy: number } | null>(null)
+  const commitRef = useRef<() => void>(() => {})
   const [resOpen, setResOpen] = useState(false)
   const stockQ = useMenuStock(todayStr())
   const resQ = useReservations(todayStr())
@@ -152,26 +156,53 @@ export default function PosPage() {
     setQty((prev) => ({ ...prev, [menuId]: Math.max(0, (prev[menuId] ?? 0) + delta) }))
   }
 
-  // メニューカードの並び替え（menus.sort_orderをDBで入れ替える）
-  const moveMenu = async (id: string, dir: -1 | 1) => {
-    const i = menus.findIndex((m) => m.id === id)
-    const j = i + dir
-    if (i < 0 || j < 0 || j >= menus.length) return
-    const a = menus[i]
-    const b = menus[j]
-    const swapped = [...menus]
-    swapped[i] = { ...b, sort_order: a.sort_order }
-    swapped[j] = { ...a, sort_order: b.sort_order }
-    queryClient.setQueryData<Menu[]>(['menus', 'active'], swapped)
-    try {
-      await Promise.all([
-        updateMenu(a.id, { sort_order: b.sort_order }),
-        updateMenu(b.id, { sort_order: a.sort_order }),
-      ])
-    } finally {
-      void queryClient.invalidateQueries({ queryKey: ['menus'] })
+  // メニューボタンの並び替え。ホーム画面のアプリのように、ボタンをドラッグして入れ替える。
+  // 離したら、全部の順番を 0,1,2… と振り直して保存する（順番の数字が重なっていても、確実に入れ替わる）
+  const shownMenus = reordering && order ? (order.map((id) => menus.find((m) => m.id === id)).filter(Boolean) as Menu[]) : menus
+  useEffect(() => {
+    commitRef.current = () => {
+      if (!order) return
+      const next = order.map((id, idx) => ({ ...(menus.find((m) => m.id === id) as Menu), sort_order: idx }))
+      const changed = next.filter((m) => menus.find((x) => x.id === m.id)?.sort_order !== m.sort_order)
+      if (changed.length === 0) return
+      queryClient.setQueryData<Menu[]>(['menus', 'active'], next)
+      void Promise.all(changed.map((m) => updateMenu(m.id, { sort_order: m.sort_order }))).finally(() => {
+        void queryClient.invalidateQueries({ queryKey: ['menus'] })
+      })
     }
-  }
+  })
+  const dragId = drag?.id
+  useEffect(() => {
+    if (!dragId) return
+    const move = (e: PointerEvent) => {
+      setDrag((d) => (d ? { ...d, x: e.clientX, y: e.clientY } : d))
+      const over = (document.elementFromPoint(e.clientX, e.clientY) as HTMLElement | null)?.closest<HTMLElement>('[data-menu-id]')?.dataset.menuId
+      if (!over || over === dragId) return
+      setOrder((o) => {
+        if (!o) return o
+        const from = o.indexOf(dragId)
+        const to = o.indexOf(over)
+        if (from < 0 || to < 0) return o
+        const n = [...o]
+        n.splice(from, 1)
+        n.splice(to, 0, dragId)
+        return n
+      })
+    }
+    const up = () => {
+      setDrag(null)
+      // 並びの state が更新されたあとに保存する
+      setTimeout(() => commitRef.current(), 0)
+    }
+    window.addEventListener('pointermove', move)
+    window.addEventListener('pointerup', up)
+    window.addEventListener('pointercancel', up)
+    return () => {
+      window.removeEventListener('pointermove', move)
+      window.removeEventListener('pointerup', up)
+      window.removeEventListener('pointercancel', up)
+    }
+  }, [dragId])
 
   const cart: CartItem[] = [
     ...menus
@@ -443,7 +474,11 @@ export default function PosPage() {
             </span>
           )}
           <button
-            onClick={() => setReordering((v) => !v)}
+            onClick={() => {
+              if (!reordering) setOrder(menus.map((m) => m.id))
+              else setOrder(null)
+              setReordering((v) => !v)
+            }}
             className={`text-sm border rounded-lg px-2 py-1 active:opacity-80 ${
               reordering
                 ? 'bg-amber-700 text-[#faf9f5] border-amber-700 font-semibold'
@@ -555,37 +590,39 @@ export default function PosPage() {
       )}
 
       {reordering && (
-        <p className="text-xs text-stone-500 mb-2">◀ ▶ でボタンの並び順を入れ替えできます。終わったら「完了」。</p>
+        <p className="text-xs text-stone-500 mb-2">ボタンを指でつかんで、入れ替えたい場所へドラッグしてください。終わったら「完了」。</p>
       )}
 
+      {drag && (() => {
+        const gm = menus.find((m) => m.id === drag.id)
+        return gm ? (
+          <div
+            className="fixed z-[80] pointer-events-none rounded-2xl border-2 border-amber-500 bg-amber-100 p-3 shadow-2xl"
+            style={{ left: drag.x - drag.dx, top: drag.y - drag.dy, width: drag.w, height: drag.h, transform: 'scale(1.06)' }}
+          >
+            <p className="font-bold text-stone-900 leading-snug">{gm.name}</p>
+            <p className="text-amber-800 font-bold mt-1">¥{gm.price.toLocaleString()}</p>
+          </div>
+        ) : null
+      })()}
+
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-        {menus.map((m, i) => {
+        {shownMenus.map((m) => {
           if (reordering) {
             return (
               <div
                 key={m.id}
-                className="rounded-2xl border-2 border-amber-300 bg-amber-50/40 flex flex-col overflow-hidden"
+                data-menu-id={m.id}
+                onPointerDown={(e) => {
+                  const r = e.currentTarget.getBoundingClientRect()
+                  setDrag({ id: m.id, x: e.clientX, y: e.clientY, w: r.width, h: r.height, dx: e.clientX - r.left, dy: e.clientY - r.top })
+                }}
+                style={{ touchAction: 'none', WebkitUserSelect: 'none', userSelect: 'none' }}
+                className={`rounded-2xl border-2 border-amber-300 bg-amber-50/40 p-3 min-h-24 cursor-grab select-none transition-opacity ${drag?.id === m.id ? 'opacity-25' : ''}`}
               >
-                <div className="p-3 flex-1">
-                  <p className="font-bold text-stone-900 leading-snug">{m.name}</p>
-                  <p className="text-amber-800 font-bold mt-1">¥{m.price.toLocaleString()}</p>
-                </div>
-                <div className="flex border-t-2 border-amber-200">
-                  <button
-                    onClick={() => void moveMenu(m.id, -1)}
-                    disabled={i === 0}
-                    className="flex-1 py-3 text-xl font-bold text-stone-600 active:bg-stone-100 disabled:opacity-20"
-                  >
-                    ◀
-                  </button>
-                  <button
-                    onClick={() => void moveMenu(m.id, 1)}
-                    disabled={i === menus.length - 1}
-                    className="flex-1 py-3 text-xl font-bold text-stone-600 active:bg-stone-100 border-l border-amber-200 disabled:opacity-20"
-                  >
-                    ▶
-                  </button>
-                </div>
+                <p className="font-bold text-stone-900 leading-snug">{m.name}</p>
+                <p className="text-amber-800 font-bold mt-1">¥{m.price.toLocaleString()}</p>
+                <p className="text-stone-400 text-xs mt-1">⠿ つかんでドラッグ</p>
               </div>
             )
           }

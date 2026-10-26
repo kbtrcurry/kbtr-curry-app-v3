@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { useAuth } from '../lib/auth'
 import { Spinner } from '../components/Spinner'
 import { ConfirmModal } from '../components/ConfirmModal'
+import { Modal } from '../components/Modal'
 import { UtensilsCrossed } from 'lucide-react'
 import {
   useAllMenus,
@@ -37,6 +38,7 @@ export default function MenuSettingsPage() {
   const [pickerMenuId, setPickerMenuId] = useState<string | null>(null)
   const [pickerSearch, setPickerSearch] = useState('')
   const [confirmTarget, setConfirmTarget] = useState<Menu | null>(null)
+  const [openId, setOpenId] = useState<string | null>(null)
 
   const componentsByMenu = (menuId: string): MenuComponentRow[] => components.filter((c) => c.menu_id === menuId)
 
@@ -147,25 +149,7 @@ export default function MenuSettingsPage() {
 
   const activeCount = menus.filter((m) => m.active).length
 
-  return (
-    <div className="p-4 pb-24 max-w-2xl mx-auto">
-      <div className="flex items-center justify-between mb-1">
-        <h1 className="text-xl font-bold text-amber-800 flex items-center gap-2">
-          <UtensilsCrossed className="w-5 h-5" /> メニュー設定
-        </h1>
-      </div>
-      <p className="text-xs text-stone-500 mb-3">
-        <span className="font-semibold">有効(ON)</span>がレジに表示／原価は税込（{activeCount}件 有効）
-      </p>
-
-      {error && (
-        <div className="mb-4 bg-red-50 border border-red-200 text-red-700 rounded-lg px-4 py-3 text-sm">{error}</div>
-      )}
-
-      {menusLoading && <Spinner />}
-
-      <div className="space-y-3">
-        {menus.map((m) => {
+  const renderCard = (m: Menu) => {
           const comps = componentsByMenu(m.id)
           const cost = menuTotalCost(m.id)
           const rate = m.price > 0 ? (cost / m.price) * 100 : null
@@ -287,8 +271,60 @@ export default function MenuSettingsPage() {
               </div>
             </div>
           )
-        })}
+  }
 
+  return (
+    <div className="p-4 pb-24 max-w-2xl mx-auto">
+      <div className="flex items-center justify-between mb-1">
+        <h1 className="text-xl font-bold text-amber-800 flex items-center gap-2">
+          <UtensilsCrossed className="w-5 h-5" /> メニュー設定
+        </h1>
+      </div>
+      <p className="text-xs text-stone-500 mb-3">
+        <span className="font-semibold">有効(ON)</span>がレジに表示／原価は税込（{activeCount}件 有効）
+      </p>
+
+      {error && (
+        <div className="mb-4 bg-red-50 border border-red-200 text-red-700 rounded-lg px-4 py-3 text-sm">{error}</div>
+      )}
+
+      {menusLoading && <Spinner />}
+
+      <div className="grid grid-cols-2 gap-2.5">
+        {/* ONのメニューを上に。同じ状態の中では、レジと同じ並び順 */}
+        {[...menus].sort((a, b) => Number(b.active) - Number(a.active)).map((m) => {
+          const cost = menuTotalCost(m.id)
+          const rate = m.price > 0 ? (cost / m.price) * 100 : null
+          return (
+            <button
+              key={m.id}
+              onClick={() => setOpenId(m.id)}
+              className={`text-left rounded-2xl border-2 p-3 min-h-[92px] flex flex-col justify-between gap-1.5 active:scale-[0.97] transition-transform ${m.active ? 'border-green-600 bg-white' : 'border-stone-200 bg-stone-50 opacity-70'}`}
+            >
+              <span className="font-bold text-[15px] leading-tight text-stone-900 break-words">{m.name}</span>
+              <span className="flex flex-wrap items-center gap-1.5">
+                <span className="text-sm font-bold text-amber-800">¥{m.price.toLocaleString()}</span>
+                {rate != null && <span className={`text-[11px] font-bold px-1.5 rounded ${rate > 35 ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>原価{rate.toFixed(0)}%</span>}
+                <span className={`ml-auto text-[11px] font-bold px-1.5 rounded ${m.active ? 'bg-green-600 text-white' : 'bg-stone-300 text-stone-600'}`}>{m.active ? 'ON' : 'OFF'}</span>
+              </span>
+            </button>
+          )
+        })}
+      </div>
+      {openId && menus.find((m) => m.id === openId) && (
+        <Modal onClose={() => setOpenId(null)}>
+          <div className="w-full max-w-lg max-h-[90svh] overflow-y-auto rounded-2xl bg-white p-3">
+            <div className="flex justify-end mb-1">
+              <button onClick={() => setOpenId(null)} className="px-4 py-2 rounded-lg bg-stone-100 text-stone-700 text-sm font-bold">
+                閉じる
+              </button>
+            </div>
+            {renderCard(menus.find((m) => m.id === openId) as Menu)}
+          </div>
+        </Modal>
+      )}
+
+      <div className="space-y-3 mt-3">
         {!menusLoading && menus.length === 0 && (
           <p className="text-center text-stone-400 text-sm py-6">メニューがありません。下のボタンで追加してください。</p>
         )}

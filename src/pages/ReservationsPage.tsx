@@ -3,6 +3,7 @@ import { Check, ClipboardPaste, Copy, ExternalLink, Pencil, Plus, Trash2, Users 
 import { useAuth } from '../lib/auth'
 import { Spinner } from '../components/Spinner'
 import ReservationImport from './ReservationImport'
+import { ConfirmModal } from '../components/ConfirmModal'
 import { useUndoableDelete } from '../components/UndoDelete'
 import { useActiveMenus } from '../lib/pos'
 import { todayStr } from '../lib/accounting'
@@ -86,6 +87,13 @@ export default function ReservationsPage() {
     return () => clearTimeout(t)
   }, [undo])
   const invalidate = useInvalidateReservations()
+  const [confirmPick, setConfirmPick] = useState<Reservation | null>(null)
+  const applyStatus = async (r: Reservation, s: ResStatus) => {
+    const prev = r.status
+    await setReservationStatus(r.id, s)
+    invalidate()
+    setUndo({ id: r.id, prev, text: `${r.name || '取り置き'}：${STATUS_LABEL[prev]} → ${STATUS_LABEL[s]}` })
+  }
 
   const menus = useActiveMenus()
   const dayRes = useReservations(effectiveDate)
@@ -140,6 +148,8 @@ export default function ReservationsPage() {
       const dv = (sortVal(a) - sortVal(b)) * (sortRev ? -1 : 1)
       if (dv !== 0) return dv
       if (a.status === 'reserved') return (a.visit_time || '99:99').localeCompare(b.visit_time || '99:99') || a.created_at.localeCompare(b.created_at)
+      // 来店済み: 「来店済み」にした順（直近が上）。時刻のない昔の分は、その下
+      if (a.status === 'picked_up') return (b.picked_up_at ?? '').localeCompare(a.picked_up_at ?? '') || a.created_at.localeCompare(b.created_at)
       return a.created_at.localeCompare(b.created_at)
     })
 
@@ -302,10 +312,9 @@ export default function ReservationsPage() {
                 }}
                 onDelete={() => del.request(r.id, r.name || r.handle || '取り置き')}
                 onStatus={async (s) => {
-                  const prev = r.status
-                  await setReservationStatus(r.id, s)
-                  invalidate()
-                  setUndo({ id: r.id, prev, text: `${r.name || '取り置き'}：${STATUS_LABEL[prev]} → ${STATUS_LABEL[s]}` })
+                  // 押し間違いが多いので、「来店済み」にするときは確認を出す
+                  if (s === 'picked_up') setConfirmPick(r)
+                  else await applyStatus(r, s)
                 }}
               />
             ))}
@@ -350,6 +359,19 @@ export default function ReservationsPage() {
         />
       )}
       {del.toast}
+      {confirmPick && (
+        <ConfirmModal
+          message={`${confirmPick.name || '取り置き'}さん（${shortItems(confirmPick.items).map((it) => it.label).join(' ') || '内容なし'}）を、来店済みにしますか？`}
+          confirmLabel="来店済みにする"
+          tone="primary"
+          onConfirm={() => {
+            const r = confirmPick
+            setConfirmPick(null)
+            void applyStatus(r, 'picked_up')
+          }}
+          onCancel={() => setConfirmPick(null)}
+        />
+      )}
       {undo && (
         <div className="fixed left-0 right-0 bottom-[calc(5.5rem+env(safe-area-inset-bottom,0px))] md:bottom-6 z-[60] flex justify-center px-4 pointer-events-none">
           <div className="pointer-events-auto flex items-center gap-3 bg-stone-900 text-stone-50 border border-stone-300 rounded-xl px-4 py-2.5 shadow-lg max-w-md w-full">

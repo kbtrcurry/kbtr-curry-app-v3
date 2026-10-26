@@ -23,6 +23,8 @@ export type Reservation = {
   visit_no: number | null
   /** うずらアチャール付き（木曜24時までの受付で付く） */
   uzura: boolean
+  /** 「来店済み」にした時刻。来店済みの人を、した順に並べるため（来店済み以外は null） */
+  picked_up_at?: string | null
 }
 export type CustomerNote = { platform: Platform; handle: string; flag: 'none' | 'regular' | 'watch'; posted_review: boolean; note: string }
 
@@ -429,7 +431,10 @@ export async function deleteReservationsByDate(date: string): Promise<void> {
 }
 
 export async function setReservationStatus(id: string, status: ResStatus): Promise<void> {
-  const { error } = await supabase.from('reservations').update({ status }).eq('id', id)
+  const { error } = await supabase
+    .from('reservations')
+    .update({ status, picked_up_at: status === 'picked_up' ? new Date().toISOString() : null })
+    .eq('id', id)
   if (error) throw error
 }
 

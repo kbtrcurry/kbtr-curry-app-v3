@@ -38,7 +38,6 @@ import AdsPage from './pages/AdsPage'
 import ImportPage from './pages/ImportPage'
 import DataPage from './pages/DataPage'
 import { GmailReturnRedirect } from './components/GmailReturnRedirect'
-import { QuickAddFab } from './components/QuickAddFab'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -193,7 +192,6 @@ function Layout({ children }: { children: ReactNode }) {
         </nav>
       </aside>
 
-      <QuickAddFab />
       <main className="flex-1 min-w-0 pb-[calc(5rem+env(safe-area-inset-bottom,0px))] md:pb-10 md:ml-52 lg:ml-60">{children}</main>
 
       <nav

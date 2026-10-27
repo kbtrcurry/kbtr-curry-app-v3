@@ -59,8 +59,9 @@ const weekday = (d: string) => WEEK[new Date(+d.slice(0, 4), +d.slice(5, 7) - 1,
 type Tab = 'list' | 'customers' | 'import'
 
 // 取り置き: DMで受けたものを控えて、お客さんの履歴（新規か・来なかったことがあるか）を見られるようにする。
-type SortKey = 'time' | 'size' | 'to' | 'uzura'
+type SortKey = 'received' | 'time' | 'size' | 'to' | 'uzura'
 const SORTS: [SortKey, string][] = [
+  ['received', '受付順'],
   ['time', '時間'],
   ['size', '並・大'],
   ['to', 'TO'],
@@ -145,6 +146,8 @@ export default function ReservationsPage() {
     .sort((a, b) => {
       const rank = (r: Reservation) => (r.status === 'reserved' ? 0 : r.status === 'picked_up' ? 1 : 2)
       if (rank(a) !== rank(b)) return rank(a) - rank(b)
+      // 受付順: 取り置きを受け付けた（登録した）順。もう一度押すと逆順
+      if (sortKey === 'received') return a.created_at.localeCompare(b.created_at) * (sortRev ? -1 : 1)
       const dv = (sortVal(a) - sortVal(b)) * (sortRev ? -1 : 1)
       if (dv !== 0) return dv
       if (a.status === 'reserved') return (a.visit_time || '99:99').localeCompare(b.visit_time || '99:99') || a.created_at.localeCompare(b.created_at)

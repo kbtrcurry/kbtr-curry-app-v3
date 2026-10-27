@@ -730,6 +730,7 @@ function ReservationRow({
               {ln && <ItemChip it={ln} />}
               {/* うずらは、1食ごとの行すべてに付ける */}
               {ln && r.uzura && <Chip kind="うずら">うずら</Chip>}
+              {ln && r.is_new && <span className="text-[11px] font-bold text-sky-700">新</span>}
               {idx === 0 && (
                 <span className="flex flex-wrap items-center gap-[3px] min-w-0">
                   {extras.map((it) => (
@@ -737,7 +738,7 @@ function ReservationRow({
                   ))}
                   {r.uzura && !ln && <Chip kind="うずら">うずら</Chip>}
                   {r.note && <Chip kind="備考あり">備考あり</Chip>}
-                  {r.is_new && <span className="text-[11px] font-bold text-sky-700">新</span>}
+                  {r.is_new && !ln && <span className="text-[11px] font-bold text-sky-700">新</span>}
                   {r.visit_time && <span className="text-[11px] text-stone-500">{r.visit_time}</span>}
                   {off && <span className="text-[11px] font-bold text-stone-500">{STATUS_LABEL[r.status]}</span>}
                 </span>

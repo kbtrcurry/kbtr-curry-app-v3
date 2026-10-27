@@ -631,6 +631,7 @@ const CHIP: Record<string, ChipDef> = {
   並: { bg: '#2563eb', fg: '#ffffff' },
   大: { bg: '#facc15', fg: '#422006' },
   ソーダ: { bg: '#92400e', fg: '#ffffff' },
+  パク: { bg: '#15803d', fg: '#ffffff' },
   TO: { bg: '#16a34a', fg: '#ffffff' },
   うずら: { bg: '#ea580c', fg: '#ffffff' },
   備考あり: { bg: '#dc2626', fg: '#ffffff' },
@@ -649,7 +650,7 @@ function Chip({ kind, children }: { kind: keyof typeof CHIP | string; children: 
 type ShortItem = { key: string; kind: string; label: string; base: string; qty: number; takeout: boolean }
 function shortItems(items: ResItem[]): ShortItem[] {
   const short = (n: string): { kind: string; label: string } =>
-    /大盛/.test(n) ? { kind: '大', label: '大' } : /ビリヤ|biryani/i.test(n) ? { kind: '並', label: '並' } : /ソーダ/.test(n) ? { kind: 'ソーダ', label: 'ソーダ' } : /容器/.test(n) ? { kind: '他', label: '容器' } : /サワー/.test(n) ? { kind: '他', label: 'サワー' } : { kind: '他', label: n.replace(/^スパイス/, '').slice(0, 3) }
+    /大盛/.test(n) ? { kind: '大', label: '大' } : /ビリヤ|biryani/i.test(n) ? { kind: '並', label: '並' } : /ソーダ/.test(n) ? { kind: 'ソーダ', label: 'ソーダ' } : /パクチ/.test(n) ? { kind: 'パク', label: 'パク' } : /容器/.test(n) ? { kind: '他', label: '容器' } : /サワー/.test(n) ? { kind: '他', label: 'サワー' } : { kind: '他', label: n.replace(/^スパイス/, '').slice(0, 3) }
   const m = new Map<string, { kind: string; label: string; takeout: boolean; qty: number }>()
   for (const i of items) {
     const sh = short(i.name)
@@ -727,12 +728,14 @@ function ReservationRow({
             <span key={idx} className="flex items-center gap-1.5 min-h-[26px]">
               <span className="w-[5.4em] shrink-0 font-bold text-[15px] text-stone-900 truncate">{idx === 0 ? r.name || '（名前なし）' : ''}</span>
               {ln && <ItemChip it={ln} />}
+              {/* うずらは、1食ごとの行すべてに付ける */}
+              {ln && r.uzura && <Chip kind="うずら">うずら</Chip>}
               {idx === 0 && (
                 <span className="flex flex-wrap items-center gap-[3px] min-w-0">
                   {extras.map((it) => (
                     <ItemChip key={it.key} it={it} />
                   ))}
-                  {r.uzura && <Chip kind="うずら">うずら</Chip>}
+                  {r.uzura && !ln && <Chip kind="うずら">うずら</Chip>}
                   {r.note && <Chip kind="備考あり">備考あり</Chip>}
                   {r.is_new && <span className="text-[11px] font-bold text-sky-700">新</span>}
                   {r.visit_time && <span className="text-[11px] text-stone-500">{r.visit_time}</span>}

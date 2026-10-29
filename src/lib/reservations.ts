@@ -306,6 +306,11 @@ export function extractName(text: string): string {
   }
   const first = segs[0]?.replace(GREETING, '').trim() ?? ''
   if (first.length <= 12 && !/[!！?？、。:：]/.test(first) && okName(honorific(first))) return honorific(first)
+  // 「31土 取り置き希望します」のあとに、名前だけの行が続くもの。名前だけに見える最初の行を使う
+  for (const seg0 of segs) {
+    const v = honorific(seg0.replace(GREETING, '').trim())
+    if (/^[\p{Script=Han}\p{Script=Katakana}\p{Script=Hiragana}ー々A-Za-z]{1,8}(?:[ ][\p{Script=Han}\p{Script=Katakana}\p{Script=Hiragana}ー々A-Za-z]{1,8})?$/u.test(v) && !/(?:ます|ください|です|ました|でした|ですか|ね|よ|か|を|に|は|が|で|と|も)$/.test(v) && okName(v)) return v
+  }
   return ''
 }
 

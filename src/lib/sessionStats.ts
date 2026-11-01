@@ -23,6 +23,10 @@ export type SessionStat = {
   sales: number
   foodCost: number
   reservedCost: number
+  /** 営業にかかった経費の合計（食材の理論原価 + 取り置き原価 + 場所代 + その他経費） */
+  cost: number
+  /** イベント・ケータリング区分の営業（普通の営業日とは分けて見る） */
+  isEvent: boolean
   rent: number
   otherCost: number
   profit: number
@@ -76,6 +80,8 @@ export function sessionStats(
       sales,
       foodCost,
       reservedCost,
+      cost: foodCost + reservedCost + s.rent + s.other_cost,
+      isEvent: s.segments.code === 'event',
       rent: s.rent,
       otherCost: s.other_cost,
       profit,
@@ -147,4 +153,18 @@ export function weekdayStats(stats: SessionStat[]): GroupStat[] {
 // 事業区分別（平均利益の大きい順）
 export function segmentSessionStats(stats: SessionStat[]): GroupStat[] {
   return groupStats(stats, (s) => ({ key: s.segmentCode, label: s.segmentName })).sort((a, b) => b.avgProfit - a.avgProfit)
+}
+
+/** 営業を「普通の営業日」と「イベント」に分ける（それぞれ日付の古い順） */
+export function splitEvents(stats: SessionStat[]): { regular: SessionStat[]; events: SessionStat[] } {
+  const sorted = [...stats].sort((a, b) => a.date.localeCompare(b.date))
+  return { regular: sorted.filter((s) => !s.isEvent), events: sorted.filter((s) => s.isEvent) }
+}
+
+export function totalsOf(stats: SessionStat[]): { sales: number; cost: number; profit: number } {
+  return {
+    sales: stats.reduce((a, s) => a + s.sales, 0),
+    cost: stats.reduce((a, s) => a + s.cost, 0),
+    profit: stats.reduce((a, s) => a + s.profit, 0),
+  }
 }

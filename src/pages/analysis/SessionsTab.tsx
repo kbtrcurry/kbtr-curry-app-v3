@@ -1,8 +1,8 @@
 import { Link } from 'react-router-dom'
 import { History } from 'lucide-react'
-import { Card, DeltaBadge, HBarList, Stat } from '../../components/charts'
+import { Card, DayBars, DeltaBadge, HBarList, Stat } from '../../components/charts'
 import { delta } from '../../lib/analysis'
-import { WEEKDAY_LABELS, summarizeSessions, type GroupStat, type SessionStat, type SessionSummary } from '../../lib/sessionStats'
+import { WEEKDAY_LABELS, splitEvents, summarizeSessions, totalsOf, type GroupStat, type SessionStat, type SessionSummary } from '../../lib/sessionStats'
 import { percent, yen } from '../../lib/format'
 
 export type SessionsTabProps = {
@@ -31,6 +31,7 @@ function SessionMini({ label, s }: { label: string; s: SessionStat }) {
 // 営業ごとの儲け: 利益は 売上 − 食材原価(理論) − 取り置き原価 − 場所代 − その他経費。
 export default function SessionsTab({ stats, prevSummary, weekday, segments }: SessionsTabProps) {
   const sum = summarizeSessions(stats)
+  const { regular, events } = splitEvents(stats)
   const ranked = [...stats].sort((a, b) => b.profit - a.profit)
 
   if (stats.length === 0) {
@@ -72,6 +73,46 @@ export default function SessionsTab({ stats, prevSummary, weekday, segments }: S
           <SessionMini label="いちばん儲かった営業" s={sum.best} />
           {sum.worst ? <SessionMini label="いちばん薄かった営業" s={sum.worst} /> : <div />}
         </div>
+      )}
+
+      {regular.length > 0 && (
+        <Card title="営業日ごとの売上・経費・推定利益">
+          <DayBars data={regular.map((s) => ({ label: md(s.date), sales: s.sales, cost: s.cost, profit: s.profit }))} />
+          <ul className="divide-y divide-stone-100 mt-2">
+            {regular.map((s) => (
+              <li key={s.id} className="flex items-baseline justify-between gap-2 py-1.5 text-sm">
+                <span className="text-stone-800 shrink-0">{md(s.date)}（{WEEKDAY_LABELS[s.weekday]}）</span>
+                <span className="text-xs text-stone-500 truncate">売上 {yen(s.sales)} − 経費 {yen(s.cost)}</span>
+                <span className={`font-bold shrink-0 ${tone(s.profit)}`}>{yen(s.profit)}</span>
+              </li>
+            ))}
+          </ul>
+          <TotalLine label="営業日の合計" t={totalsOf(regular)} />
+        </Card>
+      )}
+
+      {events.length > 0 && (
+        <Card title="イベントごとの売上・経費・利益">
+          <ul className="space-y-3">
+            {events.map((s) => (
+              <li key={s.id} className="rounded-xl border border-stone-200 p-3">
+                <p className="text-sm font-semibold text-stone-800">
+                  {md(s.date)}（{WEEKDAY_LABELS[s.weekday]}） <span className="font-normal text-stone-400">{s.segmentName}</span>
+                </p>
+                <div className="grid grid-cols-3 gap-2 mt-1.5 text-center">
+                  <div><p className="text-xs text-stone-500">売上</p><p className="font-bold text-stone-800">{yen(s.sales)}</p></div>
+                  <div><p className="text-xs text-stone-500">経費</p><p className="font-bold text-stone-800">{yen(s.cost)}</p></div>
+                  <div><p className="text-xs text-stone-500">利益</p><p className={`font-bold ${tone(s.profit)}`}>{yen(s.profit)}</p></div>
+                </div>
+                <p className="text-xs text-stone-400 mt-1.5">
+                  経費の内訳: 食材（理論）{yen(s.foodCost)}・場所代 {yen(s.rent)}・その他 {yen(s.otherCost)}
+                  {s.reservedCost > 0 && `・取り置き ${yen(s.reservedCost)}`}
+                </p>
+              </li>
+            ))}
+          </ul>
+          {events.length > 1 && <TotalLine label="イベントの合計" t={totalsOf(events)} />}
+        </Card>
       )}
 
       <Card title="営業ごとの利益（高い順）">
@@ -138,5 +179,15 @@ function HistoryLink() {
     >
       <History className="w-4 h-4" /> 営業履歴を見る・直す
     </Link>
+  )
+}
+
+function TotalLine({ label, t }: { label: string; t: { sales: number; cost: number; profit: number } }) {
+  return (
+    <div className="flex items-baseline justify-between gap-2 border-t border-stone-200 mt-1 pt-2 text-sm font-semibold">
+      <span className="text-stone-700">{label}</span>
+      <span className="text-xs font-normal text-stone-500">売上 {yen(t.sales)} − 経費 {yen(t.cost)}</span>
+      <span className={tone(t.profit)}>{yen(t.profit)}</span>
+    </div>
   )
 }

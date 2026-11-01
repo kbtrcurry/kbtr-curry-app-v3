@@ -1,3 +1,4 @@
+import { DateInput } from '../components/DateInput'
 import { LedgerView } from './LedgerView'
 import { QuickExpenseForm } from '../components/QuickExpenseForm'
 import { useUndoableDelete } from '../components/UndoDelete'
@@ -334,12 +335,7 @@ function RevenueTab({
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="block text-sm text-stone-500 mb-1">日付</label>
-            <input
-              type="date"
-              value={entryDate}
-              onChange={(e) => setEntryDate(e.target.value)}
-              className="w-full border border-stone-300 rounded-lg px-3 py-2"
-            />
+            <DateInput value={entryDate} onChange={setEntryDate} className="w-full border border-stone-300 rounded-lg px-3 py-2" />
           </div>
           <div>
             <label className="block text-sm text-stone-500 mb-1">事業区分</label>

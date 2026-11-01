@@ -146,13 +146,13 @@ export default function ReservationsPage() {
     .sort((a, b) => {
       const rank = (r: Reservation) => (r.status === 'reserved' ? 0 : r.status === 'picked_up' ? 1 : 2)
       if (rank(a) !== rank(b)) return rank(a) - rank(b)
+      // 来店済み: どの並び替えでも、「来店済み」にした順（直近が上）に固定。時刻のない昔の分は、その下
+      if (a.status === 'picked_up') return (b.picked_up_at ?? '').localeCompare(a.picked_up_at ?? '') || a.created_at.localeCompare(b.created_at)
       // 受付順: 取り置きを受け付けた（登録した）順。もう一度押すと逆順
       if (sortKey === 'received') return a.created_at.localeCompare(b.created_at) * (sortRev ? -1 : 1)
       const dv = (sortVal(a) - sortVal(b)) * (sortRev ? -1 : 1)
       if (dv !== 0) return dv
       if (a.status === 'reserved') return (a.visit_time || '99:99').localeCompare(b.visit_time || '99:99') || a.created_at.localeCompare(b.created_at)
-      // 来店済み: 「来店済み」にした順（直近が上）。時刻のない昔の分は、その下
-      if (a.status === 'picked_up') return (b.picked_up_at ?? '').localeCompare(a.picked_up_at ?? '') || a.created_at.localeCompare(b.created_at)
       return a.created_at.localeCompare(b.created_at)
     })
 

@@ -6,6 +6,8 @@ import {
   segmentSessionStats,
   weekdayOf,
   theoreticalFoodCostBySession,
+  splitEvents,
+  totalsOf,
   type SessionInput,
 } from './sessionStats'
 
@@ -89,5 +91,25 @@ describe('営業ごとの儲け', () => {
     expect(wd.map((w) => w.label)).toEqual(['日曜', '土曜'])
     expect(wd[1]).toMatchObject({ count: 2, avgSales: 40000 })
     expect(segmentSessionStats(stats).map((g) => g.label)).toEqual(['イベント', '間借り営業'])
+  })
+})
+
+describe('営業日とイベントの分け方', () => {
+  it('イベント区分を分けて、経費と利益を合計する', () => {
+    const stats = sessionStats(
+      [
+        sess({ id: 'a', session_date: '2026-10-11' }),
+        sess({ id: 'e', session_date: '2026-10-05', rent: 10000, other_cost: 0, segments: { code: 'event', name: 'イベント・ケータリング' } }),
+      ],
+      { a: 30000, e: 50000 },
+      { a: 8000, e: 15000 },
+    )
+    const { regular, events } = splitEvents(stats)
+    expect(regular.map((s) => s.id)).toEqual(['a'])
+    expect(events.map((s) => s.id)).toEqual(['e'])
+    expect(events[0].cost).toBe(25000)
+    expect(events[0].profit).toBe(25000)
+    expect(regular[0].cost).toBe(8000 + 7000 + 500)
+    expect(totalsOf(stats)).toEqual({ sales: 80000, cost: 40500, profit: 39500 })
   })
 })

@@ -116,3 +116,54 @@ export function Stat({ label, value, sub, tone }: { label: string; value: string
     </div>
   )
 }
+
+// 営業日ごとの 売上・経費・利益 の棒グラフ（日が多いときは横にスクロール）
+export function DayBars({ data }: { data: { label: string; sales: number; cost: number; profit: number }[] }) {
+  const n = data.length
+  if (n === 0) return null
+  const slot = 54
+  const W = Math.max(300, n * slot)
+  const height = 170
+  const top = 14
+  const bottom = 22
+  const plotH = height - top - bottom
+  const maxPos = Math.max(1, ...data.map((d) => Math.max(d.sales, d.cost, d.profit)))
+  const maxNeg = Math.max(0, ...data.map((d) => -d.profit))
+  const range = maxPos + maxNeg
+  const zeroY = top + (maxPos / range) * plotH
+  const bw = 12
+  const bars = (d: (typeof data)[number]) => [
+    { v: d.sales, fill: '#d6b98c' },
+    { v: d.cost, fill: '#8c867c' },
+    { v: d.profit, fill: d.profit < 0 ? '#dc2626' : '#5cc07d' },
+  ]
+  return (
+    <div>
+      <div className="overflow-x-auto">
+        <svg viewBox={`0 0 ${W} ${height}`} style={{ width: W, minWidth: '100%' }} height={height} role="img" aria-label="営業日ごとの売上・経費・利益">
+          <line x1={0} x2={W} y1={zeroY} y2={zeroY} stroke="#d6d3d1" strokeWidth={1} />
+          {data.map((d, i) => {
+            const x0 = i * (W / n) + (W / n - bw * 3 - 4) / 2
+            return (
+              <g key={`${d.label}-${i}`}>
+                {bars(d).map((b, k) => {
+                  const h = (Math.abs(b.v) / range) * plotH
+                  const y = b.v >= 0 ? zeroY - h : zeroY
+                  return <rect key={k} x={x0 + k * (bw + 2)} y={y} width={bw} height={Math.max(h, b.v === 0 ? 0 : 1)} rx={2} fill={b.fill} />
+                })}
+                <text x={x0 + (bw * 3 + 4) / 2} y={height - 6} textAnchor="middle" fontSize={10} fill="#78716c">
+                  {d.label}
+                </text>
+              </g>
+            )
+          })}
+        </svg>
+      </div>
+      <div className="flex gap-3 text-xs text-stone-500 mt-1">
+        <span><i className="inline-block w-2.5 h-2.5 rounded-sm mr-1 align-middle" style={{ background: '#d6b98c' }} />売上</span>
+        <span><i className="inline-block w-2.5 h-2.5 rounded-sm mr-1 align-middle" style={{ background: '#8c867c' }} />経費</span>
+        <span><i className="inline-block w-2.5 h-2.5 rounded-sm mr-1 align-middle" style={{ background: '#5cc07d' }} />推定利益</span>
+      </div>
+    </div>
+  )
+}

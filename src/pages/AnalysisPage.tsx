@@ -1,6 +1,6 @@
 import { useMemo } from 'react'
 import { Link } from 'react-router-dom'
-import { BarChart3, ChevronLeft, ChevronRight, History } from 'lucide-react'
+import { BarChart3, CalendarDays, ChevronLeft, ChevronRight, History } from 'lucide-react'
 import { useAuth } from '../lib/auth'
 import { Spinner } from '../components/Spinner'
 import { currentYearMonth } from '../lib/accounting'
@@ -22,6 +22,7 @@ import { menuStats, adDaily, adEffect } from '../lib/menuStats'
 import { adLift, foodGapSeries } from '../lib/planning'
 import { expenseTotal, suggestOneOff, useOneOff } from '../lib/journalTags'
 import { useMetaAds } from '../lib/ads'
+import { NON_KENTO_CODES } from '../lib/events'
 import PnlTab from './analysis/PnlTab'
 import MenusTab from './analysis/MenusTab'
 import AdsTab from './analysis/AdsTab'
@@ -50,15 +51,17 @@ export default function AnalysisPage() {
 
   const view = useMemo(() => {
     const prev = shiftMonth(month, -1)
+    // 分析は普段の間借りだけ。イベント（別ページ）と、note・YouTube・Amazonは含めない
+    const kento = data.entries.filter((e) => !NON_KENTO_CODES.includes(e.segments.code))
     // 「一時的な出費」の印が付いた仕訳は、既定では「いつもの営業の利益」から外す
-    const base = includeOneOff ? data.entries : data.entries.filter((e) => !oneOff.ids.has(e.id))
-    const monthEntries = entriesOfMonth(data.entries, month)
+    const base = includeOneOff ? kento : kento.filter((e) => !oneOff.ids.has(e.id))
+    const monthEntries = entriesOfMonth(kento, month)
     const oneOffItems = monthEntries
       .filter((e) => oneOff.ids.has(e.id))
       .map((e) => ({ id: e.id, date: e.entry_date, label: e.description || e.journal_lines.find((l) => l.side === 'debit')?.accounts.name || '', amount: expenseTotal(e) }))
     const pnl = pnlFromEntries(entriesOfMonth(base, month))
     const prevPnl = pnlFromEntries(entriesOfMonth(base, prev))
-    const all = sessionStats(data.sessions, data.salesMap, data.foodBySession, data.reservedCostPerServing)
+    const all = sessionStats(data.sessions, data.salesMap, data.foodBySession, data.reservedCostPerServing).filter((x) => !x.isEvent)
     const inMonth = all.filter((x) => x.date.startsWith(month))
     const prevStats = all.filter((x) => x.date.startsWith(prev))
     const sum = (st: typeof inMonth) => st.reduce((a, x) => a + x.sales, 0)
@@ -66,7 +69,7 @@ export default function AnalysisPage() {
     const ads = metaAds.data ?? []
     const spendOf = (m: string) => ads.filter((x) => x.date.startsWith(m)).reduce((a, x) => a + x.spend, 0)
     return {
-      gap: foodGapSeries(data.entries, lastMonths(month, 6), data.theoreticalByMonth),
+      gap: foodGapSeries(kento, lastMonths(month, 6), data.theoreticalByMonth),
       menus: menuStats(data.lines, new Set(inMonth.map((x) => x.id)), data.costByMenuId, data.allMenus),
       ads: {
         metaSpend: spendOf(month),
@@ -163,6 +166,13 @@ export default function AnalysisPage() {
       {!data.loading && activeTab === 'sessions' && <SessionsTab {...view.sessions} />}
       {!data.loading && activeTab === 'menus' && <MenusTab menus={view.menus} />}
       {!data.loading && activeTab === 'ads' && <AdsTab {...view.ads} />}
+
+      <Link
+        to="/events"
+        className="flex items-center justify-center gap-1.5 py-3 rounded-xl border border-stone-300 text-sm text-stone-600 font-semibold bg-white"
+      >
+        <CalendarDays className="w-4 h-4" /> イベントの収支を見る
+      </Link>
 
       {activeTab === 'pnl' && (
         <Link

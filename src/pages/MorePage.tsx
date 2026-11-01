@@ -15,6 +15,7 @@ import {
   Wallet,
   Target,
   type LucideIcon,
+  CalendarDays,
 } from 'lucide-react'
 import { supabase, isSupabaseConfigured } from '../lib/supabase'
 import { useAuth } from '../lib/auth'
@@ -57,6 +58,7 @@ const HUB_GROUPS: { title: string; links: HubLink[] }[] = [
   {
     title: '詳しく見る',
     links: [
+      { to: '/events', label: 'イベントの収支', icon: CalendarDays },
       { to: '/ads', label: 'Meta広告の詳細', icon: Megaphone },
       { to: '/tools', label: '目標・資金繰り', icon: Target },
       { to: '/data', label: 'データ検索', icon: Database },

@@ -27,6 +27,7 @@ import AccountingPage from './pages/AccountingPage'
 import HistoryPage from './pages/HistoryPage'
 import AnalysisPage from './pages/AnalysisPage'
 import SegmentsPage from './pages/SegmentsPage'
+import EventsPage from './pages/EventsPage'
 import { settleDueReceivables } from './lib/receivables'
 import { todayStr } from './lib/accounting'
 import IngredientsPage from './pages/IngredientsPage'
@@ -240,6 +241,7 @@ export default function App() {
                   <Route path="/accounting" element={<AccountingPage />} />
                   <Route path="/analysis" element={<AnalysisPage />} />
                   <Route path="/segments" element={<SegmentsPage />} />
+                  <Route path="/events" element={<EventsPage />} />
                   {AnalysisDemo && (
                     <Route
                       path="/analysis-demo"

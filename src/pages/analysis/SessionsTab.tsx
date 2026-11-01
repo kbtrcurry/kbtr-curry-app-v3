@@ -31,7 +31,7 @@ function SessionMini({ label, s }: { label: string; s: SessionStat }) {
 // 営業ごとの儲け: 利益は 売上 − 食材原価(理論) − 取り置き原価 − 場所代 − その他経費。
 export default function SessionsTab({ stats, prevSummary, weekday, segments }: SessionsTabProps) {
   const sum = summarizeSessions(stats)
-  const { regular, events } = splitEvents(stats)
+  const { regular } = splitEvents(stats)
   const ranked = [...stats].sort((a, b) => b.profit - a.profit)
 
   if (stats.length === 0) {
@@ -88,30 +88,6 @@ export default function SessionsTab({ stats, prevSummary, weekday, segments }: S
             ))}
           </ul>
           <TotalLine label="営業日の合計" t={totalsOf(regular)} />
-        </Card>
-      )}
-
-      {events.length > 0 && (
-        <Card title="イベントごとの売上・経費・利益">
-          <ul className="space-y-3">
-            {events.map((s) => (
-              <li key={s.id} className="rounded-xl border border-stone-200 p-3">
-                <p className="text-sm font-semibold text-stone-800">
-                  {md(s.date)}（{WEEKDAY_LABELS[s.weekday]}） <span className="font-normal text-stone-400">{s.segmentName}</span>
-                </p>
-                <div className="grid grid-cols-3 gap-2 mt-1.5 text-center">
-                  <div><p className="text-xs text-stone-500">売上</p><p className="font-bold text-stone-800">{yen(s.sales)}</p></div>
-                  <div><p className="text-xs text-stone-500">経費</p><p className="font-bold text-stone-800">{yen(s.cost)}</p></div>
-                  <div><p className="text-xs text-stone-500">利益</p><p className={`font-bold ${tone(s.profit)}`}>{yen(s.profit)}</p></div>
-                </div>
-                <p className="text-xs text-stone-400 mt-1.5">
-                  経費の内訳: 食材（理論）{yen(s.foodCost)}・場所代 {yen(s.rent)}・その他 {yen(s.otherCost)}
-                  {s.reservedCost > 0 && `・取り置き ${yen(s.reservedCost)}`}
-                </p>
-              </li>
-            ))}
-          </ul>
-          {events.length > 1 && <TotalLine label="イベントの合計" t={totalsOf(events)} />}
         </Card>
       )}
 

@@ -81,7 +81,7 @@ export function sessionStats(
       foodCost,
       reservedCost,
       cost: foodCost + reservedCost + s.rent + s.other_cost,
-      isEvent: s.segments.code === 'event',
+      isEvent: s.segments.code === 'event' || s.segments.code.startsWith('custom-'),
       rent: s.rent,
       otherCost: s.other_cost,
       profit,

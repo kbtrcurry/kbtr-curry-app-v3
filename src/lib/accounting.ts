@@ -84,10 +84,11 @@ export async function fetchJournalEntries(range: { from: string; to: string }): 
   )
 }
 
-export function useJournalEntries(range: { from: string; to: string }) {
+export function useJournalEntries(range: { from: string; to: string }, enabled = true) {
   return useQuery({
     queryKey: ['journal', range.from, range.to],
     queryFn: () => fetchJournalEntries(range),
+    enabled,
     staleTime: 30_000,
   })
 }

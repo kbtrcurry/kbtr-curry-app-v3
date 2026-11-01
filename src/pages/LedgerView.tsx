@@ -1,6 +1,8 @@
 import { useMemo, useState } from 'react'
 import { ChevronDown, ChevronUp, Trash2 } from 'lucide-react'
-import { deleteJournalEntry, type JournalEntry } from '../lib/accounting'
+import { deleteJournalEntry, todayStr, useJournalEntries, useSegments, type JournalEntry } from '../lib/accounting'
+import { EMPTY_QUERY, filterEntries, isSearching, type LedgerQuery } from '../lib/ledgerSearch'
+import { DateInput } from '../components/DateInput'
 import { isReceivableEntry } from '../lib/receivables'
 import { findDuplicates, isImportedEntry } from '../lib/cardPayable'
 import { useCardPayables, useNotDuplicate } from '../lib/importBooking'
@@ -36,8 +38,16 @@ function flowOf(e: JournalEntry) {
   return { revenue, expense, pay, account: debit?.accounts.name ?? e.journal_lines.find((l) => l.accounts.type === 'revenue')?.accounts.name ?? '' }
 }
 
-export function LedgerView({ entries, onSaved }: { entries: JournalEntry[]; onSaved: () => void }) {
+export function LedgerView({ entries: monthEntries, onSaved }: { entries: JournalEntry[]; onSaved: () => void }) {
   const [filter, setFilter] = useState<Filter>('all')
+  const [query, setQuery] = useState<LedgerQuery>(EMPTY_QUERY)
+  const searching = isSearching(query)
+  const segments = useSegments()
+  // 検索中は月に関係なく、過去3年ぶんから探す
+  const wide = useMemo(() => ({ from: `${Number(todayStr().slice(0, 4)) - 2}-01-01`, to: `${todayStr().slice(0, 4)}-12-31` }), [])
+  const wideEntries = useJournalEntries(wide, searching)
+  const entries = useMemo(() => (searching ? filterEntries(wideEntries.data ?? [], query) : monthEntries), [searching, wideEntries.data, query, monthEntries])
+  const setQ = (patch: Partial<LedgerQuery>) => setQuery((q) => ({ ...q, ...patch }))
   const [open, setOpen] = useState<string | null>(null)
   const { byEntry, allEntries } = useCardPayables()
   const [notDup, markNotDup] = useNotDuplicate()
@@ -87,6 +97,45 @@ export function LedgerView({ entries, onSaved }: { entries: JournalEntry[]; onSa
   return (
     <div className="space-y-3">
       <CardPayableSummary />
+
+      <details className="bg-white border border-stone-200 rounded-xl" open={searching}>
+        <summary className="px-3 py-2.5 text-sm font-semibold text-stone-700 cursor-pointer">
+          検索（ことば・金額・期間・区分）{searching && <span className="text-amber-700">　絞り込み中</span>}
+        </summary>
+        <div className="px-3 pb-3 space-y-2">
+          <input
+            type="search"
+            value={query.words}
+            onChange={(e) => setQ({ words: e.target.value })}
+            placeholder="ことば（店名・科目・メモ。スペース区切りで全部含む）"
+            className="w-full border border-stone-300 rounded-lg px-3 py-2 text-sm"
+          />
+          <div className="flex items-center gap-2">
+            <input type="number" inputMode="numeric" value={query.min} onChange={(e) => setQ({ min: e.target.value })} placeholder="金額 〜から" className="w-full min-w-0 border border-stone-300 rounded-lg px-3 py-2 text-sm" />
+            <span className="text-stone-400">〜</span>
+            <input type="number" inputMode="numeric" value={query.max} onChange={(e) => setQ({ max: e.target.value })} placeholder="〜まで" className="w-full min-w-0 border border-stone-300 rounded-lg px-3 py-2 text-sm" />
+          </div>
+          <div className="flex items-center gap-2">
+            <DateInput value={query.from} onChange={(v) => setQ({ from: v })} className="flex-1 w-full border border-stone-300 rounded-lg px-2 py-2 text-sm" />
+            <span className="text-stone-400">〜</span>
+            <DateInput value={query.to} onChange={(v) => setQ({ to: v })} className="flex-1 w-full border border-stone-300 rounded-lg px-2 py-2 text-sm" />
+          </div>
+          <select value={query.segmentId} onChange={(e) => setQ({ segmentId: e.target.value })} className="w-full border border-stone-300 rounded-lg px-3 py-2 text-sm bg-white">
+            <option value="">すべての事業区分</option>
+            {(segments.data ?? []).map((sg) => (
+              <option key={sg.id} value={sg.id}>{sg.name}</option>
+            ))}
+          </select>
+          {searching && (
+            <button onClick={() => setQuery(EMPTY_QUERY)} className="text-xs font-semibold text-amber-700 underline">
+              条件をクリア（この月の表示にもどす）
+            </button>
+          )}
+        </div>
+      </details>
+      {searching && (
+        <p className="text-xs text-stone-500">{wideEntries.isLoading ? '検索中…' : `${entries.length}件（過去3年から検索）`}</p>
+      )}
 
       <div className="flex gap-1.5 overflow-x-auto -mx-4 px-4 pb-1">
         {FILTERS.map((f) => (

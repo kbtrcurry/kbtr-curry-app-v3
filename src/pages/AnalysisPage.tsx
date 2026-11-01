@@ -22,7 +22,7 @@ import { menuStats, adDaily, adEffect } from '../lib/menuStats'
 import { adLift, foodGapSeries } from '../lib/planning'
 import { expenseTotal, suggestOneOff, useOneOff } from '../lib/journalTags'
 import { useMetaAds } from '../lib/ads'
-import { NON_KENTO_CODES } from '../lib/events'
+import { isRegularCode } from '../lib/events'
 import PnlTab from './analysis/PnlTab'
 import MenusTab from './analysis/MenusTab'
 import AdsTab from './analysis/AdsTab'
@@ -52,7 +52,7 @@ export default function AnalysisPage() {
   const view = useMemo(() => {
     const prev = shiftMonth(month, -1)
     // 分析は普段の間借りだけ。イベント（別ページ）と、note・YouTube・Amazonは含めない
-    const kento = data.entries.filter((e) => !NON_KENTO_CODES.includes(e.segments.code))
+    const kento = data.entries.filter((e) => isRegularCode(e.segments.code))
     // 「一時的な出費」の印が付いた仕訳は、既定では「いつもの営業の利益」から外す
     const base = includeOneOff ? kento : kento.filter((e) => !oneOff.ids.has(e.id))
     const monthEntries = entriesOfMonth(kento, month)

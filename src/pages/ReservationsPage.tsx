@@ -38,6 +38,7 @@ import {
   useCustomerNotes,
   useInvalidateReservations,
   useMenuStock,
+  saveMenuStock,
   useReservations,
   type CustomerStat,
   type Platform,
@@ -113,6 +114,17 @@ export default function ReservationsPage() {
   // 当日分（その日に来るお客さん用に取っておく枠）。名前のある取り置きとは別に数える
   const walkin = list.find(isWalkin)
   const walkinQty = walkin ? walkin.items.reduce((a, i) => a + i.qty, 0) : 0
+  // 川海老のアチャール: 仕込み数（この日の用意数）− 取り置き = 当日分
+  const acharMenu = (menus.data ?? []).find((m) => /川海老.*アチャール/.test(m.name))
+  const acharPrep = acharMenu ? stock.data?.[acharMenu.id] ?? null : null
+  const acharReserved = acharMenu
+    ? list.filter((r) => r.status === 'reserved' || r.status === 'picked_up').reduce((a, r) => a + r.items.filter((i) => i.menu_id === acharMenu.id).reduce((b, i) => b + i.qty, 0), 0)
+    : 0
+  const adjustAchar = async (delta: number) => {
+    if (!acharMenu) return
+    await saveMenuStock(effectiveDate, { [acharMenu.id]: Math.max(0, (acharPrep ?? acharReserved) + delta) })
+    invalidate()
+  }
   const peopleCount = summary.count - (walkin && walkin.status === 'reserved' ? 1 : 0)
   const adjustWalkin = async (delta: number) => {
     const next = Math.max(0, Math.round((walkinQty + delta) * 2) / 2)
@@ -254,6 +266,34 @@ export default function ReservationsPage() {
               ＋1食
             </button>
           </div>
+
+          {acharMenu && (
+            <div className="bg-pink-50 border border-pink-200 rounded-xl px-2.5 py-1.5 space-y-1">
+              <div className="flex items-center gap-1.5">
+                <span className="text-sm font-bold shrink-0" style={{ color: '#be185d' }}>川海老アチャール</span>
+                <span className="text-xs shrink-0" style={{ color: '#9d174d' }}>仕込み</span>
+                <button onClick={() => void adjustAchar(-1)} disabled={(acharPrep ?? 0) <= 0} className="h-9 px-3 rounded-lg bg-white border border-stone-300 text-sm font-bold text-stone-600 disabled:opacity-30 active:scale-95">
+                  −1
+                </button>
+                <span className="text-base font-bold w-8 text-center" style={{ color: '#831843' }}>{acharPrep ?? '—'}</span>
+                <button onClick={() => void adjustAchar(1)} className="h-9 flex-1 rounded-lg text-white text-sm font-bold active:scale-95" style={{ background: '#db2777' }}>
+                  ＋1
+                </button>
+                <button onClick={() => void adjustAchar(5)} className="h-9 flex-1 rounded-lg text-white text-sm font-bold active:scale-95" style={{ background: '#be185d' }}>
+                  ＋5
+                </button>
+              </div>
+              <p className="text-sm" style={{ color: '#831843' }}>
+                取り置き <b>{acharReserved}</b>
+                {acharPrep != null && (
+                  <>
+                    　当日分 <b className={acharPrep - acharReserved < 0 ? 'text-red-600' : ''}>{acharPrep - acharReserved}</b>
+                    {acharPrep - acharReserved < 0 && <span className="text-red-600 text-xs">（{acharReserved - acharPrep}個足りない）</span>}
+                  </>
+                )}
+              </p>
+            </div>
+          )}
 
           <div className="flex items-center gap-1.5 text-xs">
             <span className="text-stone-500 shrink-0">並び替え</span>
@@ -637,6 +677,7 @@ const CHIP: Record<string, ChipDef> = {
   パク: { bg: '#15803d', fg: '#ffffff' },
   TO: { bg: '#16a34a', fg: '#ffffff' },
   うずら: { bg: '#ea580c', fg: '#ffffff' },
+  アチャ: { bg: '#ec4899', fg: '#ffffff' },
   備考あり: { bg: '#dc2626', fg: '#ffffff' },
   他: { bg: '#78716c', fg: '#ffffff' },
 }
@@ -653,7 +694,7 @@ function Chip({ kind, children }: { kind: keyof typeof CHIP | string; children: 
 type ShortItem = { key: string; kind: string; label: string; base: string; qty: number; takeout: boolean }
 function shortItems(items: ResItem[]): ShortItem[] {
   const short = (n: string): { kind: string; label: string } =>
-    /大盛/.test(n) ? { kind: '大', label: '大' } : /ビリヤ|biryani/i.test(n) ? { kind: '並', label: '並' } : /ソーダ/.test(n) ? { kind: 'ソーダ', label: 'ソーダ' } : /パクチ/.test(n) ? { kind: 'パク', label: 'パク' } : /容器/.test(n) ? { kind: '他', label: '容器' } : /サワー/.test(n) ? { kind: '他', label: 'サワー' } : { kind: '他', label: n.replace(/^スパイス/, '').slice(0, 3) }
+    /大盛/.test(n) ? { kind: '大', label: '大' } : /ビリヤ|biryani/i.test(n) ? { kind: '並', label: '並' } : /ソーダ/.test(n) ? { kind: 'ソーダ', label: 'ソーダ' } : /パクチ/.test(n) ? { kind: 'パク', label: 'パク' } : /アチャール/.test(n) ? { kind: 'アチャ', label: n.replace(/のアチャール.*$/, '').replace(/アチャール.*$/, '') || 'アチャ' } : /容器/.test(n) ? { kind: '他', label: '容器' } : /サワー/.test(n) ? { kind: '他', label: 'サワー' } : { kind: '他', label: n.replace(/^スパイス/, '').slice(0, 3) }
   const m = new Map<string, { kind: string; label: string; takeout: boolean; qty: number }>()
   for (const i of items) {
     const sh = short(i.name)

@@ -120,6 +120,27 @@ export default function ReservationsPage() {
   const acharReserved = acharMenu
     ? list.filter((r) => r.status === 'reserved' || r.status === 'picked_up').reduce((a, r) => a + r.items.filter((i) => i.menu_id === acharMenu.id).reduce((b, i) => b + i.qty, 0), 0)
     : 0
+  // 当日に売れた数（端末ごとに日付で保存）
+  const soldKey = `achar-sold-${effectiveDate}`
+  const [acharSold, setAcharSold] = useState(0)
+  useEffect(() => {
+    try {
+      setAcharSold(Number(localStorage.getItem(soldKey)) || 0)
+    } catch {
+      setAcharSold(0)
+    }
+  }, [soldKey])
+  const bumpSold = (d: number) => {
+    const next = Math.max(0, acharSold + d)
+    setAcharSold(next)
+    try {
+      localStorage.setItem(soldKey, String(next))
+    } catch {
+      /* 保存できなくても画面上は動く */
+    }
+  }
+  const acharWalk = acharPrep != null ? acharPrep - acharReserved : null
+  const acharLeft = acharWalk != null ? acharWalk - acharSold : null
   const adjustAchar = async (delta: number) => {
     if (!acharMenu) return
     await saveMenuStock(effectiveDate, { [acharMenu.id]: Math.max(0, (acharPrep ?? acharReserved) + delta) })
@@ -270,28 +291,28 @@ export default function ReservationsPage() {
           {acharMenu && (
             <div className="bg-pink-50 border border-pink-200 rounded-xl px-2.5 py-1.5 space-y-1">
               <div className="flex items-center gap-1.5">
-                <span className="text-sm font-bold shrink-0" style={{ color: '#be185d' }}>川海老アチャール</span>
-                <span className="text-xs shrink-0" style={{ color: '#9d174d' }}>仕込み</span>
-                <button onClick={() => void adjustAchar(-1)} disabled={(acharPrep ?? 0) <= 0} className="h-9 px-3 rounded-lg bg-white border border-stone-300 text-sm font-bold text-stone-600 disabled:opacity-30 active:scale-95">
+                <span className="text-sm font-bold shrink-0" style={{ color: '#be185d' }}>アチャール</span>
+                <span className="text-sm font-bold" style={{ color: '#831843' }}>
+                  仕込み{acharPrep ?? '—'}　取り置き{acharReserved}　当日分{acharWalk ?? '—'}
+                </span>
+                <span className={`ml-auto text-sm font-bold shrink-0 ${acharLeft != null && acharLeft <= 0 ? 'text-red-600' : ''}`} style={acharLeft != null && acharLeft <= 0 ? undefined : { color: '#be185d' }}>
+                  {acharLeft == null ? '' : acharLeft < 0 ? `${-acharLeft}個不足` : `あと${acharLeft}食`}
+                </span>
+              </div>
+              <div className="flex items-center gap-1.5">
+                <button onClick={() => bumpSold(-1)} disabled={acharSold <= 0} className="h-9 px-2.5 rounded-lg bg-white border border-stone-300 text-sm font-bold text-stone-600 disabled:opacity-30 active:scale-95">
                   −1
                 </button>
-                <span className="text-base font-bold w-8 text-center" style={{ color: '#831843' }}>{acharPrep ?? '—'}</span>
-                <button onClick={() => void adjustAchar(1)} className="h-9 flex-1 rounded-lg text-white text-sm font-bold active:scale-95" style={{ background: '#db2777' }}>
-                  ＋1
+                <button onClick={() => bumpSold(1)} className="h-9 flex-1 rounded-lg text-white text-sm font-bold active:scale-95" style={{ background: '#db2777' }}>
+                  ＋1（売れた {acharSold}）
                 </button>
-                <button onClick={() => void adjustAchar(5)} className="h-9 flex-1 rounded-lg text-white text-sm font-bold active:scale-95" style={{ background: '#be185d' }}>
-                  ＋5
+                <button onClick={() => void adjustAchar(-1)} disabled={(acharPrep ?? 0) <= 0} className="h-9 px-2.5 rounded-lg bg-white border border-stone-300 text-xs font-bold text-stone-600 disabled:opacity-30 active:scale-95">
+                  仕込み−1
+                </button>
+                <button onClick={() => void adjustAchar(1)} className="h-9 px-2.5 rounded-lg text-white text-xs font-bold active:scale-95" style={{ background: '#be185d' }}>
+                  仕込み＋1
                 </button>
               </div>
-              <p className="text-sm" style={{ color: '#831843' }}>
-                取り置き <b>{acharReserved}</b>
-                {acharPrep != null && (
-                  <>
-                    　当日分 <b className={acharPrep - acharReserved < 0 ? 'text-red-600' : ''}>{acharPrep - acharReserved}</b>
-                    {acharPrep - acharReserved < 0 && <span className="text-red-600 text-xs">（{acharReserved - acharPrep}個足りない）</span>}
-                  </>
-                )}
-              </p>
             </div>
           )}
 

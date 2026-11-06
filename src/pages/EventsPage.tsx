@@ -40,6 +40,9 @@ export default function EventsPage() {
         <ChevronLeft className="w-4 h-4" /> 分析にもどる
       </Link>
       <h1 className="text-lg font-bold text-amber-800">イベントの収支</h1>
+      <Link to="/event-entry" className="block text-center bg-amber-700 text-[#faf9f5] py-2.5 rounded-xl font-bold text-sm">
+        売上・経費を入力する
+      </Link>
       {journal.isLoading && <Spinner />}
       {journal.error && <p className="text-sm text-red-600">読み込みに失敗しました: {(journal.error as Error).message}</p>}
 

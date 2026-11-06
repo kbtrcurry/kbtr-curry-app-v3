@@ -59,6 +59,7 @@ const HUB_GROUPS: { title: string; links: HubLink[] }[] = [
     title: '詳しく見る',
     links: [
       { to: '/events', label: 'イベントの収支', icon: CalendarDays },
+      { to: '/event-entry', label: 'イベントの売上・経費を入力', icon: CalendarDays },
       { to: '/ads', label: 'Meta広告の詳細', icon: Megaphone },
       { to: '/tools', label: '目標・資金繰り', icon: Target },
       { to: '/data', label: 'データ検索', icon: Database },

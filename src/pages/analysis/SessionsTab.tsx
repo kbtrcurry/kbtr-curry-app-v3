@@ -2,7 +2,7 @@ import { Link } from 'react-router-dom'
 import { History } from 'lucide-react'
 import { Card, DayBars, DeltaBadge, HBarList, Stat } from '../../components/charts'
 import { delta } from '../../lib/analysis'
-import { WEEKDAY_LABELS, splitEvents, summarizeSessions, totalsOf, type GroupStat, type SessionStat, type SessionSummary } from '../../lib/sessionStats'
+import { WEEKDAY_LABELS, summarizeSessions, totalsOf, type GroupStat, type SessionStat, type SessionSummary } from '../../lib/sessionStats'
 import { percent, yen } from '../../lib/format'
 
 export type SessionsTabProps = {
@@ -31,7 +31,7 @@ function SessionMini({ label, s }: { label: string; s: SessionStat }) {
 // 営業ごとの儲け: 利益は 売上 − 食材原価(理論) − 取り置き原価 − 場所代 − その他経費。
 export default function SessionsTab({ stats, prevSummary, weekday, segments }: SessionsTabProps) {
   const sum = summarizeSessions(stats)
-  const { regular } = splitEvents(stats)
+  const regular = [...stats].sort((a, b) => a.date.localeCompare(b.date))
   const ranked = [...stats].sort((a, b) => b.profit - a.profit)
 
   if (stats.length === 0) {
@@ -81,7 +81,9 @@ export default function SessionsTab({ stats, prevSummary, weekday, segments }: S
           <ul className="divide-y divide-stone-100 mt-2">
             {regular.map((s) => (
               <li key={s.id} className="flex items-baseline justify-between gap-2 py-1.5 text-sm">
-                <span className="text-stone-800 shrink-0">{md(s.date)}（{WEEKDAY_LABELS[s.weekday]}）</span>
+                <span className="text-stone-800 shrink-0">
+                  {md(s.date)}（{WEEKDAY_LABELS[s.weekday]}）{s.isEvent && <span className="ml-1 text-xs text-amber-700">{s.segmentName}</span>}
+                </span>
                 <span className="text-xs text-stone-500 truncate">売上 {yen(s.sales)} − 経費 {yen(s.cost)}</span>
                 <span className={`font-bold shrink-0 ${tone(s.profit)}`}>{yen(s.profit)}</span>
               </li>

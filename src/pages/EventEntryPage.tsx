@@ -15,8 +15,7 @@ import { yen } from '../lib/format'
 type ExpRow = { key: number; accountId: string; amount: string; memo: string }
 
 const PAY: { key: SalePayment; label: string }[] = [
-  { key: 'cash', label: '当日 現金' },
-  { key: 'bank', label: '当日 口座' },
+  { key: 'now', label: '当日に精算済み' },
   { key: 'later', label: '後日入金' },
 ]
 
@@ -35,7 +34,8 @@ export default function EventEntryPage() {
   const [date, setDate] = useState(todayStr())
   const [gross, setGross] = useState('')
   const [fee, setFee] = useState('')
-  const [payment, setPayment] = useState<SalePayment>('cash')
+  const [people, setPeople] = useState('')
+  const [payment, setPayment] = useState<SalePayment>('now')
   const [expected, setExpected] = useState(todayStr())
   const [memo, setMemo] = useState('')
   const [rows, setRows] = useState<ExpRow[]>([])
@@ -90,10 +90,11 @@ export default function EventEntryPage() {
     const done: string[] = []
     try {
       if (grossN > 0) {
-        await recordEventSale({ date, segmentId: seg, gross: grossN, fee: feeN, memo: memo.trim(), payment, expectedDate: expected })
+        await recordEventSale({ date, segmentId: seg, gross: grossN, fee: feeN, memo: memo.trim(), payment, expectedDate: expected, people: Number(people) || 1 })
         done.push(`売上 ${yen(grossN)}`)
         setGross('')
         setFee('')
+        setPeople('')
       }
       // 経費は1行ずつ保存し、保存できた行は画面から消す（途中で失敗しても二重にならない）
       for (const r of validRows) {
@@ -165,7 +166,7 @@ export default function EventEntryPage() {
               <input type="number" inputMode="numeric" value={gross} onChange={(e) => setGross(e.target.value)} className="w-full border border-stone-300 rounded-lg px-3 py-2 text-base bg-white mt-1" />
             </label>
             <label className="block text-sm">
-              <span className="text-stone-500">手数料・出店料の天引き（円）</span>
+              <span className="text-stone-500">場所代・出店料・手数料の天引き（円）</span>
               <input type="number" inputMode="numeric" value={fee} onChange={(e) => setFee(e.target.value)} placeholder="なければ空" className="w-full border border-stone-300 rounded-lg px-3 py-2 text-base bg-white mt-1" />
             </label>
           </div>
@@ -186,6 +187,7 @@ export default function EventEntryPage() {
               <DateInput value={expected} onChange={setExpected} className="w-full border border-stone-300 rounded-lg px-3 py-2 bg-white mt-1" />
             </label>
           )}
+          <input type="number" inputMode="numeric" value={people} onChange={(e) => setPeople(e.target.value)} placeholder="お客さんの人数（分かれば）" className="w-full border border-stone-300 rounded-lg px-3 py-2 text-base bg-white" />
           <input value={memo} onChange={(e) => setMemo(e.target.value)} placeholder="メモ（例: 1日目）" className="w-full border border-stone-300 rounded-lg px-3 py-2 text-base bg-white" />
         </div>
       </Card>

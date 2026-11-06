@@ -22,7 +22,7 @@ import { menuStats, adDaily, adEffect } from '../lib/menuStats'
 import { adLift, foodGapSeries } from '../lib/planning'
 import { expenseTotal, suggestOneOff, useOneOff } from '../lib/journalTags'
 import { useMetaAds } from '../lib/ads'
-import { isRegularCode } from '../lib/events'
+import { OTHER_BUSINESS_CODES } from '../lib/events'
 import PnlTab from './analysis/PnlTab'
 import MenusTab from './analysis/MenusTab'
 import AdsTab from './analysis/AdsTab'
@@ -51,8 +51,8 @@ export default function AnalysisPage() {
 
   const view = useMemo(() => {
     const prev = shiftMonth(month, -1)
-    // 分析は普段の間借りだけ。イベント（別ページ）と、note・YouTube・Amazonは含めない
-    const kento = data.entries.filter((e) => isRegularCode(e.segments.code))
+    // 分析は間借りとイベントの営業。note・YouTube・Amazonは別の事業なので含めない
+    const kento = data.entries.filter((e) => !OTHER_BUSINESS_CODES.includes(e.segments.code))
     // 「一時的な出費」の印が付いた仕訳は、既定では「いつもの営業の利益」から外す
     const base = includeOneOff ? kento : kento.filter((e) => !oneOff.ids.has(e.id))
     const monthEntries = entriesOfMonth(kento, month)
@@ -61,7 +61,7 @@ export default function AnalysisPage() {
       .map((e) => ({ id: e.id, date: e.entry_date, label: e.description || e.journal_lines.find((l) => l.side === 'debit')?.accounts.name || '', amount: expenseTotal(e) }))
     const pnl = pnlFromEntries(entriesOfMonth(base, month))
     const prevPnl = pnlFromEntries(entriesOfMonth(base, prev))
-    const all = sessionStats(data.sessions, data.salesMap, data.foodBySession, data.reservedCostPerServing).filter((x) => !x.isEvent)
+    const all = sessionStats(data.sessions, data.salesMap, data.foodBySession, data.reservedCostPerServing)
     const inMonth = all.filter((x) => x.date.startsWith(month))
     const prevStats = all.filter((x) => x.date.startsWith(prev))
     const sum = (st: typeof inMonth) => st.reduce((a, x) => a + x.sales, 0)

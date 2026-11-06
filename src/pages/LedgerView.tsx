@@ -35,7 +35,9 @@ function flowOf(e: JournalEntry) {
   const credit = e.journal_lines.find((l) => l.side === 'credit' && l.accounts.type !== 'revenue')
   const pay = credit?.accounts.code === '292' ? 'カード' : credit?.accounts.code === '102' ? '口座' : credit?.accounts.code === '101' ? '現金' : ''
   const debit = e.journal_lines.find((l) => l.side === 'debit' && l.accounts.type === 'expense')
-  return { revenue, expense, pay, account: debit?.accounts.name ?? e.journal_lines.find((l) => l.accounts.type === 'revenue')?.accounts.name ?? '' }
+  // 売掛金の入金(売掛金 → 預金)。売上は計上日に入っているので、ここは「入金があった」ことだけ見せる
+  const settled = e.journal_lines.filter((l) => l.side === 'credit' && l.accounts.code === '103').reduce((a, l) => a + l.amount, 0)
+  return { revenue, expense, settled: revenue === 0 && expense === 0 ? settled : 0, pay, account: debit?.accounts.name ?? e.journal_lines.find((l) => l.accounts.type === 'revenue')?.accounts.name ?? '' }
 }
 
 export function LedgerView({ entries: monthEntries, onSaved }: { entries: JournalEntry[]; onSaved: () => void }) {
@@ -180,7 +182,7 @@ export function LedgerView({ entries: monthEntries, onSaved }: { entries: Journa
                 const dup = dupOf.get(e.id)
                 const tagged = oneOff.ids.has(e.id)
                 const title = e.description || f.account || e.segments.name
-                const amount = f.revenue > 0 ? f.revenue : -f.expense
+                const amount = f.revenue > 0 ? f.revenue : f.settled > 0 ? f.settled : -f.expense
                 const deletable = e.source_type !== 'pos_close' && !isReceivableEntry(e)
                 return (
                   <div key={e.id} className={dup ? 'bg-amber-50' : ''}>
@@ -194,6 +196,7 @@ export function LedgerView({ entries: monthEntries, onSaved }: { entries: Journa
                           {e.source_type === 'pos_close' && f.expense > 0 && <span>・場所代など −{yen(f.expense)}</span>}
                           {isImportedEntry(e) && <span className="text-sky-700">・取り込み</span>}
                           {isReceivableEntry(e) && <span className="text-amber-700">・入金予定</span>}
+                          {f.settled > 0 && <span className="text-green-700">・売掛金の入金（売上は計上済み）</span>}
                           {tagged && <span className="text-amber-700">・一時的な出費</span>}
                           {dup && <span className="text-amber-700 font-semibold">・{dup.level === 'same' ? '重複' : '重複かも'}</span>}
                           {card && (

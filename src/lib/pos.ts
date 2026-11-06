@@ -93,6 +93,13 @@ export async function getOrCreateTodaySession(segmentCode = 'magari'): Promise<L
   return row
 }
 
+/** 今日の営業の事業区分を変える（間借り ⇄ イベント）。まだ会計が1件もないときだけ使う想定 */
+export async function setSessionSegment(session: LocalSessionRow, segmentId: string): Promise<void> {
+  if (session.segment_id === segmentId) return
+  await localSessions.put({ ...session, segment_id: segmentId, synced: false })
+  scheduleFlush(0)
+}
+
 export function useTodaySession() {
   return useQuery({
     queryKey: ['pos', 'today-session'],

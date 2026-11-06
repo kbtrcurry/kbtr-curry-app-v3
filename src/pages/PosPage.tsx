@@ -15,10 +15,12 @@ import {
   addReceipt,
   voidReceipt,
   closeTodaySession,
+  setSessionSegment,
   type Menu,
 } from '../lib/pos'
 import { updateMenu } from '../lib/masterData'
-import { todayStr } from '../lib/accounting'
+import { todayStr, useSegments } from '../lib/accounting'
+import { isEventCode } from '../lib/events'
 import {
   normHandle,
   fmtPortions,
@@ -66,6 +68,7 @@ export default function PosPage() {
   const { receipts, refresh } = useTodayReceipts(posSession?.id)
   const pendingCount = usePendingCount()
   const queryClient = useQueryClient()
+  const allSegments = useSegments().data ?? []
   const [reordering, setReordering] = useState(false)
   // 並び替え中の並び（メニューID）と、いま指でつかんでいるボタン
   const [order, setOrder] = useState<string[] | null>(null)
@@ -478,6 +481,30 @@ export default function PosPage() {
           </button>
         </div>
       </div>
+
+      {posSession && (
+        <div className="flex items-center gap-2 mb-2 text-sm">
+          <span className="text-stone-500 shrink-0">営業の種類</span>
+          <select
+            value={posSession.segment_id}
+            disabled={receipts.length > 0}
+            onChange={async (e) => {
+              await setSessionSegment(posSession, e.target.value)
+              await queryClient.invalidateQueries({ queryKey: ['pos', 'today-session'] })
+            }}
+            className="flex-1 border border-stone-300 rounded-lg px-2 py-1.5 bg-white text-stone-800 disabled:opacity-60"
+          >
+            {allSegments
+              .filter((sg) => sg.code === 'magari' || isEventCode(sg.code))
+              .map((sg) => (
+                <option key={sg.id} value={sg.id}>
+                  {sg.code === 'magari' ? `間借り営業` : `イベント: ${sg.name}`}
+                </option>
+              ))}
+          </select>
+          {receipts.length > 0 && <span className="text-xs text-stone-400 shrink-0">会計後は変更不可</span>}
+        </div>
+      )}
 
       <div className="bg-stone-50 rounded-lg px-3 py-2 mb-4 space-y-2">
         <div className="flex items-center justify-between">

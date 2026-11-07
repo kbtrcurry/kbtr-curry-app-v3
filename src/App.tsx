@@ -29,6 +29,8 @@ import AnalysisPage from './pages/AnalysisPage'
 import SegmentsPage from './pages/SegmentsPage'
 import EventsPage from './pages/EventsPage'
 import EventEntryPage from './pages/EventEntryPage'
+import OrdersPage from './pages/OrdersPage'
+import KitchenPage from './pages/KitchenPage'
 import { settleDueReceivables } from './lib/receivables'
 import { todayStr } from './lib/accounting'
 import IngredientsPage from './pages/IngredientsPage'
@@ -244,6 +246,8 @@ export default function App() {
                   <Route path="/segments" element={<SegmentsPage />} />
                   <Route path="/events" element={<EventsPage />} />
                   <Route path="/event-entry" element={<EventEntryPage />} />
+                  <Route path="/orders" element={<OrdersPage />} />
+                  <Route path="/kitchen" element={<KitchenPage />} />
                   {AnalysisDemo && (
                     <Route
                       path="/analysis-demo"

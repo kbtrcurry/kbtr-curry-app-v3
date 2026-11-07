@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
+import { useTickets, walkinAchar, walkinBiryaniPortions } from '../lib/tickets'
 import { Check, ClipboardPaste, Copy, ExternalLink, Pencil, Plus, Trash2, Users } from 'lucide-react'
 import { useAuth } from '../lib/auth'
 import { Spinner } from '../components/Spinner'
@@ -139,8 +140,13 @@ export default function ReservationsPage() {
       /* 保存できなくても画面上は動く */
     }
   }
+  // 席ごとの伝票(注文)で、当日に追加で注文された分。取り置きの分は含めない
+  const ticketQ = useTickets(effectiveDate, 8000)
+  const ticketList = ticketQ.error ? [] : (ticketQ.data ?? [])
+  const walkinOrdered = walkinBiryaniPortions(ticketList)
+  const acharOrdered = walkinAchar(ticketList)
   const acharWalk = acharPrep != null ? acharPrep - acharReserved : null
-  const acharLeft = acharWalk != null ? acharWalk - acharSold : null
+  const acharLeft = acharWalk != null ? acharWalk - acharSold - acharOrdered : null
   const adjustAchar = async (delta: number) => {
     if (!acharMenu) return
     await saveMenuStock(effectiveDate, { [acharMenu.id]: Math.max(0, (acharPrep ?? acharReserved) + delta) })
@@ -277,6 +283,11 @@ export default function ReservationsPage() {
           <div className="flex items-center gap-1.5 bg-sky-50 border border-sky-200 rounded-xl px-2.5 py-1.5">
             <span className="text-sm font-bold text-sky-800 shrink-0">当日分</span>
             <span className="text-sm font-bold text-sky-950 w-14 shrink-0" style={{ color: "#0c4a6e" }}>{fmtPortions(walkinQty)}食</span>
+            {walkinOrdered > 0 && (
+              <span className={`text-xs font-bold shrink-0 ${walkinQty - walkinOrdered < 0 ? 'text-red-600' : 'text-sky-800'}`}>
+                注文{fmtPortions(walkinOrdered)} あと{fmtPortions(Math.max(0, walkinQty - walkinOrdered))}
+              </span>
+            )}
             <button onClick={() => void adjustWalkin(-0.5)} disabled={walkinQty <= 0} className="h-9 px-2.5 rounded-lg bg-white border border-stone-300 text-sm font-bold text-stone-600 disabled:opacity-30 active:scale-95">
               −0.5
             </button>
@@ -293,7 +304,7 @@ export default function ReservationsPage() {
               <div className="flex items-center gap-1.5">
                 <span className="text-sm font-bold shrink-0" style={{ color: '#be185d' }}>アチャール</span>
                 <span className="text-sm font-bold" style={{ color: '#831843' }}>
-                  仕込み{acharPrep ?? '—'}　取り置き{acharReserved}　当日分{acharWalk ?? '—'}
+                  仕込み{acharPrep ?? '—'}　取り置き{acharReserved}　当日分{acharWalk ?? '—'}{acharOrdered > 0 ? `　注文${acharOrdered}` : ''}
                 </span>
                 <span className={`ml-auto text-sm font-bold shrink-0 ${acharLeft != null && acharLeft <= 0 ? 'text-red-600' : ''}`} style={acharLeft != null && acharLeft <= 0 ? undefined : { color: '#be185d' }}>
                   {acharLeft == null ? '' : acharLeft < 0 ? `${-acharLeft}個不足` : `あと${acharLeft}食`}

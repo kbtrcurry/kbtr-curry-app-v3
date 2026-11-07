@@ -20,6 +20,7 @@ import {
 } from '../lib/pos'
 import { updateMenu } from '../lib/masterData'
 import { todayStr, useSegments } from '../lib/accounting'
+import { ticketCount, ticketTotal, useTicketActions, useTickets, type Ticket } from '../lib/tickets'
 import { isEventCode } from '../lib/events'
 import {
   normHandle,
@@ -83,6 +84,12 @@ export default function PosPage() {
   const [step, setStep] = usePersistedState<'select' | 'pay' | 'change'>('kbtr_v3_pos_step', 'select')
   const [received, setReceived] = usePersistedState('kbtr_v3_pos_received', '')
   const [people, setPeople] = usePersistedState<number>('kbtr_v3_pos_people', 1)
+  // 会計中の伝票（カード番号の伝票を会計に呼び出したとき）
+  const [ticketId, setTicketId] = usePersistedState<string | null>('kbtr_v3_pos_ticket', null)
+  const ticketsQ = useTickets(todayStr(), 5000)
+  const ticketActions = useTicketActions(todayStr())
+  const openTickets = (ticketsQ.data ?? []).filter((t) => t.status === 'open' || t.status === 'served')
+  const loadedTicket = openTickets.find((t) => t.id === ticketId)
 
   const [manualOpen, setManualOpen] = useState(false)
   const [manualVal, setManualVal] = useState('')
@@ -142,6 +149,24 @@ export default function PosPage() {
     } catch {
       // 通信できないときも、レジには入れておく（あとで取り置きリストから来店済みにする）
     }
+  }
+
+  // 伝票を会計に呼び出す: 品目をカートに入れ替える（グッズなどはこのあと足せる）
+  const loadTicket = (t: Ticket) => {
+    const nextQty: Record<string, number> = {}
+    const manual: ManualItem[] = []
+    for (const it of t.items) {
+      if (it.menu_id && menus.some((m) => m.id === it.menu_id)) nextQty[it.menu_id] = (nextQty[it.menu_id] ?? 0) + it.qty
+      else for (let n = 0; n < it.qty; n++) manual.push({ id: crypto.randomUUID(), price: it.price })
+    }
+    setQty(nextQty)
+    setManualItems(manual)
+    setTicketId(t.id)
+  }
+  const clearTicket = () => {
+    setTicketId(null)
+    setQty({})
+    setManualItems([])
   }
 
   const setCount = (menuId: string, delta: number) => {
@@ -238,6 +263,14 @@ export default function PosPage() {
         people: Math.max(1, people),
       })
       refresh()
+      if (ticketId) {
+        try {
+          await ticketActions.setStatus(ticketId, 'paid')
+        } catch {
+          /* 会計は記録済み。伝票は調理場で提供済みのまま残る */
+        }
+        setTicketId(null)
+      }
       setQty({})
       setManualItems([])
       setReceived('')
@@ -555,6 +588,36 @@ export default function PosPage() {
       {done && (
         <div className="mb-4 bg-green-100 text-green-700 rounded-lg px-4 py-3 font-semibold text-center flex items-center justify-center gap-1.5">
           <Check className="w-4 h-4" /> 本日の売上を記録しました
+        </div>
+      )}
+
+      {openTickets.length > 0 && (
+        <div className="mb-3 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 space-y-2">
+          <p className="text-sm font-semibold text-amber-900">会計前の伝票</p>
+          <div className="flex flex-wrap gap-2">
+            {openTickets.map((t) => (
+              <button
+                key={t.id}
+                onClick={() => loadTicket(t)}
+                className={`min-w-16 rounded-xl border-2 px-3 py-2 text-center active:scale-95 transition ${
+                  t.id === ticketId ? 'bg-amber-700 border-amber-700 text-[#faf9f5]' : t.status === 'served' ? 'bg-green-50 border-green-400 text-green-900' : 'bg-white border-amber-400 text-amber-900'
+                }`}
+              >
+                <span className="block text-2xl font-bold leading-none">{t.card_no}</span>
+                <span className="block text-[11px] mt-0.5">
+                  {ticketCount(t.items)}点 {ticketTotal(t.items).toLocaleString()}円
+                </span>
+              </button>
+            ))}
+          </div>
+          {loadedTicket && (
+            <p className="text-xs text-amber-900">
+              カード {loadedTicket.card_no} を会計中。グッズなどはメニューから足せます。
+              <button onClick={clearTicket} className="ml-2 underline text-stone-500">
+                解除
+              </button>
+            </p>
+          )}
         </div>
       )}
 

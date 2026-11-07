@@ -16,6 +16,8 @@ import {
   Target,
   type LucideIcon,
   CalendarDays,
+  ClipboardList,
+  ChefHat,
 } from 'lucide-react'
 import { supabase, isSupabaseConfigured } from '../lib/supabase'
 import { useAuth } from '../lib/auth'
@@ -45,6 +47,13 @@ const HUB_GROUPS: { title: string; links: HubLink[] }[] = [
       { to: '/accounting', label: '会計', icon: Wallet, note: '経費入力・入金予定・仕訳' },
       { to: '/import', label: '取り込み', icon: FileUp, note: 'カード・Amazon・銀行CSV' },
       { to: '/tax', label: '申告', icon: Receipt, note: '仕訳帳・元帳・月別の表' },
+    ],
+  },
+  {
+    title: '営業中',
+    links: [
+      { to: '/orders', label: '注文を取る（カード番号）', icon: ClipboardList },
+      { to: '/kitchen', label: '調理場の画面', icon: ChefHat },
     ],
   },
   {

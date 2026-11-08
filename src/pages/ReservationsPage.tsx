@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
-import { isMissingTable, itemsFromReservation, useDayTickets, useTicketActions, useTickets, walkinAchar, walkinBiryaniPortions } from '../lib/tickets'
-import { ACHAR_NAME, acharReservedOf, remaining, reservedPortions } from '../lib/walkinStock'
+import { isMissingTable, itemsFromReservation, useDayTickets, useTicketActions, useTickets, voidDayTickets, walkinBiryaniPortions } from '../lib/tickets'
+import { limitedRows, remaining, reservedPortions, useLimitedIds } from '../lib/walkinStock'
 import { RemainingTiles } from '../components/RemainingTiles'
 import { TablePicker } from '../components/TablePicker'
 import { TimeSelect } from '../components/TimeSelect'
@@ -136,22 +136,20 @@ export default function ReservationsPage() {
   const list = (dayRes.data ?? []).filter((r) => !del.hidden.has(r.id))
   const stats = useMemo(() => customerStats(allRes.data ?? [], notes.data ?? []), [allRes.data, notes.data])
   const statBy = useMemo(() => new Map(stats.map((s) => [s.key, s])), [stats])
-  // 川海老のアチャール: 仕込み数(この日の用意数) − 取り置き − 当日の注文 = あと何個
-  const acharMenu = (menus.data ?? []).find((m) => ACHAR_NAME.test(m.name))
-  const acharPrep = acharMenu ? stock.data?.[acharMenu.id] ?? null : null
-  const acharReserved = acharMenu ? acharReservedOf(list, acharMenu.id) : 0
   // 席ごとの伝票(注文)で、当日に追加で注文された分。取り置きの分は含めない。会計済みも数える
   const ticketQ = useDayTickets(effectiveDate)
   const ticketList = ticketQ.error ? [] : (ticketQ.data ?? [])
   const walkinOrdered = walkinBiryaniPortions(ticketList)
-  const acharOrdered = walkinAchar(ticketList)
   const reservedQty = reservedPortions(list)
-  const { biryaniLeft, acharLeft } = remaining({ cap, reservedPortions: reservedQty, walkinOrdered, acharPrep, acharReserved, acharOrdered })
-  const adjustAchar = async (delta: number) => {
-    if (!acharMenu) return
-    await saveMenuStock(effectiveDate, { [acharMenu.id]: Math.max(0, (acharPrep ?? acharReserved) + delta) })
+  const biryaniLeft = remaining({ cap, reservedPortions: reservedQty, walkinOrdered })
+  // 数に限りのあるメニュー(ビリヤニ以外)。月ごとに変えられる。仕込み数 − 取り置き − 当日の注文 = あと何個
+  const [limitedIds, setLimitedIds] = useLimitedIds(menus.data ?? [])
+  const rows = limitedRows(limitedIds, menus.data ?? [], stock.data, list, ticketList)
+  const adjustStock = async (row: { menuId: string; prep: number | null; reserved: number }, delta: number) => {
+    await saveMenuStock(effectiveDate, { [row.menuId]: Math.max(0, (row.prep ?? row.reserved) + delta) })
     invalidate()
   }
+  const [confirmVoid, setConfirmVoid] = useState(false)
   const peopleCount = list.filter((r) => (r.status === 'reserved' || r.status === 'picked_up') && !isWalkin(r)).length
   // 登録のある営業日（新しい順）。過去の日を開いて、直したり消したりするため
   const pastDates = [...new Set((allRes.data ?? []).map((r) => r.service_date))].sort().reverse().slice(0, 40)
@@ -248,16 +246,10 @@ export default function ReservationsPage() {
 
           {/* フリーのお客さんが来たとき、あと何食出せるか */}
           <div className="bg-white border border-stone-200 rounded-xl p-2.5 space-y-2">
-            <RemainingTiles
-              biryaniLeft={biryaniLeft}
-              acharLeft={acharLeft}
-              showAchar={!!acharMenu}
-              biryaniNote={`${fmtPortions(cap)} − 取り置き${fmtPortions(reservedQty)} − 注文${fmtPortions(walkinOrdered)}`}
-              acharNote={acharPrep != null ? `${acharPrep} − 取り置き${acharReserved} − 注文${acharOrdered}` : undefined}
-            />
+            <RemainingTiles biryaniLeft={biryaniLeft} rows={rows} biryaniNote={`${fmtPortions(cap)} − 取り置き${fmtPortions(reservedQty)} − 注文${fmtPortions(walkinOrdered)}`} />
             <div className="space-y-1.5 text-xs text-stone-600">
               <div className="flex items-center gap-1.5">
-                <span className="shrink-0">今日つくる食数</span>
+                <span className="shrink-0">今日つくるビリヤニ</span>
                 <input
                   type="number"
                   inputMode="numeric"
@@ -268,20 +260,45 @@ export default function ReservationsPage() {
                 />
                 <span>食</span>
               </div>
-              {acharMenu && (
-                <div className="flex items-center gap-1.5">
-                  <span className="shrink-0">アチャールの仕込み</span>
-                  <button onClick={() => void adjustAchar(-1)} disabled={(acharPrep ?? 0) <= 0} className="w-9 h-9 rounded-lg bg-white border border-stone-300 text-base font-bold text-stone-600 disabled:opacity-30 active:scale-95">
+              {rows.map((row) => (
+                <div key={row.menuId} className="flex items-center gap-1.5">
+                  <span className="flex-1 min-w-0 truncate">{row.name} の仕込み</span>
+                  <button onClick={() => void adjustStock(row, -1)} disabled={(row.prep ?? 0) <= 0} className="w-9 h-9 rounded-lg bg-white border border-stone-300 text-base font-bold text-stone-600 disabled:opacity-30 active:scale-95">
                     −
                   </button>
-                  <b className="w-8 text-center text-base text-stone-900">{acharPrep ?? '—'}</b>
-                  <button onClick={() => void adjustAchar(1)} className="w-9 h-9 rounded-lg bg-stone-800 text-white text-base font-bold active:scale-95">
+                  <b className="w-8 text-center text-base text-stone-900">{row.prep ?? '—'}</b>
+                  <button onClick={() => void adjustStock(row, 1)} className="w-9 h-9 rounded-lg bg-stone-800 text-white text-base font-bold active:scale-95">
                     ＋
                   </button>
-                  <span>個</span>
+                  <button onClick={() => setLimitedIds(limitedIds.filter((x) => x !== row.menuId))} aria-label={`${row.name}を数える対象から外す`} className="w-9 h-9 rounded-lg text-stone-400 active:bg-stone-100">
+                    ×
+                  </button>
                 </div>
+              ))}
+              <select
+                value=""
+                onChange={(e) => e.target.value && setLimitedIds([...limitedIds, e.target.value])}
+                className="w-full border border-stone-300 rounded-lg px-2 py-2 text-sm bg-white text-stone-600"
+                aria-label="数に限りのあるメニューを足す"
+              >
+                <option value="">＋ 数に限りのあるメニューを足す（今月だけの限定など）</option>
+                {(menus.data ?? [])
+                  .filter((m) => !limitedIds.includes(m.id))
+                  .map((m) => (
+                    <option key={m.id} value={m.id}>
+                      {m.name}
+                    </option>
+                  ))}
+              </select>
+              <p className="text-stone-400">あと ＝ 仕込み − 取り置き − 当日の注文（オーダー画面で入れた分）</p>
+              {ticketList.length > 0 && (
+                <p className="text-stone-500">
+                  この日の注文 {ticketList.length}組 {fmtPortions(walkinOrdered)}食（取り置き分を除く）
+                  <button onClick={() => setConfirmVoid(true)} className="ml-2 underline text-red-600">
+                    注文をすべて消す
+                  </button>
+                </p>
               )}
-              <p className="text-stone-400">あと ＝ つくる食数 − 取り置き − 当日の注文（オーダー画面で入れた分）</p>
             </div>
           </div>
 
@@ -408,6 +425,19 @@ export default function ReservationsPage() {
         />
       )}
       {del.toast}
+      {confirmVoid && (
+        <ConfirmModal
+          message={`${md(effectiveDate)} の注文 ${ticketList.length}組をすべて消します。「あと」の数は元に戻ります。\n（売上の記録には触りません。テストの注文を消すときに使ってください）`}
+          confirmLabel="すべて消す"
+          onConfirm={() => {
+            setConfirmVoid(false)
+            void voidDayTickets(effectiveDate)
+              .then(() => todayActions.refresh())
+              .catch((e) => setSeatError(e instanceof Error ? e.message : '消せませんでした'))
+          }}
+          onCancel={() => setConfirmVoid(false)}
+        />
+      )}
       {seatRes && (
         <TablePicker
           title={`${seatRes.name || '取り置き'}さんを案内`}

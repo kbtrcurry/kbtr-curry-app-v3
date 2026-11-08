@@ -84,6 +84,21 @@ export function walkinAchar(tickets: Ticket[]): number {
     .reduce((a, i) => a + i.qty, 0)
 }
 
+/** あるメニューの、当日の注文の個数(取り置きの分は含めない) */
+export function orderedQtyOf(tickets: Ticket[], menuId: string): number {
+  return tickets
+    .filter((t) => t.status !== 'void')
+    .flatMap((t) => t.items)
+    .filter((i) => !i.from_res && i.menu_id === menuId)
+    .reduce((a, i) => a + i.qty, 0)
+}
+
+/** その日の注文をすべて取り消す(テストの注文を消すとき用)。売上の記録には触らない */
+export async function voidDayTickets(date: string): Promise<void> {
+  const { error } = await supabase.from('tickets').update({ status: 'void' }).eq('service_date', date).neq('status', 'void')
+  if (error) throw error
+}
+
 /** 使われていないカードのうち、いちばん小さい番号 */
 export function freeCards(tickets: Ticket[], max = CARD_COUNT): number[] {
   const used = new Set(tickets.filter((t) => t.status === 'open' || t.status === 'served').map((t) => t.card_no))

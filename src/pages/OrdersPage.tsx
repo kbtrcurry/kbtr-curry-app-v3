@@ -134,7 +134,7 @@ export default function OrdersPage() {
         </h1>
         {error && <p className="text-sm text-red-600">{error}</p>}
 
-        {rem.ready && <RemainingTiles biryaniLeft={rem.biryaniLeft} acharLeft={rem.acharLeft} showAchar={rem.acharLeft != null} />}
+        {rem.ready && <RemainingTiles biryaniLeft={rem.biryaniLeft} rows={rem.rows} />}
 
         <p className="text-sm text-stone-500">テーブル番号を押してください</p>
         <div className="grid grid-cols-4 gap-2">
@@ -178,7 +178,7 @@ export default function OrdersPage() {
       </div>
       {error && <p className="text-sm text-red-600">{error}</p>}
 
-      {rem.ready && <RemainingTiles biryaniLeft={rem.biryaniLeft} acharLeft={rem.acharLeft} showAchar={rem.acharLeft != null} />}
+      {rem.ready && <RemainingTiles biryaniLeft={rem.biryaniLeft} rows={rem.rows} />}
 
       <div className="bg-stone-50 rounded-xl p-3 space-y-1.5">
         {items.length === 0 && <p className="text-sm text-stone-400">まだ注文がありません。下のメニューを押してください</p>}

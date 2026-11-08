@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { addItem, biryaniDishes, freeCards, itemsFromReservation, kitchenQueue, pendingBiryaniDishes, ticketTotal, walkinAchar, walkinBiryaniPortions, type Ticket } from './tickets'
+import type { OutboxEntry } from './ticketOutbox'
+import { addItem, applyOutbox, biryaniDishes, freeCards, isRetryableError, isTakeoutCard, itemsFromReservation, kitchenQueue, pendingBiryaniDishes, ticketTotal, walkinAchar, walkinBiryaniPortions, type Ticket } from './tickets'
 
 const t = (o: Partial<Ticket>): Ticket => ({
   id: 'x',
@@ -76,5 +77,30 @@ describe('カード', () => {
   it('使用中のカードを除いた番号を返す', () => {
     const tk = [t({ card_no: 1 }), t({ card_no: 3, status: 'served' }), t({ card_no: 2, status: 'paid' })]
     expect(freeCards(tk, 4)).toEqual([2, 4])
+  })
+})
+
+describe('未送信の控え', () => {
+  const entry = (id: string, data: Partial<Ticket>, isNew = false): OutboxEntry => ({ id, isNew, v: 1, data: { id, ...data } })
+  it('送れていない変更が、取得した伝票に重なる', () => {
+    const server = [t({ id: 'a', card_no: 2, items: addItem([], biryani, 1) })]
+    const out = applyOutbox(server, [entry('a', { items: addItem([], biryani, 3) })], '2026-11-08')
+    expect(out[0].items[0].qty).toBe(3)
+  })
+  it('まだ作れていない伝票も画面に出る。会計済みは出ない', () => {
+    const out = applyOutbox(
+      [t({ id: 'p', card_no: 5 })],
+      [entry('n', { service_date: '2026-11-08', card_no: 3, items: addItem([], biryani, 1) }, true), entry('p', { status: 'paid' })],
+      '2026-11-08',
+    )
+    expect(out.map((x) => x.id)).toEqual(['n'])
+  })
+  it('テーブル番号は9からがテイクアウト', () => {
+    expect(isTakeoutCard(8)).toBe(false)
+    expect(isTakeoutCard(9)).toBe(true)
+  })
+  it('通信エラーは送り直し、重複などは送り直さない', () => {
+    expect(isRetryableError(new TypeError('Failed to fetch'))).toBe(true)
+    expect(isRetryableError({ message: 'duplicate key value violates unique constraint' })).toBe(false)
   })
 })

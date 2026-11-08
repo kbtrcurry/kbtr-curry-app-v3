@@ -3,6 +3,7 @@ import { useEffect } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from './supabase'
 import { portionOf } from './reservations'
+import { enqueue, getEntries, completeEntry, dropEntry, type OutboxEntry } from './ticketOutbox'
 
 export type TicketItem = {
   menu_id: string | null
@@ -26,8 +27,10 @@ export type Ticket = {
   paid_at: string | null
 }
 
-/** 用意するカードの枚数 */
+/** 用意するテーブル番号の数。1〜8が客席、9〜12はテイクアウトで外で待つ人用 */
 export const CARD_COUNT = 12
+export const SEAT_COUNT = 8
+export const isTakeoutCard = (n: number): boolean => n > SEAT_COUNT
 
 // ---------- 計算（純粋関数） ----------
 
@@ -99,15 +102,22 @@ export function itemsFromReservation(
 
 export const FREE_PREFIX = 'フリー'
 
-/** フリーのお客さんの呼び名。その日の何組目か(取り消した組も数える)で フリー1, フリー2 … */
-export async function nextFreeLabel(date: string): Promise<string> {
-  const { count, error } = await supabase
-    .from('tickets')
-    .select('id', { count: 'exact', head: true })
-    .eq('service_date', date)
-    .like('label', `${FREE_PREFIX}%`)
-  if (error) throw error
-  return `${FREE_PREFIX}${(count ?? 0) + 1}`
+/** フリーのお客さんの呼び名。その日の何組目かで フリー1, フリー2 …(通信がなくても付けられるよう、端末で数える) */
+export function nextFreeLabel(date: string): string {
+  const key = `kbtr_v3_free_count_${date}`
+  let n = 0
+  try {
+    n = Number(localStorage.getItem(key)) || 0
+  } catch {
+    /* 数えられなくても動く */
+  }
+  n += 1
+  try {
+    localStorage.setItem(key, String(n))
+  } catch {
+    /* ignore */
+  }
+  return `${FREE_PREFIX}${n}`
 }
 
 export function elapsedMinutes(iso: string, now = Date.now()): number {
@@ -121,6 +131,42 @@ export function isMissingTable(err: unknown): boolean {
   return /tickets/.test(m) && /(does not exist|schema cache|Could not find)/i.test(m)
 }
 
+const newId = (): string =>
+  typeof crypto !== 'undefined' && 'randomUUID' in crypto
+    ? crypto.randomUUID()
+    : 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+        const r = (Math.random() * 16) | 0
+        return (c === 'x' ? r : (r & 0x3) | 0x8).toString(16)
+      })
+
+export function fullTicket(d: Partial<Ticket>): Ticket {
+  return {
+    id: '',
+    service_date: '',
+    card_no: 1,
+    label: '',
+    items: [],
+    status: 'open',
+    reservation_id: null,
+    created_at: new Date().toISOString(),
+    served_at: null,
+    paid_at: null,
+    ...d,
+  }
+}
+
+/** データベースから取った伝票に、まだ送れていない変更を重ねる(通信がなくても画面に出るように) */
+export function applyOutbox(list: Ticket[], entries: OutboxEntry[], date: string): Ticket[] {
+  const out = list.map((t) => {
+    const e = entries.find((x) => x.id === t.id)
+    return e ? ({ ...t, ...e.data } as Ticket) : t
+  })
+  for (const e of entries) {
+    if (e.isNew && e.data.service_date === date && !out.some((t) => t.id === e.id)) out.push(fullTicket(e.data))
+  }
+  return out.filter((t) => t.status === 'open' || t.status === 'served').sort((a, b) => a.created_at.localeCompare(b.created_at))
+}
+
 async function fetchTickets(date: string): Promise<Ticket[]> {
   const { data, error } = await supabase
     .from('tickets')
@@ -129,7 +175,7 @@ async function fetchTickets(date: string): Promise<Ticket[]> {
     .in('status', ['open', 'served'])
     .order('created_at', { ascending: true })
   if (error) throw error
-  return (data ?? []) as Ticket[]
+  return applyOutbox((data ?? []) as Ticket[], getEntries(), date)
 }
 
 /** 伝票が変わったときだけ取り直す(Realtime)。念のため、ゆっくり取り直す保険もつけてある */
@@ -155,85 +201,128 @@ export function useTickets(date: string) {
   })
 }
 
-// 同じテーブルへの作成が重なっても、伝票が2枚にならないよう、テーブルごとに順番に処理する
-const locks = new Map<string, Promise<unknown>>()
-function withLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
-  const run = (locks.get(key) ?? Promise.resolve()).catch(() => undefined).then(fn)
-  locks.set(key, run)
-  void run.finally(() => {
-    if (locks.get(key) === run) locks.delete(key)
-  }).catch(() => undefined)
-  return run
+// ---------- 未送信の控えをデータベースへ送る ----------
+
+/** 通信が切れている・つながりにくいだけのエラー(あとで送り直せば通るもの) */
+export function isRetryableError(err: unknown): boolean {
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) return true
+  const m = errText(err)
+  return /fetch|network|load failed|timeout|abort|offline|gateway|50[234]|jwt|expired/i.test(m)
+}
+
+async function mergeIntoExisting(row: Ticket): Promise<void> {
+  // 自分の前回の送信が実は通っていた場合は、中身を更新するだけ
+  const mine = await supabase.from('tickets').select('id').eq('id', row.id).maybeSingle()
+  if (mine.error) throw mine.error
+  if (mine.data) {
+    const rest: Partial<Ticket> = { ...row }
+    delete rest.id
+    const { error } = await supabase.from('tickets').update(rest).eq('id', row.id)
+    if (error) throw error
+    return
+  }
+  // 同じテーブルに、別の端末が先に伝票を作っていた: そこへ足す
+  const ex = await supabase
+    .from('tickets')
+    .select('*')
+    .eq('service_date', row.service_date)
+    .eq('card_no', row.card_no)
+    .in('status', ['open', 'served'])
+    .order('created_at', { ascending: true })
+    .limit(1)
+  if (ex.error) throw ex.error
+  const t = ex.data?.[0] as Ticket | undefined
+  if (!t) throw new Error('同じテーブルの伝票を作れませんでした')
+  const items = row.items.reduce((acc, i) => addItem(acc, { id: i.menu_id, name: i.name, price: i.price }, i.qty, !!i.from_res), t.items)
+  const { error } = await supabase.from('tickets').update({ items, status: 'open' }).eq('id', t.id)
+  if (error) throw error
+}
+
+async function sendEntry(e: OutboxEntry): Promise<void> {
+  if (e.isNew) {
+    const row = fullTicket(e.data)
+    const { error } = await supabase.from('tickets').insert(row)
+    if (!error) return
+    if (error.code === '23505') return mergeIntoExisting(row)
+    throw error
+  }
+  const patch = { ...e.data }
+  delete patch.id
+  const { data, error } = await supabase.from('tickets').update(patch).eq('id', e.id).select('id')
+  if (error) throw error
+  if (!data || data.length === 0) throw new Error('伝票が見つかりませんでした')
+}
+
+function errText(err: unknown): string {
+  return err instanceof Error ? err.message : typeof err === 'object' && err && 'message' in err ? String((err as { message: unknown }).message) : String(err)
+}
+
+let flushing = false
+/** 未送信を古い順に送る。通信が切れていたら、そこで止めて次の機会に。送れたものがあれば true */
+export async function flushOutbox(): Promise<boolean> {
+  if (flushing) return false
+  flushing = true
+  let progressed = false
+  try {
+    for (const e of [...getEntries()]) {
+      try {
+        await sendEntry(e)
+        completeEntry(e.id, e.v)
+        progressed = true
+      } catch (err) {
+        if (isRetryableError(err)) break
+        const dup = (err as { code?: string })?.code === '23505'
+        dropEntry(e.id, dup ? 'そのテーブルはすでに使われています' : errText(err))
+        progressed = true
+      }
+    }
+  } finally {
+    flushing = false
+  }
+  return progressed
 }
 
 export function useTicketActions(date: string) {
   const qc = useQueryClient()
   const refresh = () => qc.invalidateQueries({ queryKey: ['tickets'] })
-  // 画面はすぐ反映し、保存できなければ取り直して元に戻す
-  const patchCache = (id: string, patch: Partial<Ticket>) =>
-    qc.setQueryData<Ticket[]>(['tickets', date], (old) => (old ?? []).map((t) => (t.id === id ? { ...t, ...patch } : t)))
+  // 変更は、まず端末に控えて画面に出す。送信は OutboxSync が(通信が戻るまで繰り返し)行う
+  const stage = (id: string, data: Partial<Ticket>, isNew = false) => {
+    enqueue(id, data, isNew)
+    qc.setQueryData<Ticket[]>(['tickets', date], (old) => applyOutbox(old ?? [], getEntries(), date))
+  }
 
   return {
     refresh,
     create(p: { cardNo: number; items: TicketItem[]; reservationId?: string | null; label?: string }): Promise<Ticket> {
-      return withLock(`${date}:${p.cardNo}`, async () => {
-        // そのテーブルにすでに伝票があれば、新しく作らず、そこへ足す
-        const { data: ex, error: exErr } = await supabase
-          .from('tickets')
-          .select('*')
-          .eq('service_date', date)
-          .eq('card_no', p.cardNo)
-          .in('status', ['open', 'served'])
-          .order('created_at', { ascending: true })
-          .limit(1)
-        if (exErr) throw exErr
-        if (ex && ex.length > 0) {
-          const t = ex[0] as Ticket
-          const items = p.items.reduce((acc, i) => addItem(acc, { id: i.menu_id, name: i.name, price: i.price }, i.qty, !!i.from_res), t.items)
-          const patch: Partial<Ticket> = { items, status: 'open' }
-          if (!t.label && p.label) patch.label = p.label
-          if (!t.reservation_id && p.reservationId) patch.reservation_id = p.reservationId
-          const { data, error } = await supabase.from('tickets').update(patch).eq('id', t.id).select('*').single()
-          if (error) throw error
-          await refresh()
-          return data as Ticket
-        }
-        const { data, error } = await supabase
-          .from('tickets')
-          .insert({ service_date: date, card_no: p.cardNo, items: p.items, reservation_id: p.reservationId ?? null, label: p.label ?? '' })
-          .select('*')
-          .single()
-        if (error) throw error
-        await refresh()
-        return data as Ticket
-      })
-    },
-    async setItems(id: string, items: TicketItem[]): Promise<void> {
-      patchCache(id, { items })
-      const { error } = await supabase.from('tickets').update({ items }).eq('id', id)
-      if (error) {
-        await refresh()
-        throw error
+      const cache = qc.getQueryData<Ticket[]>(['tickets', date]) ?? []
+      const ex = cache.find((t) => t.card_no === p.cardNo && (t.status === 'open' || t.status === 'served'))
+      if (ex) {
+        // そのテーブルにすでに伝票があれば、新しく作らず、そこへ足す(同じ取り置きを2回入れても増えない)
+        if (p.reservationId && ex.reservation_id === p.reservationId) return Promise.resolve(ex)
+        const items = p.items.reduce((acc, i) => addItem(acc, { id: i.menu_id, name: i.name, price: i.price }, i.qty, !!i.from_res), ex.items)
+        const data: Partial<Ticket> = { items, status: 'open' }
+        if (!ex.label && p.label) data.label = p.label
+        if (!ex.reservation_id && p.reservationId) data.reservation_id = p.reservationId
+        stage(ex.id, data)
+        return Promise.resolve({ ...ex, ...data })
       }
+      const t = fullTicket({ id: newId(), service_date: date, card_no: p.cardNo, label: p.label ?? '', items: p.items, reservation_id: p.reservationId ?? null })
+      stage(t.id, t, true)
+      return Promise.resolve(t)
+    },
+    setItems(id: string, items: TicketItem[]): Promise<void> {
+      stage(id, { items })
+      return Promise.resolve()
     },
     /** テーブルを移る(使用中の番号には移れない。画面側で選べないようにしてある) */
-    async moveTo(id: string, cardNo: number): Promise<void> {
-      patchCache(id, { card_no: cardNo })
-      const { error } = await supabase.from('tickets').update({ card_no: cardNo }).eq('id', id)
-      if (error) {
-        await refresh()
-        throw error
-      }
+    moveTo(id: string, cardNo: number): Promise<void> {
+      stage(id, { card_no: cardNo })
+      return Promise.resolve()
     },
-    async setStatus(id: string, status: TicketStatus): Promise<void> {
+    setStatus(id: string, status: TicketStatus): Promise<void> {
       const now = new Date().toISOString()
-      patchCache(id, { status })
-      const { error } = await supabase
-        .from('tickets')
-        .update({ status, ...(status === 'served' ? { served_at: now } : {}), ...(status === 'paid' ? { paid_at: now } : {}) })
-        .eq('id', id)
-      await refresh()
-      if (error) throw error
+      stage(id, { status, ...(status === 'served' ? { served_at: now } : {}), ...(status === 'paid' ? { paid_at: now } : {}), ...(status === 'open' ? { served_at: null } : {}) })
+      return Promise.resolve()
     },
   }
 }

@@ -44,6 +44,7 @@ import ImportPage from './pages/ImportPage'
 import DataPage from './pages/DataPage'
 import { useStoredState } from './lib/persistState'
 import { GmailReturnRedirect } from './components/GmailReturnRedirect'
+import { OutboxSync } from './components/OutboxSync'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -252,6 +253,7 @@ export default function App() {
         <BrowserRouter basename="/kbtr-curry-app-v3">
           <Preloader />
           <AutoSettle />
+          <OutboxSync />
           <GmailReturnRedirect />
           <BackHandlerProvider>
             <Layout>

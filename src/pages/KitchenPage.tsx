@@ -3,7 +3,7 @@ import { ChefHat } from 'lucide-react'
 import { useAuth } from '../lib/auth'
 import { Spinner } from '../components/Spinner'
 import { todayStr } from '../lib/accounting'
-import { biryaniDishes, elapsedMinutes, isMissingTable, kitchenQueue, pendingBiryaniDishes, useTicketActions, useTickets } from '../lib/tickets'
+import { biryaniDishes, elapsedMinutes, isMissingTable, isTakeoutCard, kitchenQueue, pendingBiryaniDishes, useTicketActions, useTickets } from '../lib/tickets'
 
 // 調理場の画面。会計前でまだ出していない伝票を、注文が入った順に大きく並べるだけ。
 // 新しい注文が入ると音とバイブで知らせる。営業中は画面を点けたままにする。
@@ -92,16 +92,37 @@ export default function KitchenPage() {
     await actions.setStatus(id, 'open')
   }
 
-  const enableSound = () => {
+  // 音は、画面を開いたら自動で準備する。ブラウザが許さない間は、画面のどこかを最初に触った瞬間に有効になる
+  useEffect(() => {
+    let ctx: AudioContext | null = null
+    const unlock = () => {
+      void ctx?.resume().then(() => setSound(ctx?.state === 'running')).catch(() => undefined)
+    }
     try {
       const Ctx = window.AudioContext ?? (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext
-      audio.current = audio.current ?? new Ctx()
-      void audio.current.resume()
-      setSound(true)
-      beep()
+      ctx = new Ctx()
+      audio.current = ctx
+      ctx.onstatechange = () => setSound(ctx?.state === 'running')
+      unlock()
+      window.addEventListener('pointerdown', unlock)
+      window.addEventListener('keydown', unlock)
     } catch {
-      setSound(false)
+      /* 音が使えない端末でも、表示は動く */
     }
+    return () => {
+      window.removeEventListener('pointerdown', unlock)
+      window.removeEventListener('keydown', unlock)
+      if (ctx) ctx.onstatechange = null
+      void ctx?.close().catch(() => undefined)
+      audio.current = null
+    }
+  }, [])
+
+  const enableSound = () => {
+    void audio.current?.resume().then(() => {
+      setSound(audio.current?.state === 'running')
+      beep()
+    })
   }
 
   if (authLoading) return <Spinner />
@@ -115,7 +136,7 @@ export default function KitchenPage() {
       </div>
     )
   }
-  if (tq.error) {
+  if (tq.error && !tq.data) {
     return (
       <div className="p-4">
         <p className="text-red-600">
@@ -140,7 +161,7 @@ export default function KitchenPage() {
           onClick={enableSound}
           className={`ml-auto px-3 py-2 rounded-lg text-sm font-semibold ${sound ? 'bg-green-100 text-green-800' : 'bg-amber-700 text-[#faf9f5]'}`}
         >
-          {sound ? '音 ON' : '音を出す'}
+          {sound ? '音 ON' : '音 OFF（画面をタッチで有効）'}
         </button>
       </div>
 
@@ -152,6 +173,7 @@ export default function KitchenPage() {
           <div key={t.id} className="rounded-2xl border-2 border-amber-600 bg-white p-3">
             <div className="flex items-baseline gap-3">
               <span className="text-4xl font-bold text-amber-800 leading-none">{t.card_no}</span>
+              {isTakeoutCard(t.card_no) && <span className="text-xs font-bold text-white bg-orange-600 rounded px-1.5 py-0.5">持ち帰り</span>}
               <span className="text-sm text-stone-500">
                 {idx + 1}番目 ・ {elapsedMinutes(t.created_at, now)}分前
               </span>

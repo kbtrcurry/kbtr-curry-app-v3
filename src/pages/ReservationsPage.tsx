@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { itemsFromReservation, nextFreeLabel, useTicketActions, useTickets, walkinAchar, walkinBiryaniPortions } from '../lib/tickets'
+import { isMissingTable, itemsFromReservation, useTicketActions, useTickets, walkinAchar, walkinBiryaniPortions } from '../lib/tickets'
 import { TablePicker } from '../components/TablePicker'
 import { TimeSelect } from '../components/TimeSelect'
 import { DEFAULT_UZURA_LABEL, setUzuraLabel, useUzuraLabel } from '../lib/uzuraLabel'
@@ -97,7 +97,6 @@ export default function ReservationsPage() {
   const [confirmPick, setConfirmPick] = useState<Reservation | null>(null)
   // 来店したお客さんをテーブルに案内する: 取り置き(来店済みにする) / フリー(枠を作る)
   const [seatRes, setSeatRes] = useState<Reservation | null>(null)
-  const [seatFree, setSeatFree] = useState(false)
   const [seatBusy, setSeatBusy] = useState(false)
   const [seatError, setSeatError] = useState<string | null>(null)
   const todayTickets = useTickets(today)
@@ -110,7 +109,7 @@ export default function ReservationsPage() {
   }
 
   const menus = useActiveMenus()
-  const ticketsReady = !todayTickets.error
+  const ticketsReady = !isMissingTable(todayTickets.error)
   const seatReservation = async (r: Reservation, n: number | null) => {
     setSeatBusy(true)
     setSeatError(null)
@@ -120,19 +119,6 @@ export default function ReservationsPage() {
       }
       await applyStatus(r, 'picked_up')
       setSeatRes(null)
-    } catch (e) {
-      setSeatError(e instanceof Error ? e.message : '保存できませんでした')
-    } finally {
-      setSeatBusy(false)
-    }
-  }
-  const seatFreeGuest = async (n: number) => {
-    setSeatBusy(true)
-    setSeatError(null)
-    try {
-      const label = await nextFreeLabel(today)
-      await todayActions.create({ cardNo: n, items: [], label })
-      setSeatFree(false)
     } catch (e) {
       setSeatError(e instanceof Error ? e.message : '保存できませんでした')
     } finally {
@@ -320,12 +306,6 @@ export default function ReservationsPage() {
             )}
           </div>
 
-          {ticketsReady && effectiveDate === today && (
-            <button onClick={() => setSeatFree(true)} className="w-full h-11 rounded-xl bg-sky-700 text-white text-sm font-bold active:scale-95">
-              ＋ フリーのお客さんを席に案内
-            </button>
-          )}
-
           <div className="flex items-center gap-1.5 bg-sky-50 border border-sky-200 rounded-xl px-2.5 py-1.5">
             <span className="text-sm font-bold text-sky-800 shrink-0">当日分</span>
             <span className="text-sm font-bold text-sky-950 w-14 shrink-0" style={{ color: "#0c4a6e" }}>{fmtPortions(walkinQty)}食</span>
@@ -506,16 +486,6 @@ export default function ReservationsPage() {
           onPick={(n) => void seatReservation(seatRes, n)}
           onSkip={() => void seatReservation(seatRes, null)}
           onCancel={() => setSeatRes(null)}
-        />
-      )}
-      {seatFree && (
-        <TablePicker
-          title="フリーのお客さんを案内"
-          detail="来た順に フリー1、フリー2… と呼び名がつきます"
-          tickets={todayTickets.data ?? []}
-          busy={seatBusy}
-          onPick={(n) => void seatFreeGuest(n)}
-          onCancel={() => setSeatFree(false)}
         />
       )}
       {seatError && (

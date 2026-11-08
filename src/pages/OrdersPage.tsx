@@ -1,11 +1,11 @@
-import { useMemo, useRef, useState } from 'react'
+import { Fragment, useMemo, useRef, useState } from 'react'
 import { ClipboardList } from 'lucide-react'
 import { useLocation } from 'react-router-dom'
 import { useAuth } from '../lib/auth'
 import { Spinner } from '../components/Spinner'
 import { useActiveMenus } from '../lib/pos'
 import { todayStr } from '../lib/accounting'
-import { addItem, CARD_COUNT, freeCards, isMissingTable, ticketCount, ticketTotal, useTicketActions, useTickets, type Ticket, type TicketItem } from '../lib/tickets'
+import { addItem, CARD_COUNT, freeCards, isMissingTable, isTakeoutCard, nextFreeLabel, SEAT_COUNT, ticketCount, ticketTotal, useTicketActions, useTickets, type Ticket, type TicketItem } from '../lib/tickets'
 import { yen } from '../lib/format'
 import { TablePicker } from '../components/TablePicker'
 
@@ -49,7 +49,7 @@ export default function OrdersPage() {
       </div>
     )
   }
-  if (tq.error) {
+  if (tq.error && !tq.data) {
     return (
       <div className="p-4 max-w-md mx-auto">
         <p className="text-sm text-red-600">{isMissingTable(tq.error) ? SQL_HINT : `読み込みに失敗しました: ${(tq.error as Error).message}`}</p>
@@ -71,7 +71,8 @@ export default function OrdersPage() {
       if (!current) {
         if (delta <= 0) return
         flashUndo({ ticketId: null, cardNo, before: [], text: `${menu.name} を入れました`, menu })
-        await actions.create({ cardNo, items: addItem([], menu, 1) })
+        // 空いているテーブルに最初の注文を入れたら、フリー1・フリー2…と名前がつく
+        await actions.create({ cardNo, items: addItem([], menu, 1), label: nextFreeLabel(date) })
         return
       }
       const before = current.items
@@ -136,16 +137,18 @@ export default function OrdersPage() {
             const t = byCard.get(n)
             const busy = !!t
             return (
+              <Fragment key={n}>
+              {n === SEAT_COUNT + 1 && <p className="col-span-4 text-xs font-bold text-orange-700 pt-2">テイクアウト（外で待つ人）</p>}
               <button
-                key={n}
                 onClick={() => pickCard(n)}
                 className={`h-20 rounded-2xl border-2 flex flex-col items-center justify-center active:scale-95 transition disabled:opacity-30 ${
-                  !busy ? 'bg-white border-stone-300 text-stone-700' : t.status === 'served' ? 'bg-green-50 border-green-400 text-green-800' : 'bg-amber-50 border-amber-500 text-amber-900'
+                  !busy ? (isTakeoutCard(n) ? 'bg-orange-50 border-orange-300 text-orange-800' : 'bg-white border-stone-300 text-stone-700') : t.status === 'served' ? 'bg-green-50 border-green-400 text-green-800' : 'bg-amber-50 border-amber-500 text-amber-900'
                 }`}
               >
                 <span className="text-3xl font-bold leading-none">{n}</span>
                 {busy && <span className="text-[11px] mt-1">{t.label || `${ticketCount(t.items)}品`}</span>}
               </button>
+              </Fragment>
             )
           })}
         </div>

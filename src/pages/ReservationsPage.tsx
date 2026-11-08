@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { itemsFromReservation, nextFreeLabel, useTicketActions, useTickets, walkinAchar, walkinBiryaniPortions } from '../lib/tickets'
 import { TablePicker } from '../components/TablePicker'
+import { TimeSelect } from '../components/TimeSelect'
 import { DEFAULT_UZURA_LABEL, setUzuraLabel, useUzuraLabel } from '../lib/uzuraLabel'
 import { Check, ClipboardPaste, Copy, ExternalLink, Pencil, Plus, Trash2, Users } from 'lucide-react'
 import { useAuth } from '../lib/auth'
@@ -759,7 +760,7 @@ function ReservationForm({
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
-        <input type="time" value={time} onChange={(e) => setTime(e.target.value)} className="border border-stone-300 rounded-lg px-2 py-2 text-sm" aria-label="来店予定時間（任意）" />
+        <TimeSelect value={time} onChange={setTime} />
         <button
           onClick={() => setTime('')}
           aria-pressed={time === ''}

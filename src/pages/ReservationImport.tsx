@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { TimeSelect } from '../components/TimeSelect'
 import { ClipboardPaste, FileUp } from 'lucide-react'
 import { useAllMenus } from '../lib/masterData'
 import { ConfirmModal } from '../components/ConfirmModal'
@@ -345,7 +346,7 @@ export default function ReservationImport({ existing, onOpenDate }: { existing: 
                 <Toggle on={r.uzura} onClick={() => upd(r.id, { uzura: !r.uzura })}>
                   うずら
                 </Toggle>
-                <input type="time" value={r.time} onChange={(e) => upd(r.id, { time: e.target.value })} className="border border-stone-300 rounded-lg px-2 py-1.5 text-sm" aria-label="来店予定時間" />
+                <TimeSelect value={r.time} onChange={(v) => upd(r.id, { time: v })} />
               </div>
               <div className="flex flex-wrap items-center gap-1.5">
                 {r.parts.length === 1 ? (

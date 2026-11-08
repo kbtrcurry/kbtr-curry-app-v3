@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { isMissingTable, itemsFromReservation, useDayTickets, useTicketActions, useTickets, voidDayTickets, walkinBiryaniPortions } from '../lib/tickets'
+import { isMissingTable, itemsFromReservation, nextFreeLabel, useDayTickets, useTicketActions, useTickets, voidDayTickets, walkinBiryaniPortions } from '../lib/tickets'
 import { limitedRows, remaining, reservedPortions, useLimitedIds } from '../lib/walkinStock'
 import { RemainingTiles } from '../components/RemainingTiles'
 import { TablePicker } from '../components/TablePicker'
@@ -96,6 +96,7 @@ export default function ReservationsPage() {
   const [confirmPick, setConfirmPick] = useState<Reservation | null>(null)
   // 来店したお客さんをテーブルに案内する: 取り置き(来店済みにする) / フリー(枠を作る)
   const [seatRes, setSeatRes] = useState<Reservation | null>(null)
+  const [seatFree, setSeatFree] = useState(false)
   const [seatBusy, setSeatBusy] = useState(false)
   const [seatError, setSeatError] = useState<string | null>(null)
   const todayTickets = useTickets(today)
@@ -118,6 +119,19 @@ export default function ReservationsPage() {
       }
       await applyStatus(r, 'picked_up')
       setSeatRes(null)
+    } catch (e) {
+      setSeatError(e instanceof Error ? e.message : '保存できませんでした')
+    } finally {
+      setSeatBusy(false)
+    }
+  }
+  // フリーのお客さん: テーブル番号を選ぶと、フリー1・フリー2…の名前で席ができる(注文はあとでオーダー画面で入れる)
+  const seatFreeGuest = async (n: number) => {
+    setSeatBusy(true)
+    setSeatError(null)
+    try {
+      await todayActions.create({ cardNo: n, items: [], label: nextFreeLabel(today) })
+      setSeatFree(false)
     } catch (e) {
       setSeatError(e instanceof Error ? e.message : '保存できませんでした')
     } finally {
@@ -243,6 +257,12 @@ export default function ReservationsPage() {
               </button>
             )}
           </div>
+
+          {ticketsReady && effectiveDate === today && (
+            <button onClick={() => setSeatFree(true)} className="w-full h-12 rounded-xl bg-stone-900 text-white text-base font-bold active:scale-95">
+              ＋ フリーのお客さんが来店
+            </button>
+          )}
 
           {/* フリーのお客さんが来たとき、あと何食出せるか */}
           <div className="bg-white border border-stone-200 rounded-xl p-2.5 space-y-2">
@@ -448,6 +468,16 @@ export default function ReservationsPage() {
           onPick={(n) => void seatReservation(seatRes, n)}
           onSkip={() => void seatReservation(seatRes, null)}
           onCancel={() => setSeatRes(null)}
+        />
+      )}
+      {seatFree && (
+        <TablePicker
+          title="フリーのお客さんを案内"
+          detail="来た順に フリー1、フリー2… と名前がつきます"
+          tickets={todayTickets.data ?? []}
+          busy={seatBusy}
+          onPick={(n) => void seatFreeGuest(n)}
+          onCancel={() => setSeatFree(false)}
         />
       )}
       {seatError && (

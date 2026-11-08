@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
-import { isMissingTable, itemsFromReservation, useTicketActions, useTickets, walkinAchar, walkinBiryaniPortions } from '../lib/tickets'
+import { isMissingTable, itemsFromReservation, useDayTickets, useTicketActions, useTickets, walkinAchar, walkinBiryaniPortions } from '../lib/tickets'
+import { remaining } from '../lib/walkinStock'
+import { RemainingTiles } from '../components/RemainingTiles'
 import { TablePicker } from '../components/TablePicker'
 import { TimeSelect } from '../components/TimeSelect'
 import { DEFAULT_UZURA_LABEL, setUzuraLabel, useUzuraLabel } from '../lib/uzuraLabel'
@@ -167,12 +169,11 @@ export default function ReservationsPage() {
     }
   }
   // 席ごとの伝票(注文)で、当日に追加で注文された分。取り置きの分は含めない
-  const ticketQ = useTickets(effectiveDate)
+  const ticketQ = useDayTickets(effectiveDate)
   const ticketList = ticketQ.error ? [] : (ticketQ.data ?? [])
   const walkinOrdered = walkinBiryaniPortions(ticketList)
   const acharOrdered = walkinAchar(ticketList)
-  const acharWalk = acharPrep != null ? acharPrep - acharReserved : null
-  const acharLeft = acharWalk != null ? acharWalk - acharSold - acharOrdered : null
+  const { biryaniLeft, acharWalk, acharLeft } = remaining({ walkinQty, walkinOrdered, acharPrep, acharReserved, acharSold, acharOrdered })
   const adjustAchar = async (delta: number) => {
     if (!acharMenu) return
     await saveMenuStock(effectiveDate, { [acharMenu.id]: Math.max(0, (acharPrep ?? acharReserved) + delta) })
@@ -306,6 +307,18 @@ export default function ReservationsPage() {
             )}
           </div>
 
+          {/* フリーのお客さんが来たとき、あと何食出せるか */}
+          <RemainingTiles
+            biryaniLeft={biryaniLeft}
+            acharLeft={acharLeft}
+            showAchar={!!acharMenu}
+            biryaniNote={`当日分${fmtPortions(walkinQty)} − 注文${fmtPortions(walkinOrdered)}`}
+            acharNote={acharWalk != null ? `当日分${acharWalk} − 注文${acharOrdered}${acharSold > 0 ? ` − 手売り${acharSold}` : ''}` : undefined}
+          />
+
+          <details className="bg-white border border-stone-200 rounded-xl px-2.5 py-1.5">
+            <summary className="text-sm font-semibold text-stone-700 cursor-pointer">当日分・仕込みの数を直す</summary>
+            <div className="mt-2 space-y-2">
           <div className="flex items-center gap-1.5 bg-sky-50 border border-sky-200 rounded-xl px-2.5 py-1.5">
             <span className="text-sm font-bold text-sky-800 shrink-0">当日分</span>
             <span className="text-sm font-bold text-sky-950 w-14 shrink-0" style={{ color: "#0c4a6e" }}>{fmtPortions(walkinQty)}食</span>
@@ -341,7 +354,7 @@ export default function ReservationsPage() {
                   −1
                 </button>
                 <button onClick={() => bumpSold(1)} className="h-9 flex-1 rounded-lg text-white text-sm font-bold active:scale-95" style={{ background: '#db2777' }}>
-                  ＋1（売れた {acharSold}）
+                  ＋1（注文を入れずに売った {acharSold}）
                 </button>
                 <button onClick={() => void adjustAchar(-1)} disabled={(acharPrep ?? 0) <= 0} className="h-9 px-2.5 rounded-lg bg-white border border-stone-300 text-xs font-bold text-stone-600 disabled:opacity-30 active:scale-95">
                   仕込み−1
@@ -352,6 +365,8 @@ export default function ReservationsPage() {
               </div>
             </div>
           )}
+            </div>
+          </details>
 
           <label className="flex items-center gap-1.5 text-xs">
             <span className="text-stone-500 shrink-0">特典の名前</span>

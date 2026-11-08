@@ -8,6 +8,8 @@ import { todayStr } from '../lib/accounting'
 import { addItem, CARD_COUNT, freeCards, isMissingTable, isTakeoutCard, nextFreeLabel, SEAT_COUNT, ticketCount, ticketTotal, useTicketActions, useTickets, type Ticket, type TicketItem } from '../lib/tickets'
 import { yen } from '../lib/format'
 import { TablePicker } from '../components/TablePicker'
+import { RemainingTiles } from '../components/RemainingTiles'
+import { useWalkinRemaining } from '../lib/walkinStock'
 
 const SQL_HINT = 'データベースに「tickets」テーブルがまだありません。supabase/migrations の 20261108000017_tickets.sql を SQL Editor で実行してください。'
 
@@ -23,6 +25,7 @@ export default function OrdersPage() {
   const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [moving, setMoving] = useState(false)
+  const rem = useWalkinRemaining(date)
   // 下のメニューの「オーダー」を押したら、いつでもテーブル番号の一覧に戻る(同じ画面を押し直したときも、場所の識別子が変わる)
   const loc = useLocation()
   const [seenKey, setSeenKey] = useState(loc.key)
@@ -131,6 +134,8 @@ export default function OrdersPage() {
         </h1>
         {error && <p className="text-sm text-red-600">{error}</p>}
 
+        {rem.ready && <RemainingTiles biryaniLeft={rem.biryaniLeft} acharLeft={rem.acharLeft} showAchar={rem.acharLeft != null} />}
+
         <p className="text-sm text-stone-500">テーブル番号を押してください</p>
         <div className="grid grid-cols-4 gap-2">
           {Array.from({ length: CARD_COUNT }, (_, i) => i + 1).map((n) => {
@@ -172,6 +177,8 @@ export default function OrdersPage() {
         </div>
       </div>
       {error && <p className="text-sm text-red-600">{error}</p>}
+
+      {rem.ready && <RemainingTiles biryaniLeft={rem.biryaniLeft} acharLeft={rem.acharLeft} showAchar={rem.acharLeft != null} />}
 
       <div className="bg-stone-50 rounded-xl p-3 space-y-1.5">
         {items.length === 0 && <p className="text-sm text-stone-400">まだ注文がありません。下のメニューを押してください</p>}

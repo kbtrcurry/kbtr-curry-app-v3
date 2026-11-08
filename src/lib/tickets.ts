@@ -156,7 +156,7 @@ export function fullTicket(d: Partial<Ticket>): Ticket {
 }
 
 /** データベースから取った伝票に、まだ送れていない変更を重ねる(通信がなくても画面に出るように) */
-export function applyOutbox(list: Ticket[], entries: OutboxEntry[], date: string): Ticket[] {
+export function applyOutbox(list: Ticket[], entries: OutboxEntry[], date: string, keep: TicketStatus[] = ['open', 'served']): Ticket[] {
   const out = list.map((t) => {
     const e = entries.find((x) => x.id === t.id)
     return e ? ({ ...t, ...e.data } as Ticket) : t
@@ -164,7 +164,7 @@ export function applyOutbox(list: Ticket[], entries: OutboxEntry[], date: string
   for (const e of entries) {
     if (e.isNew && e.data.service_date === date && !out.some((t) => t.id === e.id)) out.push(fullTicket(e.data))
   }
-  return out.filter((t) => t.status === 'open' || t.status === 'served').sort((a, b) => a.created_at.localeCompare(b.created_at))
+  return out.filter((t) => keep.includes(t.status)).sort((a, b) => a.created_at.localeCompare(b.created_at))
 }
 
 async function fetchTickets(date: string): Promise<Ticket[]> {
@@ -178,8 +178,21 @@ async function fetchTickets(date: string): Promise<Ticket[]> {
   return applyOutbox((data ?? []) as Ticket[], getEntries(), date)
 }
 
+/** 会計済みも含む、その日の伝票(取り消しは除く)。当日分の「あと何食」を数えるため */
+async function fetchDayTickets(date: string): Promise<Ticket[]> {
+  const { data, error } = await supabase
+    .from('tickets')
+    .select('*')
+    .eq('service_date', date)
+    .neq('status', 'void')
+    .order('created_at', { ascending: true })
+  if (error) throw error
+  return applyOutbox((data ?? []) as Ticket[], getEntries(), date, DAY_STATUSES)
+}
+const DAY_STATUSES: TicketStatus[] = ['open', 'served', 'paid']
+
 /** 伝票が変わったときだけ取り直す(Realtime)。念のため、ゆっくり取り直す保険もつけてある */
-export function useTickets(date: string) {
+function useTicketsRealtime(date: string) {
   const qc = useQueryClient()
   useEffect(() => {
     const ch = supabase
@@ -192,11 +205,29 @@ export function useTickets(date: string) {
       void supabase.removeChannel(ch)
     }
   }, [date, qc])
+}
+
+export function useTickets(date: string) {
+  useTicketsRealtime(date)
   return useQuery({
     queryKey: ['tickets', date],
     queryFn: () => fetchTickets(date),
     refetchInterval: 20000,
     refetchOnWindowFocus: true,
+    staleTime: 0,
+    retry: false,
+  })
+}
+
+/** 会計済みも含めたその日の伝票(「あと何食」の計算用) */
+export function useDayTickets(date: string) {
+  useTicketsRealtime(date)
+  return useQuery({
+    queryKey: ['tickets', 'day', date],
+    queryFn: () => fetchDayTickets(date),
+    refetchInterval: 20000,
+    refetchOnWindowFocus: true,
+    staleTime: 0,
     retry: false,
   })
 }
@@ -289,6 +320,7 @@ export function useTicketActions(date: string) {
   const stage = (id: string, data: Partial<Ticket>, isNew = false) => {
     enqueue(id, data, isNew)
     qc.setQueryData<Ticket[]>(['tickets', date], (old) => applyOutbox(old ?? [], getEntries(), date))
+    qc.setQueryData<Ticket[]>(['tickets', 'day', date], (old) => applyOutbox(old ?? [], getEntries(), date, DAY_STATUSES))
   }
 
   return {

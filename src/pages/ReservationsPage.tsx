@@ -3,6 +3,7 @@ import { isMissingTable, itemsFromReservation, nextFreeLabel, useDayTickets, use
 import { limitedRows, remaining, reservedPortions, useLimitedIds } from '../lib/walkinStock'
 import { RemainingTiles } from '../components/RemainingTiles'
 import { TablePicker } from '../components/TablePicker'
+import { StockRow } from '../components/StockRow'
 import { TimeSelect } from '../components/TimeSelect'
 import { DEFAULT_UZURA_LABEL, setUzuraLabel, useCap, useUzuraLabel } from '../lib/settings'
 import { Check, ClipboardPaste, Copy, ExternalLink, Pencil, Plus, Trash2, Users } from 'lucide-react'
@@ -159,8 +160,8 @@ export default function ReservationsPage() {
   // 数に限りのあるメニュー(ビリヤニ以外)。月ごとに変えられる。仕込み数 − 取り置き − 当日の注文 = あと何個
   const [limitedIds, setLimitedIds] = useLimitedIds(menus.data ?? [])
   const rows = limitedRows(limitedIds, menus.data ?? [], stock.data, list, ticketList)
-  const adjustStock = async (row: { menuId: string; prep: number | null; reserved: number }, delta: number) => {
-    await saveMenuStock(effectiveDate, { [row.menuId]: Math.max(0, (row.prep ?? row.reserved) + delta) })
+  const setStock = async (menuId: string, qty: number) => {
+    await saveMenuStock(effectiveDate, { [menuId]: Math.max(0, qty) })
     invalidate()
   }
   const [confirmVoid, setConfirmVoid] = useState(false)
@@ -268,32 +269,17 @@ export default function ReservationsPage() {
           <div className="bg-white border border-stone-200 rounded-xl p-2.5 space-y-2">
             <RemainingTiles biryaniLeft={biryaniLeft} rows={rows} biryaniNote={`${fmtPortions(cap)} − 取り置き${fmtPortions(reservedQty)} − 注文${fmtPortions(walkinOrdered)}`} />
             <div className="space-y-1.5 text-xs text-stone-600">
-              <div className="flex items-center gap-1.5">
-                <span className="shrink-0">今日つくるビリヤニ</span>
-                <input
-                  type="number"
-                  inputMode="numeric"
-                  value={cap}
-                  onChange={(e) => setCap(Math.max(0, Number(e.target.value) || 0))}
-                  className="w-14 text-center text-base font-bold border border-stone-300 rounded-lg py-1 text-stone-900"
-                  aria-label="今日つくるビリヤニの食数"
-                />
-                <span>食</span>
-              </div>
+              <StockRow label="ビリヤニの仕込み" value={cap} unit="食" onCommit={setCap} />
               {rows.map((row) => (
-                <div key={row.menuId} className="flex items-center gap-1.5">
-                  <span className="flex-1 min-w-0 truncate">{row.name} の仕込み</span>
-                  <button onClick={() => void adjustStock(row, -1)} disabled={(row.prep ?? 0) <= 0} className="w-9 h-9 rounded-lg bg-white border border-stone-300 text-base font-bold text-stone-600 disabled:opacity-30 active:scale-95">
-                    −
-                  </button>
-                  <b className="w-8 text-center text-base text-stone-900">{row.prep ?? '—'}</b>
-                  <button onClick={() => void adjustStock(row, 1)} className="w-9 h-9 rounded-lg bg-stone-800 text-white text-base font-bold active:scale-95">
-                    ＋
-                  </button>
-                  <button onClick={() => setLimitedIds(limitedIds.filter((x) => x !== row.menuId))} aria-label={`${row.name}を数える対象から外す`} className="w-9 h-9 rounded-lg text-stone-400 active:bg-stone-100">
-                    ×
-                  </button>
-                </div>
+                <StockRow
+                  key={row.menuId}
+                  label={`${row.name}の仕込み`}
+                  value={row.prep}
+                  base={row.reserved}
+                  unit="個"
+                  onCommit={(n) => void setStock(row.menuId, n)}
+                  onRemove={() => setLimitedIds(limitedIds.filter((x) => x !== row.menuId))}
+                />
               ))}
               <select
                 value=""

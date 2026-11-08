@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { isTakeoutCard, ticketCount, type Ticket } from '../lib/tickets'
-import { defaultLayout, GRID_COLS, GRID_ROWS, placeSpot, resizeSpot, setFloorPlan, useFloorPlan } from '../lib/floorPlan'
+import { defaultLayout, GRID_COLS, GRID_ROWS, placeSpot, resizeSpot } from '../lib/floorPlan'
+import { setFloorPlan, useFloorPlan } from '../lib/settings'
 
 // 店の間取りのとおりにテーブルを並べて見せる。使用中のテーブルには、誰の席か(名前・フリー○)を出す。
 // allowEdit なら「間取りを編集」で、テーブルを選んで空いている場所を押すと動かせる。
@@ -30,7 +31,6 @@ export function FloorPlan({ tickets, onPick, pick = false, allowEdit = false }: 
   return (
     <div className="space-y-2">
       <div className="rounded-2xl bg-stone-100 p-2">
-        <p className="text-center text-[11px] font-bold text-stone-400 pb-1">▲ 調理場</p>
         <div className="grid gap-1.5" style={{ gridTemplateColumns: `repeat(${GRID_COLS}, minmax(0, 1fr))`, gridAutoRows: '4.25rem' }}>
           {editing &&
             empties.map(({ x, y }) => (
@@ -73,6 +73,7 @@ export function FloorPlan({ tickets, onPick, pick = false, allowEdit = false }: 
             )
           })}
         </div>
+        <p className="text-center text-[11px] font-bold text-stone-400 pt-1">▼ 調理場</p>
       </div>
 
       {allowEdit && (

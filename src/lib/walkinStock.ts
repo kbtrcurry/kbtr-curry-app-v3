@@ -1,5 +1,5 @@
 import { useActiveMenus } from './pos'
-import { useStoredState } from './persistState'
+import { useCap, useLimitedSetting } from './settings'
 import { isWalkin, resPortions, useMenuStock, useReservations, type Reservation } from './reservations'
 import { orderedQtyOf, useDayTickets, walkinBiryaniPortions, type Ticket } from './tickets'
 
@@ -15,8 +15,6 @@ export type RemainingInput = {
 
 export const remaining = (i: RemainingInput): number => i.cap - i.reservedPortions - i.walkinOrdered
 
-export const CAP_KEY = 'kbtr_v3_reserve_cap'
-export const LIMITED_KEY = 'kbtr_v3_limited_menus'
 export const ACHAR_NAME = /川海老.*アチャール/
 
 const isActive = (r: Reservation) => r.status === 'reserved' || r.status === 'picked_up'
@@ -58,7 +56,7 @@ export function limitedRows(
 
 /** 数を見るメニューの一覧。最初はアチャールだけ。月ごとに変えられる */
 export function useLimitedIds(menus: { id: string; name: string }[]): [string[], (ids: string[]) => void] {
-  const [stored, setStored] = useStoredState<string[] | null>(LIMITED_KEY, null)
+  const [stored, setStored] = useLimitedSetting()
   const ach = menus.find((m) => ACHAR_NAME.test(m.name))
   return [stored ?? (ach ? [ach.id] : []), setStored]
 }
@@ -69,7 +67,7 @@ export function useWalkinRemaining(date: string): { biryaniLeft: number; rows: L
   const menus = useActiveMenus()
   const stock = useMenuStock(date)
   const day = useDayTickets(date)
-  const [cap] = useStoredState(CAP_KEY, 36)
+  const [cap] = useCap()
   const [ids] = useLimitedIds(menus.data ?? [])
   const list = res.data ?? []
   const tickets = day.data ?? []

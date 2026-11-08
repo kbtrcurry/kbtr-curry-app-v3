@@ -4,7 +4,7 @@ import { limitedRows, remaining, reservedPortions, useLimitedIds } from '../lib/
 import { RemainingTiles } from '../components/RemainingTiles'
 import { TablePicker } from '../components/TablePicker'
 import { TimeSelect } from '../components/TimeSelect'
-import { DEFAULT_UZURA_LABEL, setUzuraLabel, useUzuraLabel } from '../lib/uzuraLabel'
+import { DEFAULT_UZURA_LABEL, setUzuraLabel, useCap, useUzuraLabel } from '../lib/settings'
 import { Check, ClipboardPaste, Copy, ExternalLink, Pencil, Plus, Trash2, Users } from 'lucide-react'
 import { useAuth } from '../lib/auth'
 import { Spinner } from '../components/Spinner'
@@ -81,7 +81,7 @@ export default function ReservationsPage() {
   const [tab, setTab] = useState<Tab>('list')
   const [sortKey, setSortKey] = useStoredState<SortKey>('kbtr_v3_res_sort', 'time')
   const [sortRev, setSortRev] = useStoredState<boolean>('kbtr_v3_res_sort_rev', false)
-  const [cap, setCap] = useStoredState('kbtr_v3_reserve_cap', 36)
+  const [cap, setCap] = useCap()
   const [template, setTemplate] = useStoredState('kbtr_v3_reply_template', DEFAULT_REPLY)
   const [editing, setEditing] = useState<Reservation | null>(null)
   const [adding, setAdding] = useState(false)

@@ -45,6 +45,7 @@ import DataPage from './pages/DataPage'
 import { useStoredState } from './lib/persistState'
 import { GmailReturnRedirect } from './components/GmailReturnRedirect'
 import { OutboxSync } from './components/OutboxSync'
+import { SettingsSync } from './components/SettingsSync'
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -254,6 +255,7 @@ export default function App() {
           <Preloader />
           <AutoSettle />
           <OutboxSync />
+          <SettingsSync />
           <GmailReturnRedirect />
           <BackHandlerProvider>
             <Layout>

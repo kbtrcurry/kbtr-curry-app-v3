@@ -1,22 +1,20 @@
-import { useSyncExternalStore } from 'react'
 import { CARD_COUNT } from './tickets'
 
 // 店の間取り。テーブル番号を、格子(GRID_COLS × GRID_ROWS)の上のどこに置くかを決める。
-// 端末に保存する(オーダーを取る iPhone で一度整えれば、そのまま使える)。
+// 設定は settings.ts で、すべての端末に共有される。
 export type Spot = { n: number; x: number; y: number; w: number; h: number }
 
 export const GRID_COLS = 6
 export const GRID_ROWS = 6
-const KEY = 'kbtr_v3_floor_plan'
 
-/** 最初の置き方(目安)。上がキッチン側: カウンター4席、2名席3つ、4名席1つ、下がテイクアウト待ち */
+/** 最初の置き方(目安)。下がキッチン側: カウンター4席、2名席3つ、4名席1つ、上がテイクアウト待ち */
 export function defaultLayout(): Spot[] {
   const s = (n: number, x: number, y: number, w = 1, h = 1): Spot => ({ n, x, y, w, h })
   return [
-    s(1, 0, 0), s(2, 1, 0), s(3, 2, 0), s(4, 3, 0),
-    s(5, 0, 2, 2), s(6, 2, 2, 2), s(7, 4, 2, 2),
-    s(8, 0, 3, 2, 1),
-    s(9, 0, 5), s(10, 1, 5), s(11, 2, 5), s(12, 3, 5),
+    s(1, 0, 5), s(2, 1, 5), s(3, 2, 5), s(4, 3, 5),
+    s(5, 0, 3, 2), s(6, 2, 3, 2), s(7, 4, 3, 2),
+    s(8, 0, 2, 2, 1),
+    s(9, 0, 0), s(10, 1, 0), s(11, 2, 0), s(12, 3, 0),
   ]
 }
 
@@ -58,35 +56,4 @@ export function sanitize(raw: unknown): Spot[] {
   const complete = spots.length === CARD_COUNT && nums.size === CARD_COUNT && Array.from({ length: CARD_COUNT }, (_, i) => i + 1).every((n) => nums.has(n))
   if (!complete) return defaultLayout()
   return spots.every((s) => canPlace(spots, s)) ? spots : defaultLayout()
-}
-
-const listeners = new Set<() => void>()
-function read(): Spot[] {
-  try {
-    const raw = localStorage.getItem(KEY)
-    return raw ? sanitize(JSON.parse(raw)) : defaultLayout()
-  } catch {
-    return defaultLayout()
-  }
-}
-let current: Spot[] = read()
-
-export function setFloorPlan(next: Spot[]): void {
-  current = next
-  try {
-    localStorage.setItem(KEY, JSON.stringify(next))
-  } catch {
-    /* 保存できなくても、開いている間は反映する */
-  }
-  listeners.forEach((l) => l())
-}
-
-export function useFloorPlan(): Spot[] {
-  return useSyncExternalStore(
-    (cb) => {
-      listeners.add(cb)
-      return () => listeners.delete(cb)
-    },
-    () => current,
-  )
 }

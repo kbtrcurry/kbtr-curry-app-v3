@@ -5,7 +5,6 @@ import { useAuth } from '../lib/auth'
 import { Spinner } from '../components/Spinner'
 import { useActiveMenus } from '../lib/pos'
 import { todayStr } from '../lib/accounting'
-import { isWalkin, setReservationStatus, useInvalidateReservations, useReservations, type Reservation } from '../lib/reservations'
 import { addItem, CARD_COUNT, freeCards, isMissingTable, ticketCount, ticketTotal, useTicketActions, useTickets, type Ticket, type TicketItem } from '../lib/tickets'
 import { yen } from '../lib/format'
 import { TablePicker } from '../components/TablePicker'
@@ -19,10 +18,7 @@ export default function OrdersPage() {
   const menus = useActiveMenus().data ?? []
   const tq = useTickets(date)
   const actions = useTicketActions(date)
-  const resQ = useReservations(date)
-  const invalidateRes = useInvalidateReservations()
   const [cardNo, setCardNo] = useState<number | null>(null)
-  const [pendingRes, setPendingRes] = useState<Reservation | null>(null)
   const [undo, setUndo] = useState<{ ticketId: string | null; cardNo: number; before: TicketItem[]; text: string; menu?: { id: string; name: string; price: number } } | null>(null)
   const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -33,7 +29,6 @@ export default function OrdersPage() {
   if (seenKey !== loc.key) {
     setSeenKey(loc.key)
     setCardNo(null)
-    setPendingRes(null)
     setMoving(false)
     setUndo(null)
   }
@@ -41,7 +36,6 @@ export default function OrdersPage() {
   const tickets = useMemo(() => tq.data ?? [], [tq.data])
   const byCard = useMemo(() => new Map(tickets.map((t) => [t.card_no, t])), [tickets])
   const free = freeCards(tickets)
-  const waitingRes = (resQ.data ?? []).filter((r) => r.status === 'reserved' && !isWalkin(r))
   const current: Ticket | undefined = cardNo != null ? byCard.get(cardNo) : undefined
 
   if (authLoading) return <Spinner />
@@ -103,25 +97,8 @@ export default function OrdersPage() {
     }
   }
 
-  const pickCard = async (n: number) => {
+  const pickCard = (n: number) => {
     setError(null)
-    // 取り置きのお客さんの来店: カードを決めたら、取り置きの内容を伝票にして来店済みにする
-    if (pendingRes) {
-      if (byCard.has(n)) return
-      try {
-        const items: TicketItem[] = pendingRes.items
-          .filter((i) => i.qty > 0)
-          .map((i) => ({ menu_id: i.menu_id, name: i.name, price: menus.find((m) => m.id === i.menu_id)?.price ?? 0, qty: i.qty, from_res: true }))
-        await actions.create({ cardNo: n, items, reservationId: pendingRes.id, label: pendingRes.name })
-        await setReservationStatus(pendingRes.id, 'picked_up')
-        invalidateRes()
-        setPendingRes(null)
-        setCardNo(n)
-      } catch (e) {
-        setError(e instanceof Error ? e.message : '伝票を作れませんでした')
-      }
-      return
-    }
     setCardNo(n)
   }
 
@@ -145,7 +122,7 @@ export default function OrdersPage() {
   }
 
   // ---- カード番号の選択 ----
-  if (cardNo == null || pendingRes) {
+  if (cardNo == null) {
     return (
       <div className="p-4 pb-24 max-w-md mx-auto space-y-3">
         <h1 className="text-xl font-bold text-amber-800 flex items-center gap-2">
@@ -153,16 +130,7 @@ export default function OrdersPage() {
         </h1>
         {error && <p className="text-sm text-red-600">{error}</p>}
 
-        {pendingRes && (
-          <div className="bg-amber-50 border border-amber-300 rounded-xl p-3 text-sm text-amber-900">
-            <b>{pendingRes.name}</b> さんの取り置き。テーブル番号を押してください
-            <button onClick={() => setPendingRes(null)} className="ml-2 underline text-stone-500">
-              やめる
-            </button>
-          </div>
-        )}
-
-        <p className="text-sm text-stone-500">{pendingRes ? '空いているテーブル' : 'テーブル番号を押してください'}</p>
+        <p className="text-sm text-stone-500">テーブル番号を押してください</p>
         <div className="grid grid-cols-4 gap-2">
           {Array.from({ length: CARD_COUNT }, (_, i) => i + 1).map((n) => {
             const t = byCard.get(n)
@@ -170,8 +138,7 @@ export default function OrdersPage() {
             return (
               <button
                 key={n}
-                onClick={() => void pickCard(n)}
-                disabled={!!pendingRes && busy}
+                onClick={() => pickCard(n)}
                 className={`h-20 rounded-2xl border-2 flex flex-col items-center justify-center active:scale-95 transition disabled:opacity-30 ${
                   !busy ? 'bg-white border-stone-300 text-stone-700' : t.status === 'served' ? 'bg-green-50 border-green-400 text-green-800' : 'bg-amber-50 border-amber-500 text-amber-900'
                 }`}
@@ -183,17 +150,6 @@ export default function OrdersPage() {
           })}
         </div>
 
-        {!pendingRes && waitingRes.length > 0 && (
-          <section className="space-y-2 pt-2">
-            <h2 className="text-sm font-bold text-stone-700">取り置きの来店（来店前）</h2>
-            {waitingRes.map((r) => (
-              <button key={r.id} onClick={() => setPendingRes(r)} className="w-full text-left bg-white border border-stone-200 rounded-xl px-3 py-2 active:bg-stone-50">
-                <span className="font-semibold text-stone-800">{r.name}</span>
-                <span className="text-xs text-stone-500 ml-2">{r.items.map((i) => `${i.name}×${i.qty}`).join('　')}</span>
-              </button>
-            ))}
-          </section>
-        )}
         {free.length === 0 && <p className="text-xs text-stone-400">空いているテーブルがありません</p>}
       </div>
     )

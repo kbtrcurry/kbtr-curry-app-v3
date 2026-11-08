@@ -259,7 +259,7 @@ export default function ReservationsPage() {
             )}
           </div>
 
-          {ticketsReady && effectiveDate === today && (
+          {ticketsReady && (
             <button onClick={() => setSeatFree(true)} className="w-full h-12 rounded-xl bg-stone-900 text-white text-base font-bold active:scale-95">
               ＋ フリーのお客さんが来店
             </button>
@@ -384,7 +384,7 @@ export default function ReservationsPage() {
                   // 押し間違いが多いので、「来店済み」にするときは確認を出す
                   if (s === 'picked_up') {
                     // 今日の営業なら、テーブル番号を選んで取り置きの注文を席に入れる
-                    if (ticketsReady && r.service_date === today) setSeatRes(r)
+                    if (ticketsReady) setSeatRes(r)
                     else setConfirmPick(r)
                   } else await applyStatus(r, s)
                 }}
@@ -447,7 +447,7 @@ export default function ReservationsPage() {
       {seatRes && (
         <TablePicker
           title={`${seatRes.name || '取り置き'}さんを案内`}
-          detail={`${shortItems(seatRes.items).map((it) => it.label).join(' ') || '内容なし'} を、このテーブルの注文に入れます`}
+          detail={`${shortItems(seatRes.items).map((it) => it.label).join(' ') || '内容なし'} を、このテーブルの注文に入れます${seatRes.service_date !== today ? '（営業日が今日ではありませんが、今日の席として作ります）' : ''}`}
           tickets={todayTickets.data ?? []}
           busy={seatBusy}
           skipLabel="番号をつけずに来店済みにする"

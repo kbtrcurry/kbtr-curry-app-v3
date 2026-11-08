@@ -6,7 +6,7 @@ import { TablePicker } from '../components/TablePicker'
 import { StockRow } from '../components/StockRow'
 import { TimeSelect } from '../components/TimeSelect'
 import { useCap } from '../lib/settings'
-import { Check, ClipboardPaste, Copy, ExternalLink, Pencil, Plus, Trash2, Users } from 'lucide-react'
+import { ClipboardPaste, Copy, ExternalLink, Pencil, Plus, Trash2, Users } from 'lucide-react'
 import { useAuth } from '../lib/auth'
 import { Spinner } from '../components/Spinner'
 import ReservationImport from './ReservationImport'
@@ -848,16 +848,16 @@ function ReservationRow({
         <button
           onClick={() => void toggle()}
           disabled={busy}
-          className={`shrink-0 ${r.status === 'reserved' ? 'w-[112px]' : 'w-[88px]'} my-[2px] mr-1 rounded-lg text-sm font-bold active:scale-95 transition-transform disabled:opacity-60 ${
+          className={`shrink-0 w-[88px] my-[2px] mr-1 rounded-lg text-sm font-bold active:scale-95 transition-transform disabled:opacity-60 ${
             done
               ? 'bg-green-600 text-white'
               : r.status === 'reserved'
-                ? 'bg-amber-700 text-[#faf9f5]'
+                ? 'bg-transparent text-amber-700 border-2 border-amber-600'
                 : 'bg-stone-200 text-stone-600'
           }`}
           aria-label={`${r.name || '取り置き'}は${STATUS_LABEL[r.status]}。押すと${done ? STATUS_LABEL.reserved : r.status === 'reserved' ? STATUS_LABEL.picked_up : STATUS_LABEL.reserved}にします`}
         >
-          {done ? '✓ 来店済み' : r.status === 'reserved' ? '来店済みにする' : STATUS_LABEL[r.status]}
+          {done ? '✓ 来店済み' : STATUS_LABEL[r.status]}
         </button>
       </div>
       {open && (
@@ -934,8 +934,8 @@ function ReservationCard({
       <div className="flex flex-wrap gap-1.5">
         {r.status === 'reserved' ? (
           <>
-            <button onClick={() => void onStatus('picked_up')} className="flex items-center gap-1 text-sm font-bold bg-amber-700 text-[#faf9f5] rounded-lg px-3 py-2">
-              <Check className="w-4 h-4" /> 来店済み
+            <button onClick={() => void onStatus('picked_up')} className="text-sm font-bold bg-transparent text-amber-700 border-2 border-amber-600 rounded-lg px-3 py-2 active:scale-95 transition-transform">
+              {STATUS_LABEL.reserved}
             </button>
             <button onClick={() => void onStatus('no_show')} className="text-sm font-semibold border border-stone-300 text-stone-600 rounded-lg px-3 py-2">
               来なかった

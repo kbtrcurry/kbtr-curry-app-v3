@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
-import { useTickets, walkinAchar, walkinBiryaniPortions } from '../lib/tickets'
+import { itemsFromReservation, nextFreeLabel, useTicketActions, useTickets, walkinAchar, walkinBiryaniPortions } from '../lib/tickets'
+import { TablePicker } from '../components/TablePicker'
 import { Check, ClipboardPaste, Copy, ExternalLink, Pencil, Plus, Trash2, Users } from 'lucide-react'
 import { useAuth } from '../lib/auth'
 import { Spinner } from '../components/Spinner'
@@ -91,6 +92,13 @@ export default function ReservationsPage() {
   }, [undo])
   const invalidate = useInvalidateReservations()
   const [confirmPick, setConfirmPick] = useState<Reservation | null>(null)
+  // 来店したお客さんをテーブルに案内する: 取り置き(来店済みにする) / フリー(枠を作る)
+  const [seatRes, setSeatRes] = useState<Reservation | null>(null)
+  const [seatFree, setSeatFree] = useState(false)
+  const [seatBusy, setSeatBusy] = useState(false)
+  const [seatError, setSeatError] = useState<string | null>(null)
+  const todayTickets = useTickets(today, 6000)
+  const todayActions = useTicketActions(today)
   const applyStatus = async (r: Reservation, s: ResStatus) => {
     const prev = r.status
     await setReservationStatus(r.id, s)
@@ -99,6 +107,35 @@ export default function ReservationsPage() {
   }
 
   const menus = useActiveMenus()
+  const ticketsReady = !todayTickets.error
+  const seatReservation = async (r: Reservation, n: number | null) => {
+    setSeatBusy(true)
+    setSeatError(null)
+    try {
+      if (n != null) {
+        await todayActions.create({ cardNo: n, items: itemsFromReservation(r.items, menus.data ?? []), reservationId: r.id, label: r.name || '取り置き' })
+      }
+      await applyStatus(r, 'picked_up')
+      setSeatRes(null)
+    } catch (e) {
+      setSeatError(e instanceof Error ? e.message : '保存できませんでした')
+    } finally {
+      setSeatBusy(false)
+    }
+  }
+  const seatFreeGuest = async (n: number) => {
+    setSeatBusy(true)
+    setSeatError(null)
+    try {
+      const label = await nextFreeLabel(today)
+      await todayActions.create({ cardNo: n, items: [], label })
+      setSeatFree(false)
+    } catch (e) {
+      setSeatError(e instanceof Error ? e.message : '保存できませんでした')
+    } finally {
+      setSeatBusy(false)
+    }
+  }
   const dayRes = useReservations(effectiveDate)
   const allRes = useReservations(null)
   const notes = useCustomerNotes()
@@ -280,6 +317,12 @@ export default function ReservationsPage() {
             )}
           </div>
 
+          {ticketsReady && effectiveDate === today && (
+            <button onClick={() => setSeatFree(true)} className="w-full h-11 rounded-xl bg-sky-700 text-white text-sm font-bold active:scale-95">
+              ＋ フリーのお客さんを席に案内
+            </button>
+          )}
+
           <div className="flex items-center gap-1.5 bg-sky-50 border border-sky-200 rounded-xl px-2.5 py-1.5">
             <span className="text-sm font-bold text-sky-800 shrink-0">当日分</span>
             <span className="text-sm font-bold text-sky-950 w-14 shrink-0" style={{ color: "#0c4a6e" }}>{fmtPortions(walkinQty)}食</span>
@@ -388,8 +431,11 @@ export default function ReservationsPage() {
                 onDelete={() => del.request(r.id, r.name || r.handle || '取り置き')}
                 onStatus={async (s) => {
                   // 押し間違いが多いので、「来店済み」にするときは確認を出す
-                  if (s === 'picked_up') setConfirmPick(r)
-                  else await applyStatus(r, s)
+                  if (s === 'picked_up') {
+                    // 今日の営業なら、テーブル番号を選んで取り置きの注文を席に入れる
+                    if (ticketsReady && r.service_date === today) setSeatRes(r)
+                    else setConfirmPick(r)
+                  } else await applyStatus(r, s)
                 }}
               />
             ))}
@@ -434,6 +480,33 @@ export default function ReservationsPage() {
         />
       )}
       {del.toast}
+      {seatRes && (
+        <TablePicker
+          title={`${seatRes.name || '取り置き'}さんを案内`}
+          detail={`${shortItems(seatRes.items).map((it) => it.label).join(' ') || '内容なし'} を、このテーブルの注文に入れます`}
+          tickets={todayTickets.data ?? []}
+          busy={seatBusy}
+          skipLabel="番号をつけずに来店済みにする"
+          onPick={(n) => void seatReservation(seatRes, n)}
+          onSkip={() => void seatReservation(seatRes, null)}
+          onCancel={() => setSeatRes(null)}
+        />
+      )}
+      {seatFree && (
+        <TablePicker
+          title="フリーのお客さんを案内"
+          detail="来た順に フリー1、フリー2… と呼び名がつきます"
+          tickets={todayTickets.data ?? []}
+          busy={seatBusy}
+          onPick={(n) => void seatFreeGuest(n)}
+          onCancel={() => setSeatFree(false)}
+        />
+      )}
+      {seatError && (
+        <div className="fixed left-0 right-0 top-3 z-[80] flex justify-center px-4" onClick={() => setSeatError(null)}>
+          <p className="max-w-md w-full bg-red-600 text-white text-sm rounded-xl px-4 py-3 shadow-lg">{seatError}</p>
+        </div>
+      )}
       {confirmPick && (
         <ConfirmModal
           message={`${confirmPick.name || '取り置き'}さん（${shortItems(confirmPick.items).map((it) => it.label).join(' ') || '内容なし'}）を、来店済みにしますか？`}

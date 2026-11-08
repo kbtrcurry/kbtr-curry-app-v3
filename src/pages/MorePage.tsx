@@ -52,13 +52,14 @@ const HUB_GROUPS: { title: string; links: HubLink[] }[] = [
   {
     title: '営業中',
     links: [
-      { to: '/orders', label: '注文を取る（カード番号）', icon: ClipboardList },
+      { to: '/orders', label: 'オーダー（テーブル番号）', icon: ClipboardList },
       { to: '/kitchen', label: '調理場の画面', icon: ChefHat },
     ],
   },
   {
     title: '仕込みの元データ',
     links: [
+      { to: '/prep', label: '仕込み・買い出し', icon: ChefHat },
       { to: '/recipes', label: 'レシピ', icon: BookOpen },
       { to: '/menus', label: 'メニュー', icon: UtensilsCrossed },
       { to: '/ingredients', label: '食材の単価', icon: Carrot },

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { addItem, biryaniDishes, freeCards, kitchenQueue, pendingBiryaniDishes, ticketTotal, walkinAchar, walkinBiryaniPortions, type Ticket } from './tickets'
+import { addItem, biryaniDishes, freeCards, itemsFromReservation, kitchenQueue, pendingBiryaniDishes, ticketTotal, walkinAchar, walkinBiryaniPortions, type Ticket } from './tickets'
 
 const t = (o: Partial<Ticket>): Ticket => ({
   id: 'x',
@@ -39,13 +39,19 @@ describe('調理場', () => {
     const items = addItem(addItem(addItem([], biryani, 2), big, 1), achar, 3)
     expect(biryaniDishes(items)).toBe(3)
   })
-  it('会計前の注文だけを、入った順に並べる', () => {
+  it('会計前の注文だけを、入った順に並べる。注文のない席は出さない', () => {
+    const one = addItem([], biryani, 1)
     const q = kitchenQueue([
-      t({ id: 'c', created_at: '2026-11-08T03:20:00Z' }),
-      t({ id: 'a', created_at: '2026-11-08T03:10:00Z' }),
-      t({ id: 's', status: 'served', created_at: '2026-11-08T03:00:00Z' }),
+      t({ id: 'c', items: one, created_at: '2026-11-08T03:20:00Z' }),
+      t({ id: 'a', items: one, created_at: '2026-11-08T03:10:00Z' }),
+      t({ id: 'e', items: [], created_at: '2026-11-08T03:05:00Z' }),
+      t({ id: 's', items: one, status: 'served', created_at: '2026-11-08T03:00:00Z' }),
     ])
     expect(q.map((x) => x.id)).toEqual(['a', 'c'])
+  })
+  it('取り置きの内容が伝票の品目になる', () => {
+    const items = itemsFromReservation([{ menu_id: 'b', name: biryani.name, qty: 2 }, { menu_id: 'a', name: achar.name, qty: 0 }], [{ id: 'b', price: 2000 }])
+    expect(items).toEqual([{ menu_id: 'b', name: biryani.name, price: 2000, qty: 2, from_res: true }])
   })
   it('未提供のビリヤニの皿数を合計する', () => {
     const a = t({ id: 'a', items: addItem([], biryani, 2) })

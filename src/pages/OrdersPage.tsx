@@ -129,14 +129,14 @@ export default function OrdersPage() {
 
         {pendingRes && (
           <div className="bg-amber-50 border border-amber-300 rounded-xl p-3 text-sm text-amber-900">
-            <b>{pendingRes.name}</b> さんの取り置き。席に置いたカードの番号を押してください
+            <b>{pendingRes.name}</b> さんの取り置き。テーブル番号を押してください
             <button onClick={() => setPendingRes(null)} className="ml-2 underline text-stone-500">
               やめる
             </button>
           </div>
         )}
 
-        <p className="text-sm text-stone-500">{pendingRes ? '空いているカード' : 'カードの番号を押してください'}</p>
+        <p className="text-sm text-stone-500">{pendingRes ? '空いているテーブル' : 'テーブル番号を押してください'}</p>
         <div className="grid grid-cols-4 gap-2">
           {Array.from({ length: CARD_COUNT }, (_, i) => i + 1).map((n) => {
             const t = byCard.get(n)
@@ -168,7 +168,7 @@ export default function OrdersPage() {
             ))}
           </section>
         )}
-        {free.length === 0 && <p className="text-xs text-stone-400">空いているカードがありません</p>}
+        {free.length === 0 && <p className="text-xs text-stone-400">空いているテーブルがありません</p>}
       </div>
     )
   }
@@ -179,11 +179,11 @@ export default function OrdersPage() {
     <div className="p-4 pb-32 max-w-md mx-auto space-y-3">
       <div className="flex items-center gap-3">
         <button onClick={() => setCardNo(null)} className="text-stone-500 py-1">
-          ← カード一覧
+          ← テーブル一覧
         </button>
         <div className="ml-auto text-right">
           <p className="text-xs text-stone-500">{current?.label}</p>
-          <p className="text-2xl font-bold text-amber-800 leading-none">カード {cardNo}</p>
+          <p className="text-2xl font-bold text-amber-800 leading-none">テーブル {cardNo}</p>
         </div>
       </div>
       {error && <p className="text-sm text-red-600">{error}</p>}

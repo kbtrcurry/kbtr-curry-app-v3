@@ -57,7 +57,8 @@ export const biryaniDishes = (items: TicketItem[]): number => items.filter((i) =
 
 /** 調理場に出す伝票: 会計前でまだ出していないものを、注文が入った順に */
 export function kitchenQueue(tickets: Ticket[]): Ticket[] {
-  return tickets.filter((t) => t.status === 'open').sort((a, b) => a.created_at.localeCompare(b.created_at))
+  // 注文がまだ入っていない席(フリーの枠だけ作った状態)は、調理場には出さない
+  return tickets.filter((t) => t.status === 'open' && t.items.length > 0).sort((a, b) => a.created_at.localeCompare(b.created_at))
 }
 
 /** 提供前のビリヤニの皿数の合計 */
@@ -83,6 +84,29 @@ export function walkinAchar(tickets: Ticket[]): number {
 export function freeCards(tickets: Ticket[], max = CARD_COUNT): number[] {
   const used = new Set(tickets.filter((t) => t.status === 'open' || t.status === 'served').map((t) => t.card_no))
   return Array.from({ length: max }, (_, i) => i + 1).filter((n) => !used.has(n))
+}
+
+/** 取り置きの内容を、伝票の品目にする(取り置き分として、当日分の残りからは引かない) */
+export function itemsFromReservation(
+  resItems: { menu_id: string | null; name: string; qty: number }[],
+  menus: { id: string; price: number }[],
+): TicketItem[] {
+  return resItems
+    .filter((i) => i.qty > 0)
+    .map((i) => ({ menu_id: i.menu_id, name: i.name, price: menus.find((m) => m.id === i.menu_id)?.price ?? 0, qty: i.qty, from_res: true }))
+}
+
+export const FREE_PREFIX = 'フリー'
+
+/** フリーのお客さんの呼び名。その日の何組目か(取り消した組も数える)で フリー1, フリー2 … */
+export async function nextFreeLabel(date: string): Promise<string> {
+  const { count, error } = await supabase
+    .from('tickets')
+    .select('id', { count: 'exact', head: true })
+    .eq('service_date', date)
+    .like('label', `${FREE_PREFIX}%`)
+  if (error) throw error
+  return `${FREE_PREFIX}${(count ?? 0) + 1}`
 }
 
 export function elapsedMinutes(iso: string, now = Date.now()): number {

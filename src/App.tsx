@@ -13,6 +13,7 @@ import {
   ChefHat,
   Menu as MenuIcon,
   Users,
+  ClipboardList,
   type LucideIcon,
 } from 'lucide-react'
 import { AuthProvider, useAuth } from './lib/auth'
@@ -70,7 +71,7 @@ const SIDE_NAV: NavItem[] = [
 const BOTTOM_NAV: NavItem[] = [
   { to: '/', label: 'ホーム', icon: Home },
   { to: '/reserve', label: '取り置き', icon: Users },
-  { to: '/prep', label: '仕込み', icon: ChefHat },
+  { to: '/orders', label: 'オーダー', icon: ClipboardList },
   { to: '/analysis', label: '分析', icon: BarChart3 },
   { to: '/more', label: 'その他', icon: MenuIcon },
 ]

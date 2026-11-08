@@ -1,5 +1,6 @@
 import { useMemo, useRef, useState } from 'react'
 import { ClipboardList } from 'lucide-react'
+import { useLocation } from 'react-router-dom'
 import { useAuth } from '../lib/auth'
 import { Spinner } from '../components/Spinner'
 import { useActiveMenus } from '../lib/pos'
@@ -26,6 +27,16 @@ export default function OrdersPage() {
   const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [moving, setMoving] = useState(false)
+  // 下のメニューの「オーダー」を押したら、いつでもテーブル番号の一覧に戻る(同じ画面を押し直したときも、場所の識別子が変わる)
+  const loc = useLocation()
+  const [seenKey, setSeenKey] = useState(loc.key)
+  if (seenKey !== loc.key) {
+    setSeenKey(loc.key)
+    setCardNo(null)
+    setPendingRes(null)
+    setMoving(false)
+    setUndo(null)
+  }
 
   const tickets = useMemo(() => tq.data ?? [], [tq.data])
   const byCard = useMemo(() => new Map(tickets.map((t) => [t.card_no, t])), [tickets])

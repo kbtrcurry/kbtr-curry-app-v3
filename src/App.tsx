@@ -207,7 +207,7 @@ function Layout({ children }: { children: ReactNode }) {
       {pathname === '/kitchen' && (
         <button
           onClick={() => setKitchenNav(!kitchenNav)}
-          className="fixed bottom-3 right-3 z-50 h-10 px-3 rounded-full bg-stone-800/70 text-white text-xs font-semibold"
+          className="fixed bottom-3 left-3 z-50 h-10 px-3 rounded-full bg-stone-800/70 text-white text-xs font-semibold"
         >
           {kitchenNav ? 'ナビを隠す' : 'ナビ'}
         </button>

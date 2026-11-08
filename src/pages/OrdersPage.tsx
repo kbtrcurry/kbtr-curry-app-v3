@@ -22,7 +22,7 @@ export default function OrdersPage() {
   const invalidateRes = useInvalidateReservations()
   const [cardNo, setCardNo] = useState<number | null>(null)
   const [pendingRes, setPendingRes] = useState<Reservation | null>(null)
-  const [undo, setUndo] = useState<{ ticketId: string | null; cardNo: number; before: TicketItem[]; text: string } | null>(null)
+  const [undo, setUndo] = useState<{ ticketId: string | null; cardNo: number; before: TicketItem[]; text: string; menu?: { id: string; name: string; price: number } } | null>(null)
   const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [moving, setMoving] = useState(false)
@@ -65,7 +65,7 @@ export default function OrdersPage() {
     try {
       if (!current) {
         if (delta <= 0) return
-        flashUndo({ ticketId: null, cardNo, before: [], text: `${menu.name} を入れました` })
+        flashUndo({ ticketId: null, cardNo, before: [], text: `${menu.name} を入れました`, menu })
         await actions.create({ cardNo, items: addItem([], menu, 1) })
         return
       }
@@ -85,7 +85,7 @@ export default function OrdersPage() {
     try {
       const t = tickets.find((x) => (u.ticketId ? x.id === u.ticketId : x.card_no === u.cardNo))
       if (!t) return
-      if (u.before.length === 0 && !u.ticketId) await actions.setStatus(t.id, 'void')
+      if (!u.ticketId && u.menu) await actions.setItems(t.id, addItem(t.items, u.menu, -1, false))
       else await actions.setItems(t.id, u.before)
     } catch (e) {
       setError(e instanceof Error ? e.message : '取り消せませんでした')

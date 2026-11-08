@@ -10,7 +10,7 @@ import { biryaniDishes, elapsedMinutes, isMissingTable, kitchenQueue, pendingBir
 export default function KitchenPage() {
   const { session, loading: authLoading, loginWithGoogle } = useAuth()
   const date = todayStr()
-  const tq = useTickets(date, 4000)
+  const tq = useTickets(date)
   const actions = useTicketActions(date)
   const [sound, setSound] = useState(false)
   const [now, setNow] = useState(() => Date.now())

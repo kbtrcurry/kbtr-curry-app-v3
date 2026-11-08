@@ -1,4 +1,5 @@
 // 席ごとの伝票（カード番号つき）。iPhoneで注文 → 調理場の画面に注文順 → レジで会計。
+import { useEffect } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from './supabase'
 import { portionOf } from './reservations'
@@ -131,15 +132,38 @@ async function fetchTickets(date: string): Promise<Ticket[]> {
   return (data ?? []) as Ticket[]
 }
 
-/** 数秒おきに取り直す（調理場・レジ・iPhoneで同じ伝票を見るため） */
-export function useTickets(date: string, intervalMs = 6000) {
+/** 伝票が変わったときだけ取り直す(Realtime)。念のため、ゆっくり取り直す保険もつけてある */
+export function useTickets(date: string) {
+  const qc = useQueryClient()
+  useEffect(() => {
+    const ch = supabase
+      .channel(`tickets-${date}-${Math.random().toString(36).slice(2)}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'tickets' }, () => {
+        void qc.invalidateQueries({ queryKey: ['tickets'] })
+      })
+      .subscribe()
+    return () => {
+      void supabase.removeChannel(ch)
+    }
+  }, [date, qc])
   return useQuery({
     queryKey: ['tickets', date],
     queryFn: () => fetchTickets(date),
-    refetchInterval: intervalMs,
+    refetchInterval: 20000,
     refetchOnWindowFocus: true,
     retry: false,
   })
+}
+
+// 同じテーブルへの作成が重なっても、伝票が2枚にならないよう、テーブルごとに順番に処理する
+const locks = new Map<string, Promise<unknown>>()
+function withLock<T>(key: string, fn: () => Promise<T>): Promise<T> {
+  const run = (locks.get(key) ?? Promise.resolve()).catch(() => undefined).then(fn)
+  locks.set(key, run)
+  void run.finally(() => {
+    if (locks.get(key) === run) locks.delete(key)
+  }).catch(() => undefined)
+  return run
 }
 
 export function useTicketActions(date: string) {
@@ -151,15 +175,38 @@ export function useTicketActions(date: string) {
 
   return {
     refresh,
-    async create(p: { cardNo: number; items: TicketItem[]; reservationId?: string | null; label?: string }): Promise<Ticket> {
-      const { data, error } = await supabase
-        .from('tickets')
-        .insert({ service_date: date, card_no: p.cardNo, items: p.items, reservation_id: p.reservationId ?? null, label: p.label ?? '' })
-        .select('*')
-        .single()
-      if (error) throw error
-      await refresh()
-      return data as Ticket
+    create(p: { cardNo: number; items: TicketItem[]; reservationId?: string | null; label?: string }): Promise<Ticket> {
+      return withLock(`${date}:${p.cardNo}`, async () => {
+        // そのテーブルにすでに伝票があれば、新しく作らず、そこへ足す
+        const { data: ex, error: exErr } = await supabase
+          .from('tickets')
+          .select('*')
+          .eq('service_date', date)
+          .eq('card_no', p.cardNo)
+          .in('status', ['open', 'served'])
+          .order('created_at', { ascending: true })
+          .limit(1)
+        if (exErr) throw exErr
+        if (ex && ex.length > 0) {
+          const t = ex[0] as Ticket
+          const items = p.items.reduce((acc, i) => addItem(acc, { id: i.menu_id, name: i.name, price: i.price }, i.qty, !!i.from_res), t.items)
+          const patch: Partial<Ticket> = { items, status: 'open' }
+          if (!t.label && p.label) patch.label = p.label
+          if (!t.reservation_id && p.reservationId) patch.reservation_id = p.reservationId
+          const { data, error } = await supabase.from('tickets').update(patch).eq('id', t.id).select('*').single()
+          if (error) throw error
+          await refresh()
+          return data as Ticket
+        }
+        const { data, error } = await supabase
+          .from('tickets')
+          .insert({ service_date: date, card_no: p.cardNo, items: p.items, reservation_id: p.reservationId ?? null, label: p.label ?? '' })
+          .select('*')
+          .single()
+        if (error) throw error
+        await refresh()
+        return data as Ticket
+      })
     },
     async setItems(id: string, items: TicketItem[]): Promise<void> {
       patchCache(id, { items })

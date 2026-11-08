@@ -97,7 +97,7 @@ export default function ReservationsPage() {
   const [seatFree, setSeatFree] = useState(false)
   const [seatBusy, setSeatBusy] = useState(false)
   const [seatError, setSeatError] = useState<string | null>(null)
-  const todayTickets = useTickets(today, 15000)
+  const todayTickets = useTickets(today)
   const todayActions = useTicketActions(today)
   const applyStatus = async (r: Reservation, s: ResStatus) => {
     const prev = r.status
@@ -178,7 +178,7 @@ export default function ReservationsPage() {
     }
   }
   // 席ごとの伝票(注文)で、当日に追加で注文された分。取り置きの分は含めない
-  const ticketQ = useTickets(effectiveDate, 15000)
+  const ticketQ = useTickets(effectiveDate)
   const ticketList = ticketQ.error ? [] : (ticketQ.data ?? [])
   const walkinOrdered = walkinBiryaniPortions(ticketList)
   const acharOrdered = walkinAchar(ticketList)

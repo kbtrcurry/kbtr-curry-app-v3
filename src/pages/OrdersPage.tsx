@@ -1,13 +1,14 @@
-import { Fragment, useMemo, useRef, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import { ClipboardList } from 'lucide-react'
 import { useLocation } from 'react-router-dom'
 import { useAuth } from '../lib/auth'
 import { Spinner } from '../components/Spinner'
 import { useActiveMenus } from '../lib/pos'
 import { todayStr } from '../lib/accounting'
-import { addItem, CARD_COUNT, freeCards, isMissingTable, isTakeoutCard, mergeItems, nextFreeLabel, SEAT_COUNT, ticketCount, ticketTotal, useTicketActions, useTickets, type Ticket, type TicketItem } from '../lib/tickets'
+import { addItem, freeCards, isMissingTable, mergeItems, nextFreeLabel, ticketCount, ticketTotal, useTicketActions, useTickets, type Ticket, type TicketItem } from '../lib/tickets'
 import { yen } from '../lib/format'
 import { TablePicker } from '../components/TablePicker'
+import { FloorPlan } from '../components/FloorPlan'
 import { RemainingTiles } from '../components/RemainingTiles'
 import { useWalkinRemaining } from '../lib/walkinStock'
 
@@ -137,26 +138,7 @@ export default function OrdersPage() {
         {rem.ready && <RemainingTiles biryaniLeft={rem.biryaniLeft} rows={rem.rows} />}
 
         <p className="text-sm text-stone-500">テーブル番号を押してください</p>
-        <div className="grid grid-cols-4 gap-2">
-          {Array.from({ length: CARD_COUNT }, (_, i) => i + 1).map((n) => {
-            const t = byCard.get(n)
-            const busy = !!t
-            return (
-              <Fragment key={n}>
-              {n === SEAT_COUNT + 1 && <p className="col-span-4 text-xs font-bold text-orange-700 pt-2">テイクアウト（外で待つ人）</p>}
-              <button
-                onClick={() => pickCard(n)}
-                className={`h-20 rounded-2xl border-2 flex flex-col items-center justify-center active:scale-95 transition disabled:opacity-30 ${
-                  !busy ? (isTakeoutCard(n) ? 'bg-orange-50 border-orange-300 text-orange-800' : 'bg-white border-stone-300 text-stone-700') : t.status === 'served' ? 'bg-green-50 border-green-400 text-green-800' : 'bg-amber-50 border-amber-500 text-amber-900'
-                }`}
-              >
-                <span className="text-3xl font-bold leading-none">{n}</span>
-                {busy && <span className="text-[11px] mt-1">{t.label || `${ticketCount(t.items)}品`}</span>}
-              </button>
-              </Fragment>
-            )
-          })}
-        </div>
+        <FloorPlan tickets={tickets} onPick={pickCard} allowEdit />
 
         {free.length === 0 && <p className="text-xs text-stone-400">空いているテーブルがありません</p>}
       </div>

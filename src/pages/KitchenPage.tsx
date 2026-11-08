@@ -3,29 +3,63 @@ import { ChefHat } from 'lucide-react'
 import { useAuth } from '../lib/auth'
 import { Spinner } from '../components/Spinner'
 import { todayStr } from '../lib/accounting'
-import { biryaniDishes, elapsedMinutes, isMissingTable, isTakeoutCard, kitchenQueue, mergeItems, pendingBiryaniDishes, useTicketActions, useTickets } from '../lib/tickets'
+import {
+  biryaniDishes,
+  elapsedMinutes,
+  isFollowUp,
+  isMissingTable,
+  isTakeoutCard,
+  kitchenQueue,
+  mergeItems,
+  pendingBiryaniDishes,
+  pendingItems,
+  queueTime,
+  servedRecent,
+  useTicketActions,
+  useTickets,
+  type Ticket,
+} from '../lib/tickets'
 
-// 調理場の画面。会計前でまだ出していない伝票を、注文が入った順に大きく並べるだけ。
+// 調理場の画面。会計前で、まだ出していない注文を、入った順に大きく並べる。
 // 新しい注文が入ると音とバイブで知らせる。営業中は画面を点けたままにする。
+// 「提供済みにする」を押しても、下の「提供済み」に残るので、押し間違いや確認のときに戻せる。
+const POLL_MS = 8000
+const STALE_SEC = 45
+
+// 経過時間の色: 10分を過ぎたら黄色、15分を過ぎたら赤
+const waitTone = (min: number) => (min >= 15 ? 'text-red-600' : min >= 10 ? 'text-amber-600' : 'text-stone-500')
+
 export default function KitchenPage() {
   const { session, loading: authLoading, loginWithGoogle } = useAuth()
   const date = todayStr()
-  const tq = useTickets(date)
+  const tq = useTickets(date, POLL_MS)
   const actions = useTicketActions(date)
   const [sound, setSound] = useState(false)
   const [now, setNow] = useState(() => Date.now())
+  const [online, setOnline] = useState(() => (typeof navigator === 'undefined' ? true : navigator.onLine))
+  const [showServed, setShowServed] = useState(false)
   const audio = useRef<AudioContext | null>(null)
   const seen = useRef<Set<string> | null>(null)
   // 提供済みを押し間違えたときのやり直し(5秒)
   const [undos, setUndos] = useState<{ id: string; card: number }[]>([])
 
   const queue = kitchenQueue(tq.data ?? [])
-  const queueKey = queue.map((t) => t.id).join(',')
+  const served = servedRecent(tq.data ?? [])
+  // 新しい注文の見分け: 伝票と、足された時刻(追加注文は別の注文として扱う)
+  const queueKey = queue.map((t) => `${t.id}@${queueTime(t)}`).join(',')
 
-  // 経過時間の表示を更新
+  // 経過時間と、通信の状態の表示を更新
   useEffect(() => {
-    const id = setInterval(() => setNow(Date.now()), 20000)
-    return () => clearInterval(id)
+    const id = setInterval(() => setNow(Date.now()), 5000)
+    const on = () => setOnline(true)
+    const off = () => setOnline(false)
+    window.addEventListener('online', on)
+    window.addEventListener('offline', off)
+    return () => {
+      clearInterval(id)
+      window.removeEventListener('online', on)
+      window.removeEventListener('offline', off)
+    }
   }, [])
 
   // 画面を点けたままにする（対応していない端末では何もしない）
@@ -69,27 +103,23 @@ export default function KitchenPage() {
     }
   }
 
-  // 新しい注文が増えたら知らせる（最初の読み込みでは鳴らさない）
+  // 新しい注文(追加注文を含む)が増えたら知らせる（最初の読み込みと、戻した注文では鳴らさない）
   useEffect(() => {
     if (!tq.data) return
-    const ids = new Set(queue.map((t) => t.id))
-    if (seen.current && [...ids].some((id) => !seen.current!.has(id))) beep()
-    seen.current = new Set([...(seen.current ?? []), ...ids]) // 戻した注文では鳴らさない
+    const keys = new Set(queue.map((t) => `${t.id}@${queueTime(t)}`))
+    if (seen.current && [...keys].some((k) => !seen.current!.has(k))) beep()
+    seen.current = new Set([...(seen.current ?? []), ...keys])
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [queueKey, tq.data])
 
-  const markServed = async (t: { id: string; card_no: number }) => {
+  const markServed = async (t: Ticket) => {
     setUndos((u) => [...u, { id: t.id, card: t.card_no }])
     setTimeout(() => setUndos((u) => u.filter((x) => x.id !== t.id)), 5000)
-    try {
-      await actions.setStatus(t.id, 'served')
-    } catch {
-      setUndos((u) => u.filter((x) => x.id !== t.id))
-    }
+    await actions.serve(t.id)
   }
   const undoServed = async (id: string) => {
     setUndos((u) => u.filter((x) => x.id !== id))
-    await actions.setStatus(id, 'open')
+    await actions.unserve(id)
   }
 
   // 音は、画面を開いたら自動で準備する。ブラウザが許さない間は、画面のどこかを最初に触った瞬間に有効になる
@@ -149,17 +179,26 @@ export default function KitchenPage() {
   }
 
   const dishes = pendingBiryaniDishes(tq.data ?? [])
+  // 通信の状態: 最後に注文を取れた時刻から時間が空いたら、止まっていると知らせる
+  const ageSec = tq.dataUpdatedAt ? Math.max(0, Math.round((now - tq.dataUpdatedAt) / 1000)) : null
+  const stale = !online || tq.isError || (ageSec != null && ageSec > STALE_SEC)
 
   return (
     <div className="p-3 pb-24 space-y-3 landscape:pb-16">
+      {stale && (
+        <div className="rounded-xl bg-red-600 text-white font-bold px-4 py-3 text-base">
+          通信が切れています{ageSec != null ? `（最後に受け取ってから ${ageSec}秒）` : ''}。新しい注文が届いていないかもしれません。
+        </div>
+      )}
       <div className="flex items-center gap-3">
         <h1 className="text-xl font-bold text-amber-800 flex items-center gap-2">
           <ChefHat className="w-6 h-6" /> 調理場
         </h1>
         <span className="text-lg font-bold text-stone-800">ビリヤニ 未提供 {dishes}皿</span>
+        <span className={`text-xs ${stale ? 'text-red-600 font-bold' : 'text-stone-400'}`}>{ageSec != null ? `更新 ${ageSec}秒前` : ''}</span>
         <button
           onClick={enableSound}
-          className={`ml-auto px-3 py-2 rounded-lg text-sm font-semibold ${sound ? 'bg-green-100 text-green-800' : 'bg-amber-700 text-[#faf9f5]'}`}
+          className={`ml-auto px-3 py-2.5 rounded-lg text-sm font-semibold ${sound ? 'bg-green-100 text-green-800' : 'bg-amber-700 text-[#faf9f5]'}`}
         >
           {sound ? '音 ON' : '音 OFF（画面をタッチで有効）'}
         </button>
@@ -169,40 +208,72 @@ export default function KitchenPage() {
       {!tq.isLoading && queue.length === 0 && <p className="text-center text-stone-400 py-16 text-lg">注文はありません</p>}
 
       <div className="grid gap-3 grid-cols-[repeat(auto-fill,minmax(270px,1fr))]">
-        {queue.map((t, idx) => (
-          <div key={t.id} className="rounded-2xl border-2 border-amber-600 bg-white p-3">
-            <div className="flex items-baseline gap-3">
-              <span className="text-4xl font-bold text-amber-800 leading-none">{t.card_no}</span>
-              {isTakeoutCard(t.card_no) && <span className="text-xs font-bold text-white bg-orange-600 rounded px-1.5 py-0.5">持ち帰り</span>}
-              <span className="text-sm text-stone-500">
-                {idx + 1}番目 ・ {elapsedMinutes(t.created_at, now)}分前
-              </span>
-              {t.label && <span className="text-sm font-semibold text-sky-700">{t.label}</span>}
-              {biryaniDishes(t.items) > 0 && <span className="ml-auto text-sm font-bold text-stone-700">ビリヤニ {biryaniDishes(t.items)}皿</span>}
+        {queue.map((t, idx) => {
+          const min = elapsedMinutes(queueTime(t), now)
+          const pend = pendingItems(t.items)
+          return (
+            <div key={t.id} className="rounded-2xl border-2 border-amber-600 bg-white p-3">
+              <div className="flex items-baseline gap-2 flex-wrap">
+                <span className="text-sm text-stone-500">テーブル</span>
+                <span className="text-4xl font-bold text-amber-800 leading-none">{t.card_no}</span>
+                {isTakeoutCard(t.card_no) && <span className="text-xs font-bold text-white bg-orange-600 rounded px-1.5 py-0.5">持ち帰り</span>}
+                {isFollowUp(t) && <span className="text-xs font-bold text-white bg-sky-600 rounded px-1.5 py-0.5">追加</span>}
+                {t.label && <span className="text-sm font-semibold text-sky-700">{t.label}</span>}
+                <span className={`ml-auto text-lg font-bold ${waitTone(min)}`}>{min}分</span>
+              </div>
+              <p className="text-xs text-stone-400 mt-0.5">
+                {idx + 1}番目{biryaniDishes(pend) > 0 ? `　ビリヤニ ${biryaniDishes(pend)}皿` : ''}
+              </p>
+              <ul className="mt-2 space-y-0.5">
+                {mergeItems(pend).map((it) => (
+                  <li key={it.key} className="text-xl text-stone-900">
+                    {it.name} <b>×{it.qty}</b>
+                  </li>
+                ))}
+              </ul>
+              <button
+                onClick={() => void markServed(t)}
+                className="w-full mt-3 h-14 rounded-xl bg-green-600 text-white text-lg font-bold active:scale-95 transition"
+              >
+                提供済みにする
+              </button>
             </div>
-            <ul className="mt-2 space-y-0.5">
-              {mergeItems(t.items).map((it) => (
-                <li key={it.key} className="text-xl text-stone-900">
-                  {it.name} <b>×{it.qty}</b>
-                </li>
-              ))}
-            </ul>
-            <button
-              onClick={() => void markServed(t)}
-              className="w-full mt-3 py-3 rounded-xl bg-green-600 text-white text-lg font-bold active:scale-95 transition"
-            >
-              提供済みにする
-            </button>
-          </div>
-        ))}
+          )
+        })}
       </div>
+
+      {served.length > 0 && (
+        <section className="pt-2">
+          <button onClick={() => setShowServed((v) => !v)} className="w-full h-12 rounded-xl border-2 border-stone-300 bg-white text-stone-600 font-semibold">
+            提供済み {served.length}件 {showServed ? '▲ 閉じる' : '▼ 見る・戻す'}
+          </button>
+          {showServed && (
+            <div className="mt-2 grid gap-2 grid-cols-[repeat(auto-fill,minmax(270px,1fr))]">
+              {served.map((t) => (
+                <div key={t.id} className="rounded-xl border border-stone-300 bg-stone-50 p-3">
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-sm text-stone-500">テーブル</span>
+                    <span className="text-2xl font-bold text-stone-700 leading-none">{t.card_no}</span>
+                    {t.label && <span className="text-sm text-sky-700">{t.label}</span>}
+                    <span className="ml-auto text-xs text-stone-400">{t.served_at ? `${elapsedMinutes(t.served_at, now)}分前に提供` : ''}</span>
+                  </div>
+                  <p className="text-sm text-stone-600 mt-1">{mergeItems(t.items).map((it) => `${it.name}×${it.qty}`).join('　')}</p>
+                  <button onClick={() => void actions.unserve(t.id)} className="w-full mt-2 h-11 rounded-lg border-2 border-amber-600 text-amber-700 font-bold active:scale-95 transition">
+                    未提供に戻す
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+      )}
 
       {undos.length > 0 && (
         <div className="fixed left-0 right-0 bottom-3 px-3 z-50 flex flex-col items-center gap-2 pointer-events-none">
           {undos.map((u) => (
             <div key={u.id} className="pointer-events-auto w-full max-w-md bg-stone-900 text-white rounded-xl px-4 py-3 flex items-center gap-3 shadow-lg">
               <span className="flex-1 text-base">テーブル{u.card} を提供済みにしました</span>
-              <button onClick={() => void undoServed(u.id)} className="font-bold text-amber-300 text-lg px-3 py-1">
+              <button onClick={() => void undoServed(u.id)} className="font-bold text-amber-300 text-lg px-3 py-2">
                 元に戻す
               </button>
             </div>

@@ -603,8 +603,9 @@ export default function PosPage() {
                   t.id === ticketId ? 'bg-amber-700 border-amber-700 text-[#faf9f5]' : t.status === 'served' ? 'bg-green-50 border-green-400 text-green-900' : 'bg-white border-amber-400 text-amber-900'
                 }`}
               >
+                <span className="block text-xs">テーブル</span>
                 <span className="block text-2xl font-bold leading-none">{t.card_no}</span>
-                <span className="block text-[11px] mt-0.5">
+                <span className="block text-xs mt-0.5">
                   {ticketCount(t.items)}点 {ticketTotal(t.items).toLocaleString()}円
                 </span>
               </button>

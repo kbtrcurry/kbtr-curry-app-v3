@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import type { OutboxEntry } from './ticketOutbox'
-import { addItem, applyOutbox, biryaniDishes, freeCards, isRetryableError, isTakeoutCard, itemsFromReservation, kitchenQueue, mergeItems, pendingBiryaniDishes, ticketTotal, walkinAchar, walkinBiryaniPortions, type Ticket } from './tickets'
+import { addItem, applyOutbox, biryaniDishes, freeCards, hasPending, markServedItems, pendingItems, servedRecent, unserveItems, isRetryableError, isTakeoutCard, itemsFromReservation, kitchenQueue, mergeItems, pendingBiryaniDishes, ticketTotal, walkinAchar, walkinBiryaniPortions, type Ticket } from './tickets'
 
 const t = (o: Partial<Ticket>): Ticket => ({
   id: 'x',
@@ -114,5 +114,52 @@ describe('同じメニューは1行にまとめる', () => {
     expect(m).toHaveLength(2)
     expect(m[0]).toMatchObject({ name: biryani.name, qty: 3, resQty: 1, addQty: 2 })
     expect(items).toHaveLength(3)
+  })
+})
+
+describe('提供済みと追加注文', () => {
+  it('提供済みにしたあと足した分だけが、まだ出していない品になる', () => {
+    let items = addItem([], biryani, 2)
+    items = markServedItems(items)
+    expect(hasPending(items)).toBe(false)
+    items = addItem(items, biryani, 1)
+    expect(pendingItems(items)).toMatchObject([{ name: biryani.name, qty: 1 }])
+    items = addItem(items, achar, 1)
+    expect(pendingItems(items).map((i) => i.name)).toEqual([biryani.name, achar.name])
+  })
+  it('足した分を減らすと、提供済みの数を超えない', () => {
+    let items = markServedItems(addItem([], biryani, 2))
+    items = addItem(items, biryani, 1)
+    items = addItem(items, biryani, -2)
+    expect(items[0].qty).toBe(1)
+    expect(items[0].served_qty).toBe(1)
+    expect(hasPending(items)).toBe(false)
+  })
+  it('提供済みを取り消すと、押す前の状態に戻る', () => {
+    const first = markServedItems(addItem([], biryani, 2))
+    const second = markServedItems(addItem(first, biryani, 1))
+    expect(second[0].served_qty).toBe(3)
+    const back = unserveItems(second)
+    expect(back[0].served_qty).toBe(2)
+    expect(pendingItems(back)[0].qty).toBe(1)
+  })
+  it('調理場には、まだ出していない品がある伝票だけが、足された時刻の順に出る', () => {
+    const done = markServedItems(addItem([], biryani, 1))
+    const followUp = [{ ...done[0], qty: 2, added_at: '2026-11-08T04:10:00Z' }]
+    const q = kitchenQueue([
+      t({ id: 'old', items: followUp, created_at: '2026-11-08T03:00:00Z' }),
+      t({ id: 'new', items: addItem([], biryani, 1), created_at: '2026-11-08T04:00:00Z' }),
+      t({ id: 'finished', items: done, created_at: '2026-11-08T02:00:00Z' }),
+    ])
+    expect(q.map((x) => x.id)).toEqual(['new', 'old'])
+  })
+  it('提供済みの伝票を、新しい順に並べる', () => {
+    const items = markServedItems(addItem([], biryani, 1))
+    const r = servedRecent([
+      t({ id: 'a', status: 'served', items, served_at: '2026-11-08T03:00:00Z' }),
+      t({ id: 'b', status: 'served', items, served_at: '2026-11-08T03:30:00Z' }),
+      t({ id: 'c', status: 'open', items }),
+    ])
+    expect(r.map((x) => x.id)).toEqual(['b', 'a'])
   })
 })

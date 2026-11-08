@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import { isMissingTable, itemsFromReservation, nextFreeLabel, useDayTickets, useTicketActions, useTickets, voidDayTickets, walkinBiryaniPortions } from '../lib/tickets'
 import { limitedRows, remaining, reservedPortions, useLimitedIds } from '../lib/walkinStock'
 import { RemainingTiles } from '../components/RemainingTiles'
@@ -98,6 +99,15 @@ export default function ReservationsPage() {
   const [seatRes, setSeatRes] = useState<Reservation | null>(null)
   const [seatFree, setSeatFree] = useState(false)
   const [seatBusy, setSeatBusy] = useState(false)
+  // 席に案内した直後に、小さく出す「注文を取る」への入口(次々に案内するときは、じゃまにならないよう自動で消える)
+  const navigate = useNavigate()
+  const [seated, setSeated] = useState<{ card: number; label: string } | null>(null)
+  const seatedTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const flashSeated = (card: number, label: string) => {
+    setSeated({ card, label })
+    if (seatedTimer.current) clearTimeout(seatedTimer.current)
+    seatedTimer.current = setTimeout(() => setSeated(null), 6000)
+  }
   const [seatError, setSeatError] = useState<string | null>(null)
   const todayTickets = useTickets(today)
   const todayActions = useTicketActions(today)
@@ -119,6 +129,7 @@ export default function ReservationsPage() {
       }
       await applyStatus(r, 'picked_up')
       setSeatRes(null)
+      if (n != null) flashSeated(n, r.name || '取り置き')
     } catch (e) {
       setSeatError(e instanceof Error ? e.message : '保存できませんでした')
     } finally {
@@ -130,8 +141,10 @@ export default function ReservationsPage() {
     setSeatBusy(true)
     setSeatError(null)
     try {
-      await todayActions.create({ cardNo: n, items: [], label: nextFreeLabel(today) })
+      const label = nextFreeLabel(today)
+      await todayActions.create({ cardNo: n, items: [], label })
       setSeatFree(false)
+      flashSeated(n, label)
     } catch (e) {
       setSeatError(e instanceof Error ? e.message : '保存できませんでした')
     } finally {
@@ -267,7 +280,9 @@ export default function ReservationsPage() {
           {/* フリーのお客さんが来たとき、あと何食出せるか */}
           <div className="bg-white border border-stone-200 rounded-xl p-2.5 space-y-2">
             <RemainingTiles biryaniLeft={biryaniLeft} rows={rows} biryaniNote={`${fmtPortions(cap)} − 取り置き${fmtPortions(reservedQty)} − 注文${fmtPortions(walkinOrdered)}`} />
-            <div className="space-y-1.5 text-xs text-stone-600">
+            <details>
+              <summary className="h-11 flex items-center text-sm font-semibold text-stone-700 cursor-pointer">仕込み量・メニューを直す（朝に1回）</summary>
+            <div className="space-y-1.5 text-sm text-stone-600">
               <StockRow label="ビリヤニの仕込み" value={cap} unit="食" onCommit={setCap} />
               {rows.map((row) => (
                 <StockRow
@@ -295,9 +310,9 @@ export default function ReservationsPage() {
                     </option>
                   ))}
               </select>
-              <p className="text-stone-400">あと ＝ 仕込み − 取り置き − 当日の注文（オーダー画面で入れた分）</p>
+              <p className="text-stone-500">あと ＝ 仕込み − 取り置き − 当日の注文（オーダー画面で入れた分）</p>
               {ticketList.length > 0 && (
-                <p className="text-stone-500">
+                <p className="text-stone-600">
                   この日の注文 {ticketList.length}組 {fmtPortions(walkinOrdered)}食（取り置き分を除く）
                   <button onClick={() => setConfirmVoid(true)} className="ml-2 underline text-red-600">
                     注文をすべて消す
@@ -305,6 +320,7 @@ export default function ReservationsPage() {
                 </p>
               )}
             </div>
+            </details>
           </div>
 
           <div className="flex items-center gap-1.5 text-xs">
@@ -470,10 +486,29 @@ export default function ReservationsPage() {
           onCancel={() => setConfirmPick(null)}
         />
       )}
+      {seated && (
+        <div className="fixed left-0 right-0 z-[60] flex justify-center px-4 pointer-events-none" style={{ bottom: `calc(${undo ? '9rem' : '5.5rem'} + env(safe-area-inset-bottom, 0px))` }}>
+          <div className="pointer-events-auto flex items-center gap-2 bg-white text-stone-800 border-2 border-sky-400 rounded-xl pl-3 pr-1.5 py-1.5 shadow-lg max-w-md w-full">
+            <span className="flex-1 min-w-0 truncate text-sm">
+              テーブル{seated.card} に案内（{seated.label}）
+            </span>
+            <button
+              onClick={() => {
+                const c = seated.card
+                setSeated(null)
+                navigate(`/orders?table=${c}`)
+              }}
+              className="shrink-0 h-10 px-3 rounded-lg bg-sky-600 text-white text-sm font-bold active:scale-95"
+            >
+              注文を取る
+            </button>
+          </div>
+        </div>
+      )}
       {undo && (
         <div className="fixed left-0 right-0 bottom-[calc(5.5rem+env(safe-area-inset-bottom,0px))] md:bottom-6 z-[60] flex justify-center px-4 pointer-events-none">
           <div className="pointer-events-auto flex items-center gap-3 bg-stone-900 text-stone-50 border border-stone-300 rounded-xl px-4 py-2.5 shadow-lg max-w-md w-full">
-            <span className="flex-1 min-w-0 truncate text-sm">{undo.text}</span>
+            <span className="flex-1 min-w-0 truncate text-base">{undo.text}</span>
             <button
               onClick={async () => {
                 const u = undo
@@ -481,7 +516,7 @@ export default function ReservationsPage() {
                 await setReservationStatus(u.id, u.prev)
                 invalidate()
               }}
-              className="text-sm font-bold text-amber-800 shrink-0 px-2 py-1"
+              className="text-base font-bold text-amber-300 shrink-0 px-3 h-11"
             >
               元に戻す
             </button>
@@ -820,7 +855,7 @@ function ReservationRow({
           onClick={() => setOpen((v) => !v)}
           aria-expanded={open}
           className={`flex-1 min-w-0 flex flex-col justify-center pl-2.5 pr-1 py-[3px] text-left ${off ? 'opacity-50' : ''}`}
-          style={{ minHeight: 35 }}
+          style={{ minHeight: 50 }}
         >
           {/* 1食＝1行。2食なら2行、3食なら3行。ソーダなど食に数えないものは、1行目に並べる */}
           {lines.map((ln, idx) => (
@@ -848,7 +883,7 @@ function ReservationRow({
         <button
           onClick={() => void toggle()}
           disabled={busy}
-          className={`shrink-0 w-[88px] my-[2px] mr-1 rounded-lg text-sm font-bold active:scale-95 transition-transform disabled:opacity-60 ${
+          className={`shrink-0 w-[88px] my-[3px] mr-1 rounded-lg text-sm font-bold active:scale-95 transition-transform disabled:opacity-60 ${
             done
               ? 'bg-green-600 text-white'
               : r.status === 'reserved'

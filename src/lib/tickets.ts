@@ -12,6 +12,12 @@ export type TicketItem = {
   qty: number
   /** 取り置きで予約済みの品。当日分の残りからは引かない */
   from_res?: boolean
+  /** 提供済みの数(調理場で「提供済みにする」を押した分)。qty との差が、まだ出していない数 */
+  served_qty?: number
+  /** 「提供済みにする」を押す前の提供済みの数(押し間違いを戻すため) */
+  served_prev?: number
+  /** 提供済みのあとに足された注文が入った時刻(調理場の並び順に使う) */
+  added_at?: string
 }
 export type TicketStatus = 'open' | 'served' | 'paid' | 'void'
 export type Ticket = {
@@ -42,13 +48,68 @@ export function addItem(
   fromRes = false,
 ): TicketItem[] {
   const idx = items.findIndex((i) => i.menu_id === menu.id && i.name === menu.name && !!i.from_res === fromRes)
-  if (idx < 0) return delta > 0 ? [...items, { menu_id: menu.id, name: menu.name, price: menu.price, qty: delta, from_res: fromRes }] : items
+  // すでに何か提供済みの伝票への追加は、新しい注文として調理場に出す(入った時刻を控える)
+  const followUp = items.some((i) => (i.served_qty ?? 0) > 0)
+  if (idx < 0) {
+    if (delta <= 0) return items
+    return [...items, { menu_id: menu.id, name: menu.name, price: menu.price, qty: delta, from_res: fromRes, ...(followUp ? { added_at: new Date().toISOString() } : {}) }]
+  }
   const next = [...items]
-  const qty = next[idx].qty + delta
+  const cur = next[idx]
+  const qty = cur.qty + delta
   if (qty <= 0) next.splice(idx, 1)
-  else next[idx] = { ...next[idx], qty }
+  else {
+    const served = cur.served_qty ?? 0
+    next[idx] = {
+      ...cur,
+      qty,
+      ...(cur.served_qty != null ? { served_qty: Math.min(served, qty) } : {}),
+      ...(delta > 0 && served > 0 && served >= cur.qty ? { added_at: new Date().toISOString() } : {}),
+    }
+  }
   return next
 }
+
+// ---------- 提供済み(調理場) ----------
+
+/** まだ出していない数 */
+export const pendingQty = (i: TicketItem): number => Math.max(0, i.qty - (i.served_qty ?? 0))
+export const hasPending = (items: TicketItem[]): boolean => items.some((i) => pendingQty(i) > 0)
+
+/** まだ出していない品だけ(数は、出していない分)。調理場のカードに出す */
+export function pendingItems(items: TicketItem[]): TicketItem[] {
+  return items.filter((i) => pendingQty(i) > 0).map((i) => ({ ...i, qty: pendingQty(i) }))
+}
+
+/** 「提供済みにする」: 全部を出した状態にする(押す前の数を控えて、戻せるようにする) */
+export const markServedItems = (items: TicketItem[]): TicketItem[] => items.map((i) => ({ ...i, served_prev: i.served_qty ?? 0, served_qty: i.qty }))
+
+/** 「未提供に戻す」: 押す前の状態に戻す */
+export function unserveItems(items: TicketItem[]): TicketItem[] {
+  return items.map((i) => {
+    const { served_prev, ...rest } = i
+    return { ...rest, served_qty: Math.min(served_prev ?? 0, i.qty) }
+  })
+}
+
+/** 以前の記録(提供済みの数がない)で、提供済みになっている伝票は、いまある品をすべて提供済みとして扱う */
+export const normalizeServed = (items: TicketItem[], status: TicketStatus): TicketItem[] =>
+  status === 'served' ? items.map((i) => (i.served_qty == null ? { ...i, served_qty: i.qty } : i)) : items
+
+/** 調理場での順番を決める時刻。追加注文は、足された時刻から数える */
+export function queueTime(t: Ticket): string {
+  const followUp = t.items.some((i) => (i.served_qty ?? 0) > 0)
+  if (!followUp) return t.created_at
+  return (
+    t.items
+      .filter((i) => pendingQty(i) > 0)
+      .map((i) => i.added_at ?? t.created_at)
+      .sort()[0] ?? t.created_at
+  )
+}
+
+/** 2回目以降の注文(すでに何か提供済み) */
+export const isFollowUp = (t: Ticket): boolean => t.items.some((i) => (i.served_qty ?? 0) > 0)
 
 /** 画面に出す1行。取り置き分と追加分は、同じメニューなら1行にまとめて数を合わせる */
 export type MergedItem = { key: string; menu_id: string | null; name: string; price: number; qty: number; resQty: number; addQty: number }
@@ -77,14 +138,22 @@ const isAchar = (name: string) => /アチャール/.test(name)
 /** ビリヤニの皿数（大盛りも1皿）。盛り付けは1回3皿までなので、調理場で見る数 */
 export const biryaniDishes = (items: TicketItem[]): number => items.filter((i) => isBiryani(i.name)).reduce((a, i) => a + i.qty, 0)
 
-/** 調理場に出す伝票: 会計前でまだ出していないものを、注文が入った順に */
+/** 調理場に出す伝票: 会計前で、まだ出していない品があるものを、注文が入った順に */
 export function kitchenQueue(tickets: Ticket[]): Ticket[] {
-  // 注文がまだ入っていない席(フリーの枠だけ作った状態)は、調理場には出さない
-  return tickets.filter((t) => t.status === 'open' && t.items.length > 0).sort((a, b) => a.created_at.localeCompare(b.created_at))
+  // 注文がまだ入っていない席(フリーの枠だけ作った状態)や、全部出し終えた席は、調理場には出さない
+  return tickets.filter((t) => t.status === 'open' && hasPending(t.items)).sort((a, b) => queueTime(a).localeCompare(queueTime(b)))
+}
+
+/** 提供済みにした伝票(新しいものが先)。押し間違いを戻したいときに見る */
+export function servedRecent(tickets: Ticket[], limit = 8): Ticket[] {
+  return tickets
+    .filter((t) => t.status === 'served' && t.items.length > 0)
+    .sort((a, b) => (b.served_at ?? '').localeCompare(a.served_at ?? ''))
+    .slice(0, limit)
 }
 
 /** 提供前のビリヤニの皿数の合計 */
-export const pendingBiryaniDishes = (tickets: Ticket[]): number => kitchenQueue(tickets).reduce((a, t) => a + biryaniDishes(t.items), 0)
+export const pendingBiryaniDishes = (tickets: Ticket[]): number => kitchenQueue(tickets).reduce((a, t) => a + biryaniDishes(pendingItems(t.items)), 0)
 
 /** 当日の追加注文で使った食数（取り置きの分は含めない）。ビリヤニは大盛り1.5食で数える */
 export function walkinBiryaniPortions(tickets: Ticket[]): number {
@@ -240,12 +309,12 @@ function useTicketsRealtime(date: string) {
   }, [date, qc])
 }
 
-export function useTickets(date: string) {
+export function useTickets(date: string, pollMs = 20000) {
   useTicketsRealtime(date)
   return useQuery({
     queryKey: ['tickets', date],
     queryFn: () => fetchTickets(date),
-    refetchInterval: 20000,
+    refetchInterval: pollMs,
     refetchOnWindowFocus: true,
     staleTime: 0,
     retry: false,
@@ -364,8 +433,8 @@ export function useTicketActions(date: string) {
       if (ex) {
         // そのテーブルにすでに伝票があれば、新しく作らず、そこへ足す(同じ取り置きを2回入れても増えない)
         if (p.reservationId && ex.reservation_id === p.reservationId) return Promise.resolve(ex)
-        const items = p.items.reduce((acc, i) => addItem(acc, { id: i.menu_id, name: i.name, price: i.price }, i.qty, !!i.from_res), ex.items)
-        const data: Partial<Ticket> = { items, status: 'open' }
+        const items = p.items.reduce((acc, i) => addItem(acc, { id: i.menu_id, name: i.name, price: i.price }, i.qty, !!i.from_res), normalizeServed(ex.items, ex.status))
+        const data: Partial<Ticket> = { items, status: hasPending(items) ? 'open' : ex.status }
         if (!ex.label && p.label) data.label = p.label
         if (!ex.reservation_id && p.reservationId) data.reservation_id = p.reservationId
         stage(ex.id, data)
@@ -376,7 +445,30 @@ export function useTicketActions(date: string) {
       return Promise.resolve(t)
     },
     setItems(id: string, items: TicketItem[]): Promise<void> {
-      stage(id, { items })
+      // 提供済みの席に品を足したら調理場へ出し直し、足した分を取り消して全部出し終えていれば提供済みに戻す
+      const cur = (qc.getQueryData<Ticket[]>(['tickets', date]) ?? []).find((t) => t.id === id)
+      const next = cur ? normalizeServed(items, cur.status) : items
+      let status: TicketStatus | undefined
+      if (cur && next.length > 0) {
+        const pending = hasPending(next)
+        if (cur.status === 'served' && pending) status = 'open'
+        else if (cur.status === 'open' && !pending && next.some((i) => (i.served_qty ?? 0) > 0)) status = 'served'
+      }
+      stage(id, { items: next, ...(status ? { status } : {}) })
+      return Promise.resolve()
+    },
+    /** 調理場で「提供済みにする」 */
+    serve(id: string): Promise<void> {
+      const cur = (qc.getQueryData<Ticket[]>(['tickets', date]) ?? []).find((t) => t.id === id)
+      if (!cur) return Promise.resolve()
+      stage(id, { items: markServedItems(cur.items), status: 'served', served_at: new Date().toISOString() })
+      return Promise.resolve()
+    },
+    /** 提供済みを取り消す(押し間違い・確認し直したいとき) */
+    unserve(id: string): Promise<void> {
+      const cur = (qc.getQueryData<Ticket[]>(['tickets', date]) ?? []).find((t) => t.id === id)
+      if (!cur) return Promise.resolve()
+      stage(id, { items: unserveItems(cur.items), status: 'open', served_at: null })
       return Promise.resolve()
     },
     /** テーブルを移る(使用中の番号には移れない。画面側で選べないようにしてある) */

@@ -18,6 +18,8 @@ import {
   CalendarDays,
   ClipboardList,
   ChefHat,
+  Home,
+  LayoutGrid,
 } from 'lucide-react'
 import { supabase, isSupabaseConfigured } from '../lib/supabase'
 import { useAuth } from '../lib/auth'
@@ -38,6 +40,7 @@ const HUB_GROUPS: { title: string; links: HubLink[] }[] = [
     title: '営業',
     links: [
       { to: '/pos', label: 'レジ', icon: ShoppingCart },
+      { to: '/home', label: 'やること', icon: Home },
       { to: '/history', label: '営業履歴・編集', icon: History, note: '売上の明細・場所代・日付の直し' },
     ],
   },
@@ -52,8 +55,9 @@ const HUB_GROUPS: { title: string; links: HubLink[] }[] = [
   {
     title: '営業中',
     links: [
-      { to: '/orders', label: 'オーダー（テーブル番号）', icon: ClipboardList },
+      { to: '/orders', label: 'オーダー', icon: ClipboardList },
       { to: '/kitchen', label: '調理場の画面', icon: ChefHat },
+      { to: '/floor-plan', label: '席の間取り', icon: LayoutGrid, note: 'テーブルの並びを店のとおりに整える' },
     ],
   },
   {

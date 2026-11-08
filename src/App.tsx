@@ -30,6 +30,7 @@ import AnalysisPage from './pages/AnalysisPage'
 import SegmentsPage from './pages/SegmentsPage'
 import EventsPage from './pages/EventsPage'
 import EventEntryPage from './pages/EventEntryPage'
+import FloorPlanPage from './pages/FloorPlanPage'
 import OrdersPage from './pages/OrdersPage'
 import KitchenPage from './pages/KitchenPage'
 import { settleDueReceivables } from './lib/receivables'
@@ -72,7 +73,6 @@ const SIDE_NAV: NavItem[] = [
   { to: '/more', label: 'その他', icon: MenuIcon },
 ]
 const BOTTOM_NAV: NavItem[] = [
-  { to: '/', label: 'ホーム', icon: Home },
   { to: '/reserve', label: '取り置き', icon: Users },
   { to: '/orders', label: 'オーダー', icon: ClipboardList },
   { to: '/analysis', label: '分析', icon: BarChart3 },
@@ -93,7 +93,8 @@ function useIsWide(): boolean {
 
 // 起動画面: iPad はレジ、iPhone は「やること」
 function StartPage() {
-  return useIsWide() ? <PosPage /> : <HomePage />
+  // iPhone は営業で使う「取り置き」から始める(ホームの「やること」は、その他の中にある)
+  return useIsWide() ? <PosPage /> : <Navigate to="/reserve" replace />
 }
 
 // 入金予定日が来た「入金予定」を、アプリを開いたとき（と、日付が変わって戻ってきたとき）に自動で入金へ反映する
@@ -272,6 +273,7 @@ export default function App() {
                   <Route path="/events" element={<EventsPage />} />
                   <Route path="/event-entry" element={<EventEntryPage />} />
                   <Route path="/orders" element={<OrdersPage />} />
+                  <Route path="/floor-plan" element={<FloorPlanPage />} />
                   <Route path="/kitchen" element={<KitchenPage />} />
                   {AnalysisDemo && (
                     <Route

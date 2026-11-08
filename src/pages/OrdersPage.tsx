@@ -3,37 +3,47 @@ import { ClipboardList } from 'lucide-react'
 import { useLocation } from 'react-router-dom'
 import { useAuth } from '../lib/auth'
 import { Spinner } from '../components/Spinner'
+import { ConfirmModal } from '../components/ConfirmModal'
 import { useActiveMenus } from '../lib/pos'
 import { todayStr } from '../lib/accounting'
-import { addItem, freeCards, isMissingTable, mergeItems, nextFreeLabel, ticketCount, ticketTotal, useTicketActions, useTickets, type Ticket, type TicketItem } from '../lib/tickets'
+import { addItem, CARD_COUNT, freeCards, isMissingTable, mergeItems, nextFreeLabel, ticketCount, ticketTotal, useTicketActions, useTickets, type Ticket, type TicketItem } from '../lib/tickets'
 import { yen } from '../lib/format'
 import { TablePicker } from '../components/TablePicker'
 import { FloorPlan } from '../components/FloorPlan'
 import { RemainingTiles } from '../components/RemainingTiles'
+import { fmtPortions, portionOf } from '../lib/reservations'
 import { useWalkinRemaining } from '../lib/walkinStock'
 
 const SQL_HINT = 'データベースに「tickets」テーブルがまだありません。supabase/migrations の 20261108000017_tickets.sql を SQL Editor で実行してください。'
 
-// 注文を取る画面（iPhone向け）。カード番号を押して、メニューを押すたびにすぐ調理場へ届く。
+/** /orders?table=5 のように、開くテーブルを指定できる(席に案内した直後に、そのまま注文を取るため) */
+const tableFromSearch = (search: string): number | null => {
+  const n = Number(new URLSearchParams(search).get('table'))
+  return Number.isInteger(n) && n >= 1 && n <= CARD_COUNT ? n : null
+}
+
+// 注文を取る画面（iPhone向け）。テーブルを押して、メニューを押すたびにすぐ調理場へ届く。
 export default function OrdersPage() {
   const { session, loading: authLoading, loginWithGoogle } = useAuth()
   const date = todayStr()
   const menus = useActiveMenus().data ?? []
   const tq = useTickets(date)
   const actions = useTicketActions(date)
-  const [cardNo, setCardNo] = useState<number | null>(null)
+  const loc = useLocation()
+  const [cardNo, setCardNo] = useState<number | null>(() => tableFromSearch(loc.search))
   const [undo, setUndo] = useState<{ ticketId: string | null; cardNo: number; before: TicketItem[]; text: string; menu?: { id: string; name: string; price: number } } | null>(null)
   const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [moving, setMoving] = useState(false)
+  const [confirmVoid, setConfirmVoid] = useState(false)
   const rem = useWalkinRemaining(date)
-  // 下のメニューの「オーダー」を押したら、いつでもテーブル番号の一覧に戻る(同じ画面を押し直したときも、場所の識別子が変わる)
-  const loc = useLocation()
+  // 下のメニューの「オーダー」を押したら、いつでもテーブルの一覧に戻る(同じ画面を押し直したときも、場所の識別子が変わる)
   const [seenKey, setSeenKey] = useState(loc.key)
   if (seenKey !== loc.key) {
     setSeenKey(loc.key)
-    setCardNo(null)
+    setCardNo(tableFromSearch(loc.search))
     setMoving(false)
+    setConfirmVoid(false)
     setUndo(null)
   }
 
@@ -41,6 +51,8 @@ export default function OrdersPage() {
   const byCard = useMemo(() => new Map(tickets.map((t) => [t.card_no, t])), [tickets])
   const free = freeCards(tickets)
   const current: Ticket | undefined = cardNo != null ? byCard.get(cardNo) : undefined
+  // 席に案内したけれど、まだ注文を聞いていないテーブル(案内した順)
+  const waitingOrder = useMemo(() => tickets.filter((t) => t.items.length === 0).sort((a, b) => a.created_at.localeCompare(b.created_at)), [tickets])
 
   if (authLoading) return <Spinner />
   if (!session) {
@@ -123,95 +135,121 @@ export default function OrdersPage() {
   const cancelTicket = async () => {
     if (!current) return
     await actions.setStatus(current.id, 'void')
+    setConfirmVoid(false)
     setCardNo(null)
   }
 
-  // ---- カード番号の選択 ----
+  // ---- テーブルの選択 ----
   if (cardNo == null) {
     return (
       <div className="p-4 pb-24 max-w-md mx-auto space-y-3">
         <h1 className="text-xl font-bold text-amber-800 flex items-center gap-2">
-          <ClipboardList className="w-6 h-6" /> 注文
+          <ClipboardList className="w-6 h-6" /> オーダー
         </h1>
         {error && <p className="text-sm text-red-600">{error}</p>}
 
         {rem.ready && <RemainingTiles biryaniLeft={rem.biryaniLeft} rows={rem.rows} />}
 
-        <p className="text-sm text-stone-500">テーブル番号を押してください</p>
-        <FloorPlan tickets={tickets} onPick={pickCard} allowEdit />
+        {waitingOrder.length > 0 && (
+          <div className="rounded-xl bg-sky-50 border border-sky-200 p-2.5 space-y-1.5">
+            <p className="text-sm font-bold text-sky-900">注文を聞く（案内した順）</p>
+            <div className="flex flex-wrap gap-2">
+              {waitingOrder.map((t) => (
+                <button key={t.id} onClick={() => pickCard(t.card_no)} className="h-12 min-w-[4.5rem] px-3 rounded-xl bg-white border-2 border-sky-400 text-sky-900 font-bold active:scale-95">
+                  <span className="text-xl">{t.card_no}</span>
+                  {t.label && <span className="ml-1.5 text-sm font-semibold">{t.label}</span>}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
 
-        {free.length === 0 && <p className="text-xs text-stone-400">空いているテーブルがありません</p>}
+        <p className="text-sm text-stone-600">テーブルを押してください</p>
+        <FloorPlan tickets={tickets} onPick={pickCard} />
+
+        {free.length === 0 && <p className="text-sm text-stone-500">空いているテーブルがありません</p>}
       </div>
     )
   }
 
   // ---- 伝票の編集 ----
   const items = current?.items ?? []
+  // メニューのボタンに出す「あと」: ビリヤニは共通の残り、サイドは仕込みの残り
+  const leftOf = (m: { id: string; name: string }): { text: string; out: boolean } | null => {
+    const row = rem.rows.find((r) => r.menuId === m.id)
+    if (row && row.left != null) return { text: row.left > 0 ? `あと${row.left}` : '完売', out: row.left <= 0 }
+    if (portionOf(m.name) > 0) return { text: rem.biryaniLeft > 0 ? `あと${fmtPortions(rem.biryaniLeft)}` : '完売', out: rem.biryaniLeft <= 0 }
+    return null
+  }
   return (
     <div className="p-4 pb-32 max-w-md mx-auto space-y-3">
       <div className="flex items-center gap-3">
-        <button onClick={() => setCardNo(null)} className="text-stone-500 py-1">
+        <button onClick={() => setCardNo(null)} className="h-11 pr-3 text-base text-stone-600">
           ← テーブル一覧
         </button>
         <div className="ml-auto text-right">
-          <p className="text-xs text-stone-500">{current?.label}</p>
+          <p className="text-sm text-stone-600">{current?.label}</p>
           <p className="text-2xl font-bold text-amber-800 leading-none">テーブル {cardNo}</p>
         </div>
       </div>
       {error && <p className="text-sm text-red-600">{error}</p>}
 
-      {rem.ready && <RemainingTiles biryaniLeft={rem.biryaniLeft} rows={rem.rows} />}
-
       <div className="bg-stone-50 rounded-xl p-3 space-y-1.5">
-        {items.length === 0 && <p className="text-sm text-stone-400">まだ注文がありません。下のメニューを押してください</p>}
+        {items.length === 0 && <p className="text-base text-stone-500">まだ注文がありません。下のメニューを押してください</p>}
         {mergeItems(items).map((it) => (
-          <div key={it.key} className="flex items-center gap-2 text-sm">
+          <div key={it.key} className="flex items-center gap-2 text-base">
             <span className="flex-1 text-stone-800">
               {it.name}
               {it.resQty > 0 && (
-                <span className="ml-1 text-xs text-sky-700">
+                <span className="ml-1 text-sm text-sky-700">
                   {it.addQty > 0 ? `取り置き${it.resQty}＋追加${it.addQty}` : '取り置き'}
                 </span>
               )}
             </span>
             <button
               onClick={() => void tap({ id: it.menu_id ?? '', name: it.name, price: it.price }, -1, it.addQty === 0)}
-              className="w-9 h-9 rounded-lg bg-white border border-stone-300 text-stone-600 font-bold active:scale-95"
+              className="w-11 h-11 rounded-lg bg-white border border-stone-300 text-lg text-stone-600 font-bold active:scale-95"
               aria-label={`${it.name}を1つ減らす`}
             >
               −
             </button>
-            <span className="w-6 text-center font-bold">{it.qty}</span>
+            <span className="w-7 text-center text-lg font-bold">{it.qty}</span>
           </div>
         ))}
         {items.length > 0 && (
-          <p className="text-right text-sm text-stone-600 border-t border-stone-200 pt-1.5">
+          <p className="text-right text-base text-stone-600 border-t border-stone-200 pt-1.5">
             {ticketCount(items)}点 <b>{yen(ticketTotal(items))}</b>
           </p>
         )}
       </div>
 
       <div className="grid grid-cols-2 gap-2">
-        {menus.map((m) => (
-          <button
-            key={m.id}
-            onClick={() => void tap(m, 1)}
-            className="min-h-16 rounded-2xl bg-white border-2 border-stone-300 px-2 py-2 text-left active:scale-95 active:bg-amber-50 transition"
-          >
-            <span className="block text-sm font-semibold text-stone-800 leading-tight">{m.name}</span>
-            <span className="block text-xs text-amber-700 mt-0.5">{yen(m.price)}</span>
-          </button>
-        ))}
+        {menus.map((m) => {
+          const left = leftOf(m)
+          return (
+            <button
+              key={m.id}
+              onClick={() => void tap(m, 1)}
+              className={`min-h-[4.25rem] rounded-2xl bg-white border-2 px-2.5 py-2 text-left active:scale-95 active:bg-amber-50 transition ${left?.out ? 'border-red-400' : 'border-stone-300'}`}
+            >
+              <span className="block text-base font-semibold text-stone-800 leading-tight">{m.name}</span>
+              <span className="flex items-baseline justify-between mt-0.5">
+                <span className="text-sm text-amber-700">{yen(m.price)}</span>
+                {left && <span className={`text-sm font-bold ${left.out ? 'text-red-600' : 'text-stone-600'}`}>{left.text}</span>}
+              </span>
+            </button>
+          )
+        })}
       </div>
 
       {current && (
-        <button onClick={() => setMoving(true)} className="w-full py-3 rounded-xl border-2 border-stone-300 bg-white text-stone-700 font-semibold active:scale-95">
+        <button onClick={() => setMoving(true)} className="w-full h-12 rounded-xl border-2 border-stone-300 bg-white text-stone-700 font-semibold active:scale-95">
           テーブルを移動
         </button>
       )}
 
       {current && (
-        <button onClick={() => void cancelTicket()} className="w-full py-2 text-sm text-stone-400 underline">
+        <button onClick={() => setConfirmVoid(true)} className="w-full h-11 rounded-xl text-sm text-red-600 border border-red-200 bg-white">
           この伝票を取り消す
         </button>
       )}
@@ -219,18 +257,27 @@ export default function OrdersPage() {
       {moving && current && (
         <TablePicker
           title={`テーブル${cardNo}${current.label ? `（${current.label}）` : ''}を移動`}
-          detail="移動先のテーブル番号を押してください"
+          detail="移動先のテーブルを押してください"
           tickets={tickets}
           onPick={(n) => void moveTable(n)}
           onCancel={() => setMoving(false)}
         />
       )}
 
+      {confirmVoid && current && (
+        <ConfirmModal
+          message={`テーブル${cardNo}${current.label ? `（${current.label}）` : ''}の伝票を取り消します。\n${ticketCount(items)}点 ${yen(ticketTotal(items))} の注文が消えます。`}
+          confirmLabel="取り消す"
+          onConfirm={() => void cancelTicket()}
+          onCancel={() => setConfirmVoid(false)}
+        />
+      )}
+
       {undo && (
         <div className="fixed left-0 right-0 bottom-20 px-4 z-40">
-          <div className="max-w-md mx-auto bg-stone-800 text-white rounded-xl px-4 py-3 flex items-center gap-3 shadow-lg">
-            <span className="flex-1 text-sm">{undo.text}</span>
-            <button onClick={() => void doUndo()} className="font-bold text-amber-300 px-2">
+          <div className="max-w-md mx-auto bg-stone-800 text-white rounded-xl px-4 py-2 flex items-center gap-3 shadow-lg">
+            <span className="flex-1 text-base">{undo.text}</span>
+            <button onClick={() => void doUndo()} className="font-bold text-amber-300 px-3 h-11">
               取り消し
             </button>
           </div>

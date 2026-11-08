@@ -36,7 +36,7 @@ export function StockRow({
         onClick={() => onCommit(Math.max(0, cur - step))}
         disabled={cur <= 0}
         aria-label={`${label}を${step}減らす`}
-        className="w-9 h-9 rounded-lg bg-white border border-stone-300 text-base font-bold text-stone-600 disabled:opacity-30 active:scale-95"
+        className="w-11 h-11 rounded-lg bg-white border border-stone-300 text-lg font-bold text-stone-600 disabled:opacity-30 active:scale-95"
       >
         −
       </button>
@@ -49,22 +49,22 @@ export function StockRow({
         onBlur={(e) => commit(e.target.value)}
         onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
         aria-label={label}
-        className="w-14 h-9 text-center text-base font-bold border border-stone-300 rounded-lg text-stone-900 bg-white"
+        className="w-14 h-11 text-center text-base font-bold border border-stone-300 rounded-lg text-stone-900 bg-white"
       />
       <button
         onClick={() => onCommit(cur + step)}
         aria-label={`${label}を${step}増やす`}
-        className="w-9 h-9 rounded-lg bg-stone-800 text-white text-base font-bold active:scale-95"
+        className="w-11 h-11 rounded-lg bg-stone-800 text-white text-lg font-bold active:scale-95"
       >
         ＋
       </button>
-      <span className="w-5 shrink-0">{unit}</span>
+      <span className="w-6 shrink-0 text-sm">{unit}</span>
       {onRemove ? (
-        <button onClick={onRemove} aria-label={`${label}を数える対象から外す`} className="w-9 h-9 rounded-lg text-stone-400 active:bg-stone-100">
+        <button onClick={onRemove} aria-label={`${label}を数える対象から外す`} className="w-11 h-11 rounded-lg text-stone-400 active:bg-stone-100">
           ×
         </button>
       ) : (
-        <span className="w-9 shrink-0" />
+        <span className="w-11 shrink-0" />
       )}
     </div>
   )

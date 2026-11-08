@@ -22,7 +22,7 @@ function Tile({ label, left, fmt, note }: { label: string; left: number | null; 
           )}
         </p>
       )}
-      {note && <p className="text-[11px] text-stone-500 truncate">{note}</p>}
+      {note && <p className="text-xs text-stone-500 truncate">{note}</p>}
     </div>
   )
 }

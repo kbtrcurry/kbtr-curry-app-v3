@@ -157,7 +157,9 @@ function UpdateButton() {
 function Preloader() {
   const { session } = useAuth()
   useEffect(() => {
-    if (session) void preloadAll(queryClient)
+    // 調理場とオーダーの画面は、回線が重くならないよう先読みしない(必要なデータは各画面で取る)
+    const lean = /\/(kitchen|orders)\/?$/.test(window.location.pathname)
+    if (session && !lean) void preloadAll(queryClient)
   }, [session])
   return null
 }

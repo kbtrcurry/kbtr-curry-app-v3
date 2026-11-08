@@ -86,7 +86,7 @@ export default function PosPage() {
   const [people, setPeople] = usePersistedState<number>('kbtr_v3_pos_people', 1)
   // 会計中の伝票（カード番号の伝票を会計に呼び出したとき）
   const [ticketId, setTicketId] = usePersistedState<string | null>('kbtr_v3_pos_ticket', null)
-  const ticketsQ = useTickets(todayStr(), 5000)
+  const ticketsQ = useTickets(todayStr(), 8000)
   const ticketActions = useTicketActions(todayStr())
   const openTickets = (ticketsQ.data ?? []).filter((t) => t.status === 'open' || t.status === 'served')
   const loadedTicket = openTickets.find((t) => t.id === ticketId)

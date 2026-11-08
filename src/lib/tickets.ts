@@ -132,7 +132,7 @@ async function fetchTickets(date: string): Promise<Ticket[]> {
 }
 
 /** 数秒おきに取り直す（調理場・レジ・iPhoneで同じ伝票を見るため） */
-export function useTickets(date: string, intervalMs = 4000) {
+export function useTickets(date: string, intervalMs = 6000) {
   return useQuery({
     queryKey: ['tickets', date],
     queryFn: () => fetchTickets(date),
@@ -164,6 +164,15 @@ export function useTicketActions(date: string) {
     async setItems(id: string, items: TicketItem[]): Promise<void> {
       patchCache(id, { items })
       const { error } = await supabase.from('tickets').update({ items }).eq('id', id)
+      if (error) {
+        await refresh()
+        throw error
+      }
+    },
+    /** テーブルを移る(使用中の番号には移れない。画面側で選べないようにしてある) */
+    async moveTo(id: string, cardNo: number): Promise<void> {
+      patchCache(id, { card_no: cardNo })
+      const { error } = await supabase.from('tickets').update({ card_no: cardNo }).eq('id', id)
       if (error) {
         await refresh()
         throw error

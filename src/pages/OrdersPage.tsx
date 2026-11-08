@@ -7,6 +7,7 @@ import { todayStr } from '../lib/accounting'
 import { isWalkin, setReservationStatus, useInvalidateReservations, useReservations, type Reservation } from '../lib/reservations'
 import { addItem, CARD_COUNT, freeCards, isMissingTable, ticketCount, ticketTotal, useTicketActions, useTickets, type Ticket, type TicketItem } from '../lib/tickets'
 import { yen } from '../lib/format'
+import { TablePicker } from '../components/TablePicker'
 
 const SQL_HINT = 'データベースに「tickets」テーブルがまだありません。supabase/migrations の 20261108000017_tickets.sql を SQL Editor で実行してください。'
 
@@ -24,6 +25,7 @@ export default function OrdersPage() {
   const [undo, setUndo] = useState<{ ticketId: string | null; cardNo: number; before: TicketItem[]; text: string } | null>(null)
   const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [moving, setMoving] = useState(false)
 
   const tickets = useMemo(() => tq.data ?? [], [tq.data])
   const byCard = useMemo(() => new Map(tickets.map((t) => [t.card_no, t])), [tickets])
@@ -110,6 +112,19 @@ export default function OrdersPage() {
       return
     }
     setCardNo(n)
+  }
+
+  const moveTable = async (n: number) => {
+    if (!current) return
+    setError(null)
+    try {
+      await actions.moveTo(current.id, n)
+      setCardNo(n)
+      setMoving(false)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '移動できませんでした')
+      setMoving(false)
+    }
   }
 
   const cancelTicket = async () => {
@@ -227,9 +242,25 @@ export default function OrdersPage() {
       </div>
 
       {current && (
+        <button onClick={() => setMoving(true)} className="w-full py-3 rounded-xl border-2 border-stone-300 bg-white text-stone-700 font-semibold active:scale-95">
+          テーブルを移動
+        </button>
+      )}
+
+      {current && (
         <button onClick={() => void cancelTicket()} className="w-full py-2 text-sm text-stone-400 underline">
           この伝票を取り消す
         </button>
+      )}
+
+      {moving && current && (
+        <TablePicker
+          title={`テーブル${cardNo}${current.label ? `（${current.label}）` : ''}を移動`}
+          detail="移動先のテーブル番号を押してください"
+          tickets={tickets}
+          onPick={(n) => void moveTable(n)}
+          onCancel={() => setMoving(false)}
+        />
       )}
 
       {undo && (

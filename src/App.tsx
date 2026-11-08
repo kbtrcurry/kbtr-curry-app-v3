@@ -167,15 +167,13 @@ function Preloader() {
 }
 
 function Layout({ children }: { children: ReactNode }) {
-  // 取り置きの一覧は、スマホで1画面にたくさん出したいので、上のアプリ名の帯を隠す
   const pathname = useLocation().pathname
-  const dense = pathname === '/reserve'
   // 調理場のタブレットは画面いっぱいに使いたいので、ナビを隠せる(隠したままでも、右下のボタンで出せる)
   const [kitchenNav, setKitchenNav] = useStoredState('kbtr_v3_kitchen_nav', false)
   const hideNav = pathname === '/kitchen' && !kitchenNav
   return (
     <div className="min-h-svh md:flex">
-      <header className={`${dense || hideNav ? 'hidden' : 'flex'} md:hidden items-center gap-2 px-4 py-3 border-b border-stone-200 bg-[var(--page-bg)]`}>
+      <header className={`${hideNav ? 'hidden' : 'flex'} md:hidden items-center gap-2 px-4 py-3 border-b border-stone-200 bg-[var(--page-bg)]`}>
         <UpdateButton />
         <span className="text-base font-bold text-amber-800">コバタロカレー v3</span>
         <span className="text-xs text-stone-400">v{__APP_VERSION__}.{__BUILD_DATE__}</span>

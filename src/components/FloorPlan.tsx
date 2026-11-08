@@ -31,7 +31,7 @@ export function FloorPlan({ tickets, onPick, pick = false, allowEdit = false }: 
   return (
     <div className="space-y-2">
       <div className="rounded-2xl bg-stone-100 p-2">
-        <div className="grid gap-1.5" style={{ gridTemplateColumns: `repeat(${GRID_COLS}, minmax(0, 1fr))`, gridAutoRows: '4.25rem' }}>
+        <div className="grid gap-1.5" style={{ gridTemplateColumns: `repeat(${GRID_COLS}, minmax(0, 1fr))`, gridAutoRows: '3.5rem' }}>
           {editing &&
             empties.map(({ x, y }) => (
               <button

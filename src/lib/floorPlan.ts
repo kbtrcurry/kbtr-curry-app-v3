@@ -4,16 +4,17 @@ import { CARD_COUNT } from './tickets'
 // 設定は settings.ts で、すべての端末に共有される。
 export type Spot = { n: number; x: number; y: number; w: number; h: number }
 
-export const GRID_COLS = 6
-export const GRID_ROWS = 6
+export const GRID_COLS = 8
+export const GRID_ROWS = 8
 
 /** 最初の置き方(目安)。下がキッチン側: カウンター4席、2名席3つ、4名席1つ、上がテイクアウト待ち */
 export function defaultLayout(): Spot[] {
   const s = (n: number, x: number, y: number, w = 1, h = 1): Spot => ({ n, x, y, w, h })
+  const o = GRID_ROWS - 6 // 下(キッチン側)に寄せる
   return [
-    s(1, 0, 5), s(2, 1, 5), s(3, 2, 5), s(4, 3, 5),
-    s(5, 0, 3, 2), s(6, 2, 3, 2), s(7, 4, 3, 2),
-    s(8, 0, 2, 2, 1),
+    s(1, 0, 5 + o), s(2, 1, 5 + o), s(3, 2, 5 + o), s(4, 3, 5 + o),
+    s(5, 0, 3 + o, 2), s(6, 2, 3 + o, 2), s(7, 4, 3 + o, 2),
+    s(8, 0, 2 + o, 2, 1),
     s(9, 0, 0), s(10, 1, 0), s(11, 2, 0), s(12, 3, 0),
   ]
 }

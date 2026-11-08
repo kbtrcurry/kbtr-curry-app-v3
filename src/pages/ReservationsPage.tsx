@@ -5,7 +5,7 @@ import { RemainingTiles } from '../components/RemainingTiles'
 import { TablePicker } from '../components/TablePicker'
 import { StockRow } from '../components/StockRow'
 import { TimeSelect } from '../components/TimeSelect'
-import { DEFAULT_UZURA_LABEL, setUzuraLabel, useCap, useUzuraLabel } from '../lib/settings'
+import { useCap } from '../lib/settings'
 import { Check, ClipboardPaste, Copy, ExternalLink, Pencil, Plus, Trash2, Users } from 'lucide-react'
 import { useAuth } from '../lib/auth'
 import { Spinner } from '../components/Spinner'
@@ -70,7 +70,7 @@ const SORTS: [SortKey, string][] = [
   ['time', '時間'],
   ['size', '並・大'],
   ['to', 'TO'],
-  ['uzura', 'うずら'],
+  ['uzura', '特典'],
 ]
 
 export default function ReservationsPage() {
@@ -78,7 +78,6 @@ export default function ReservationsPage() {
   const today = todayStr()
   const [date, setDate] = useStoredState('kbtr_v3_res_date', nextSaturday(today))
   const effectiveDate = date
-  const uzuraLabel = useUzuraLabel()
   const [tab, setTab] = useState<Tab>('list')
   const [sortKey, setSortKey] = useStoredState<SortKey>('kbtr_v3_res_sort', 'time')
   const [sortRev, setSortRev] = useStoredState<boolean>('kbtr_v3_res_sort_rev', false)
@@ -308,19 +307,6 @@ export default function ReservationsPage() {
             </div>
           </div>
 
-          <label className="flex items-center gap-1.5 text-xs">
-            <span className="text-stone-500 shrink-0">特典の名前</span>
-            <input
-              defaultValue={uzuraLabel}
-              onBlur={(e) => setUzuraLabel(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
-              placeholder={DEFAULT_UZURA_LABEL}
-              className="w-28 border border-stone-300 rounded-lg px-2 py-1 text-sm bg-white"
-              aria-label="取り置きの特典の名前（うずら・ふりかけなど）"
-            />
-            <span className="text-stone-400">月ごとに変えられます</span>
-          </label>
-
           <div className="flex items-center gap-1.5 text-xs">
             <span className="text-stone-500 shrink-0">並び替え</span>
             {SORTS.map(([k, label]) => (
@@ -335,7 +321,7 @@ export default function ReservationsPage() {
                 }}
                 className={`px-3 py-1.5 rounded-full font-semibold ${sortKey === k ? 'bg-amber-700 text-[#faf9f5]' : 'bg-stone-100 text-stone-600'}`}
               >
-                {k === 'uzura' ? uzuraLabel : label}
+                {label}
                 {sortKey === k && k !== 'time' && (sortRev ? ' ↑' : ' ↓')}
               </button>
             ))}
@@ -523,7 +509,6 @@ function ReservationForm({
   onClose: () => void
   onSaved: () => void
 }) {
-  const uzuraLabel = useUzuraLabel()
   const [platform, setPlatform] = useState<Platform>(editing?.platform ?? 'x')
   const [handle, setHandle] = useState(editing?.handle ?? '')
   const [name, setName] = useState(editing?.name ?? '')
@@ -542,7 +527,7 @@ function ReservationForm({
   const [svcDate, setSvcDate] = useState(editing?.service_date ?? date)
   const [note, setNote] = useState(editing?.note ?? '')
   const [time, setTime] = useState(editing?.visit_time ?? '')
-  // 木曜24時までに受けたものには、うずらアチャールが付く
+  // 木曜24時までに受けたものには、早期取り置き特典が付く
   const [uzura, setUzura] = useState(editing?.uzura ?? uzuraEligible(date, new Date()))
   const [paste, setPaste] = useState('')
   const [pasteMsg, setPasteMsg] = useState<string | null>(null)
@@ -716,10 +701,10 @@ function ReservationForm({
           {time === '' ? '時間 指定なし' : '指定なしに戻す'}
         </button>
         <button onClick={() => setUzura((v) => !v)} aria-pressed={uzura} className={`px-3 py-2 rounded-lg text-sm font-semibold border ${uzura ? 'bg-amber-700 text-[#faf9f5] border-amber-700' : 'bg-white text-stone-600 border-stone-300'}`}>
-          {uzuraLabel}{uzura ? '付き' : 'なし'}
+          早期取り置き特典{uzura ? '付き' : 'なし'}
         </button>
       </div>
-      <p className="text-xs text-stone-500">来店時間はお客さんの任意です（空欄でもかまいません）。「{uzuraLabel}」は、営業日の前の木曜24時までに受けたら付く、として自動で決めています。名前は取り置き一覧の「特典の名前」で変えられます。</p>
+      <p className="text-xs text-stone-500">来店時間はお客さんの任意です（空欄でもかまいません）。「早期取り置き特典」は、営業日の前の木曜24時までに受けたら付く、として自動で決めています。</p>
       <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="メモ（アレルギーなど）" className="w-full border border-stone-300 rounded-lg px-3 py-2.5 text-sm" />
 
       {error && <p className="text-sm text-red-600">{error}</p>}
@@ -808,7 +793,6 @@ function ReservationRow({
   onDelete: () => void
   onStatus: (s: ResStatus) => Promise<void>
 }) {
-  const uzuraLabel = useUzuraLabel()
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const all = shortItems(r.items)
@@ -844,14 +828,14 @@ function ReservationRow({
               <span className="w-[5.4em] shrink-0 font-bold text-[15px] text-stone-900 truncate">{idx === 0 ? r.name || '（名前なし）' : ''}</span>
               {ln && <ItemChip it={ln} />}
               {/* うずらは、1食ごとの行すべてに付ける */}
-              {ln && r.uzura && <Chip kind="うずら">{uzuraLabel}</Chip>}
+              {ln && r.uzura && <Chip kind="うずら">特典</Chip>}
               {ln && r.is_new && <span className="text-[11px] font-bold text-sky-700">新</span>}
               {idx === 0 && (
                 <span className="flex flex-wrap items-center gap-[3px] min-w-0">
                   {extras.map((it) => (
                     <ItemChip key={it.key} it={it} />
                   ))}
-                  {r.uzura && !ln && <Chip kind="うずら">{uzuraLabel}</Chip>}
+                  {r.uzura && !ln && <Chip kind="うずら">特典</Chip>}
                   {r.note && <Chip kind="備考あり">備考あり</Chip>}
                   {r.is_new && !ln && <span className="text-[11px] font-bold text-sky-700">新</span>}
                   {r.visit_time && <span className="text-[11px] text-stone-500">{r.visit_time}</span>}
@@ -901,7 +885,6 @@ function ReservationCard({
   onDelete: () => void
   onStatus: (s: ResStatus) => Promise<void>
 }) {
-  const uzuraLabel = useUzuraLabel()
   const [copied, setCopied] = useState(false)
   const url = profileUrl(r.platform, r.handle)
   // この取り置きに「◯回目」が書かれていれば、それを表示。なければ、登録の履歴から数える
@@ -936,7 +919,7 @@ function ReservationCard({
           <p className="text-xs text-stone-500 mt-0.5 flex flex-wrap gap-x-2">
             {r.is_new && <span className="font-bold text-sky-700">新規</span>}
             {r.visit_time && <span>来店 {r.visit_time}頃</span>}
-            <span>{r.uzura ? `${uzuraLabel}付き` : `${uzuraLabel}なし`}</span>
+            <span>{r.uzura ? '早期取り置き特典付き' : '早期取り置き特典なし'}</span>
           </p>
           {r.note && <p className="text-xs text-stone-500 mt-0.5">メモ: {r.note}</p>}
         </div>

@@ -42,6 +42,7 @@ import TaxPage from './pages/TaxPage'
 import AdsPage from './pages/AdsPage'
 import ImportPage from './pages/ImportPage'
 import DataPage from './pages/DataPage'
+import { useStoredState } from './lib/persistState'
 import { GmailReturnRedirect } from './components/GmailReturnRedirect'
 
 const queryClient = new QueryClient({
@@ -163,16 +164,20 @@ function Preloader() {
 
 function Layout({ children }: { children: ReactNode }) {
   // 取り置きの一覧は、スマホで1画面にたくさん出したいので、上のアプリ名の帯を隠す
-  const dense = useLocation().pathname === '/reserve'
+  const pathname = useLocation().pathname
+  const dense = pathname === '/reserve'
+  // 調理場のタブレットは画面いっぱいに使いたいので、ナビを隠せる(隠したままでも、右下のボタンで出せる)
+  const [kitchenNav, setKitchenNav] = useStoredState('kbtr_v3_kitchen_nav', false)
+  const hideNav = pathname === '/kitchen' && !kitchenNav
   return (
     <div className="min-h-svh md:flex">
-      <header className={`${dense ? 'hidden' : 'flex'} md:hidden items-center gap-2 px-4 py-3 border-b border-stone-200 bg-[var(--page-bg)]`}>
+      <header className={`${dense || hideNav ? 'hidden' : 'flex'} md:hidden items-center gap-2 px-4 py-3 border-b border-stone-200 bg-[var(--page-bg)]`}>
         <UpdateButton />
         <span className="text-base font-bold text-amber-800">コバタロカレー v3</span>
         <span className="text-xs text-stone-400">v{__APP_VERSION__}.{__BUILD_DATE__}</span>
       </header>
 
-      <aside className="hidden md:flex md:flex-col md:w-52 lg:w-60 shrink-0 border-r border-stone-200 md:fixed md:inset-y-0 md:left-0 h-svh z-30">
+      <aside className={`hidden ${hideNav ? '' : 'md:flex'} md:flex-col md:w-52 lg:w-60 shrink-0 border-r border-stone-200 md:fixed md:inset-y-0 md:left-0 h-svh z-30`}>
         <div className="px-4 py-4 text-lg font-bold text-amber-800 flex items-center gap-2">
           <UpdateButton />
           コバタロカレー v3
@@ -197,10 +202,19 @@ function Layout({ children }: { children: ReactNode }) {
         </nav>
       </aside>
 
-      <main className="flex-1 min-w-0 pb-[calc(5rem+env(safe-area-inset-bottom,0px))] md:pb-10 md:ml-52 lg:ml-60">{children}</main>
+      <main className={`flex-1 min-w-0 ${hideNav ? 'pb-4' : 'pb-[calc(5rem+env(safe-area-inset-bottom,0px))] md:pb-10 md:ml-52 lg:ml-60'}`}>{children}</main>
+
+      {pathname === '/kitchen' && (
+        <button
+          onClick={() => setKitchenNav(!kitchenNav)}
+          className="fixed bottom-3 right-3 z-50 h-10 px-3 rounded-full bg-stone-800/70 text-white text-xs font-semibold"
+        >
+          {kitchenNav ? 'ナビを隠す' : 'ナビ'}
+        </button>
+      )}
 
       <nav
-        className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-stone-200 flex z-40"
+        className={`${hideNav ? 'hidden' : 'md:hidden flex'} fixed bottom-0 left-0 right-0 bg-white border-t border-stone-200 z-40`}
         style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
       >
         {BOTTOM_NAV.map((item) => (
@@ -223,6 +237,12 @@ function Layout({ children }: { children: ReactNode }) {
   )
 }
 
+// 調理場の画面だけ、横幅いっぱいに使う
+function Content({ children }: { children: ReactNode }) {
+  const wide = useLocation().pathname === '/kitchen'
+  return <div className={wide ? 'w-full' : 'mx-auto w-full max-w-screen-sm lg:max-w-3xl'}>{children}</div>
+}
+
 export default function App() {
   return (
     <QueryClientProvider client={queryClient}>
@@ -233,7 +253,7 @@ export default function App() {
           <GmailReturnRedirect />
           <BackHandlerProvider>
             <Layout>
-              <div className="mx-auto w-full max-w-screen-sm lg:max-w-3xl">
+              <Content>
                 <Routes>
                   <Route path="/" element={<StartPage />} />
                   <Route path="/home" element={<HomePage />} />
@@ -270,7 +290,7 @@ export default function App() {
                   <Route path="/data" element={<DataPage />} />
                   <Route path="/setup" element={<Navigate to="/more" replace />} />
                 </Routes>
-              </div>
+              </Content>
             </Layout>
           </BackHandlerProvider>
         </BrowserRouter>

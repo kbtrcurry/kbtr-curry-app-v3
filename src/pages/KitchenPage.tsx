@@ -16,6 +16,8 @@ export default function KitchenPage() {
   const [now, setNow] = useState(() => Date.now())
   const audio = useRef<AudioContext | null>(null)
   const seen = useRef<Set<string> | null>(null)
+  // 提供済みを押し間違えたときのやり直し(5秒)
+  const [undos, setUndos] = useState<{ id: string; card: number }[]>([])
 
   const queue = kitchenQueue(tq.data ?? [])
   const queueKey = queue.map((t) => t.id).join(',')
@@ -72,9 +74,23 @@ export default function KitchenPage() {
     if (!tq.data) return
     const ids = new Set(queue.map((t) => t.id))
     if (seen.current && [...ids].some((id) => !seen.current!.has(id))) beep()
-    seen.current = ids
+    seen.current = new Set([...(seen.current ?? []), ...ids]) // 戻した注文では鳴らさない
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [queueKey, tq.data])
+
+  const markServed = async (t: { id: string; card_no: number }) => {
+    setUndos((u) => [...u, { id: t.id, card: t.card_no }])
+    setTimeout(() => setUndos((u) => u.filter((x) => x.id !== t.id)), 5000)
+    try {
+      await actions.setStatus(t.id, 'served')
+    } catch {
+      setUndos((u) => u.filter((x) => x.id !== t.id))
+    }
+  }
+  const undoServed = async (id: string) => {
+    setUndos((u) => u.filter((x) => x.id !== id))
+    await actions.setStatus(id, 'open')
+  }
 
   const enableSound = () => {
     try {
@@ -114,7 +130,7 @@ export default function KitchenPage() {
   const dishes = pendingBiryaniDishes(tq.data ?? [])
 
   return (
-    <div className="p-3 pb-24 space-y-3">
+    <div className="p-3 pb-24 space-y-3 landscape:pb-16">
       <div className="flex items-center gap-3">
         <h1 className="text-xl font-bold text-amber-800 flex items-center gap-2">
           <ChefHat className="w-6 h-6" /> 調理場
@@ -131,7 +147,7 @@ export default function KitchenPage() {
       {tq.isLoading && <Spinner />}
       {!tq.isLoading && queue.length === 0 && <p className="text-center text-stone-400 py-16 text-lg">注文はありません</p>}
 
-      <div className="grid gap-3 md:grid-cols-2">
+      <div className="grid gap-3 grid-cols-[repeat(auto-fill,minmax(270px,1fr))]">
         {queue.map((t, idx) => (
           <div key={t.id} className="rounded-2xl border-2 border-amber-600 bg-white p-3">
             <div className="flex items-baseline gap-3">
@@ -150,7 +166,7 @@ export default function KitchenPage() {
               ))}
             </ul>
             <button
-              onClick={() => void actions.setStatus(t.id, 'served')}
+              onClick={() => void markServed(t)}
               className="w-full mt-3 py-3 rounded-xl bg-green-600 text-white text-lg font-bold active:scale-95 transition"
             >
               提供済み
@@ -158,6 +174,19 @@ export default function KitchenPage() {
           </div>
         ))}
       </div>
+
+      {undos.length > 0 && (
+        <div className="fixed left-0 right-0 bottom-3 px-3 z-50 flex flex-col items-center gap-2 pointer-events-none">
+          {undos.map((u) => (
+            <div key={u.id} className="pointer-events-auto w-full max-w-md bg-stone-900 text-white rounded-xl px-4 py-3 flex items-center gap-3 shadow-lg">
+              <span className="flex-1 text-base">テーブル{u.card} を提供済みにしました</span>
+              <button onClick={() => void undoServed(u.id)} className="font-bold text-amber-300 text-lg px-3 py-1">
+                元に戻す
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   )
 }

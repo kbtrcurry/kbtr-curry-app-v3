@@ -5,7 +5,7 @@ import { useAuth } from '../lib/auth'
 import { Spinner } from '../components/Spinner'
 import { useActiveMenus } from '../lib/pos'
 import { todayStr } from '../lib/accounting'
-import { addItem, CARD_COUNT, freeCards, isMissingTable, isTakeoutCard, nextFreeLabel, SEAT_COUNT, ticketCount, ticketTotal, useTicketActions, useTickets, type Ticket, type TicketItem } from '../lib/tickets'
+import { addItem, CARD_COUNT, freeCards, isMissingTable, isTakeoutCard, mergeItems, nextFreeLabel, SEAT_COUNT, ticketCount, ticketTotal, useTicketActions, useTickets, type Ticket, type TicketItem } from '../lib/tickets'
 import { yen } from '../lib/format'
 import { TablePicker } from '../components/TablePicker'
 import { RemainingTiles } from '../components/RemainingTiles'
@@ -67,7 +67,7 @@ export default function OrdersPage() {
   }
 
   // 1回押すごとに保存して調理場へ送る
-  const tap = async (menu: { id: string; name: string; price: number }, delta: number) => {
+  const tap = async (menu: { id: string; name: string; price: number }, delta: number, fromRes = false) => {
     if (cardNo == null) return
     setError(null)
     try {
@@ -79,7 +79,7 @@ export default function OrdersPage() {
         return
       }
       const before = current.items
-      const next = addItem(before, menu, delta, false)
+      const next = addItem(before, menu, delta, fromRes)
       flashUndo({ ticketId: current.id, cardNo, before, text: delta > 0 ? `${menu.name} を足しました` : `${menu.name} を減らしました` })
       await actions.setItems(current.id, next)
     } catch (e) {
@@ -182,14 +182,18 @@ export default function OrdersPage() {
 
       <div className="bg-stone-50 rounded-xl p-3 space-y-1.5">
         {items.length === 0 && <p className="text-sm text-stone-400">まだ注文がありません。下のメニューを押してください</p>}
-        {items.map((it) => (
-          <div key={`${it.menu_id}-${it.name}-${it.from_res ? 'r' : 'a'}`} className="flex items-center gap-2 text-sm">
+        {mergeItems(items).map((it) => (
+          <div key={it.key} className="flex items-center gap-2 text-sm">
             <span className="flex-1 text-stone-800">
               {it.name}
-              {it.from_res && <span className="ml-1 text-xs text-sky-700">取り置き</span>}
+              {it.resQty > 0 && (
+                <span className="ml-1 text-xs text-sky-700">
+                  {it.addQty > 0 ? `取り置き${it.resQty}＋追加${it.addQty}` : '取り置き'}
+                </span>
+              )}
             </span>
             <button
-              onClick={() => void tap({ id: it.menu_id ?? '', name: it.name, price: it.price }, -1)}
+              onClick={() => void tap({ id: it.menu_id ?? '', name: it.name, price: it.price }, -1, it.addQty === 0)}
               className="w-9 h-9 rounded-lg bg-white border border-stone-300 text-stone-600 font-bold active:scale-95"
               aria-label={`${it.name}を1つ減らす`}
             >

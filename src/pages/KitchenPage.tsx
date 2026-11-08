@@ -3,7 +3,7 @@ import { ChefHat } from 'lucide-react'
 import { useAuth } from '../lib/auth'
 import { Spinner } from '../components/Spinner'
 import { todayStr } from '../lib/accounting'
-import { biryaniDishes, elapsedMinutes, isMissingTable, isTakeoutCard, kitchenQueue, pendingBiryaniDishes, useTicketActions, useTickets } from '../lib/tickets'
+import { biryaniDishes, elapsedMinutes, isMissingTable, isTakeoutCard, kitchenQueue, mergeItems, pendingBiryaniDishes, useTicketActions, useTickets } from '../lib/tickets'
 
 // 調理場の画面。会計前でまだ出していない伝票を、注文が入った順に大きく並べるだけ。
 // 新しい注文が入ると音とバイブで知らせる。営業中は画面を点けたままにする。
@@ -181,8 +181,8 @@ export default function KitchenPage() {
               {biryaniDishes(t.items) > 0 && <span className="ml-auto text-sm font-bold text-stone-700">ビリヤニ {biryaniDishes(t.items)}皿</span>}
             </div>
             <ul className="mt-2 space-y-0.5">
-              {t.items.map((it, i) => (
-                <li key={i} className="text-xl text-stone-900">
+              {mergeItems(t.items).map((it) => (
+                <li key={it.key} className="text-xl text-stone-900">
                   {it.name} <b>×{it.qty}</b>
                 </li>
               ))}

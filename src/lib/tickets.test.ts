@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import type { OutboxEntry } from './ticketOutbox'
-import { addItem, applyOutbox, biryaniDishes, freeCards, isRetryableError, isTakeoutCard, itemsFromReservation, kitchenQueue, pendingBiryaniDishes, ticketTotal, walkinAchar, walkinBiryaniPortions, type Ticket } from './tickets'
+import { addItem, applyOutbox, biryaniDishes, freeCards, isRetryableError, isTakeoutCard, itemsFromReservation, kitchenQueue, mergeItems, pendingBiryaniDishes, ticketTotal, walkinAchar, walkinBiryaniPortions, type Ticket } from './tickets'
 
 const t = (o: Partial<Ticket>): Ticket => ({
   id: 'x',
@@ -102,5 +102,17 @@ describe('未送信の控え', () => {
   it('通信エラーは送り直し、重複などは送り直さない', () => {
     expect(isRetryableError(new TypeError('Failed to fetch'))).toBe(true)
     expect(isRetryableError({ message: 'duplicate key value violates unique constraint' })).toBe(false)
+  })
+})
+
+describe('同じメニューは1行にまとめる', () => {
+  it('取り置き分と追加分の数を合わせる(中身は分けたまま)', () => {
+    let items = addItem([], biryani, 1, true)
+    items = addItem(items, biryani, 2, false)
+    items = addItem(items, achar, 1, false)
+    const m = mergeItems(items)
+    expect(m).toHaveLength(2)
+    expect(m[0]).toMatchObject({ name: biryani.name, qty: 3, resQty: 1, addQty: 2 })
+    expect(items).toHaveLength(3)
   })
 })

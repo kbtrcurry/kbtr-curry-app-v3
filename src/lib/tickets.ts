@@ -50,6 +50,24 @@ export function addItem(
   return next
 }
 
+/** 画面に出す1行。取り置き分と追加分は、同じメニューなら1行にまとめて数を合わせる */
+export type MergedItem = { key: string; menu_id: string | null; name: string; price: number; qty: number; resQty: number; addQty: number }
+export function mergeItems(items: TicketItem[]): MergedItem[] {
+  const out: MergedItem[] = []
+  for (const it of items) {
+    const key = `${it.menu_id ?? ''}|${it.name}`
+    let m = out.find((x) => x.key === key)
+    if (!m) {
+      m = { key, menu_id: it.menu_id, name: it.name, price: it.price, qty: 0, resQty: 0, addQty: 0 }
+      out.push(m)
+    }
+    m.qty += it.qty
+    if (it.from_res) m.resQty += it.qty
+    else m.addQty += it.qty
+  }
+  return out
+}
+
 export const ticketTotal = (items: TicketItem[]): number => items.reduce((a, i) => a + i.price * i.qty, 0)
 export const ticketCount = (items: TicketItem[]): number => items.reduce((a, i) => a + i.qty, 0)
 

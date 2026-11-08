@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
 import { isMissingTable, itemsFromReservation, useDayTickets, useTicketActions, useTickets, walkinAchar, walkinBiryaniPortions } from '../lib/tickets'
-import { remaining } from '../lib/walkinStock'
+import { ACHAR_NAME, acharReservedOf, remaining, reservedPortions } from '../lib/walkinStock'
 import { RemainingTiles } from '../components/RemainingTiles'
 import { TablePicker } from '../components/TablePicker'
 import { TimeSelect } from '../components/TimeSelect'
@@ -18,8 +18,6 @@ import {
   DEFAULT_REPLY,
   PLATFORM_LABEL,
   STATUS_LABEL,
-  WALKIN_ITEM,
-  WALKIN_NAME,
   isWalkin,
   customerKey,
   identityOf,
@@ -33,7 +31,6 @@ import {
   parseReservationText,
   profileUrl,
   replyText,
-  reserveSummary,
   reservedByMenu,
   resPortions,
   fmtPortions,
@@ -139,67 +136,23 @@ export default function ReservationsPage() {
   const list = (dayRes.data ?? []).filter((r) => !del.hidden.has(r.id))
   const stats = useMemo(() => customerStats(allRes.data ?? [], notes.data ?? []), [allRes.data, notes.data])
   const statBy = useMemo(() => new Map(stats.map((s) => [s.key, s])), [stats])
-  const summary = reserveSummary(list, cap)
-  // 当日分（その日に来るお客さん用に取っておく枠）。名前のある取り置きとは別に数える
-  const walkin = list.find(isWalkin)
-  const walkinQty = walkin ? walkin.items.reduce((a, i) => a + i.qty, 0) : 0
-  // 川海老のアチャール: 仕込み数（この日の用意数）− 取り置き = 当日分
-  const acharMenu = (menus.data ?? []).find((m) => /川海老.*アチャール/.test(m.name))
+  // 川海老のアチャール: 仕込み数(この日の用意数) − 取り置き − 当日の注文 = あと何個
+  const acharMenu = (menus.data ?? []).find((m) => ACHAR_NAME.test(m.name))
   const acharPrep = acharMenu ? stock.data?.[acharMenu.id] ?? null : null
-  const acharReserved = acharMenu
-    ? list.filter((r) => r.status === 'reserved' || r.status === 'picked_up').reduce((a, r) => a + r.items.filter((i) => i.menu_id === acharMenu.id).reduce((b, i) => b + i.qty, 0), 0)
-    : 0
-  // 当日に売れた数（端末ごとに日付で保存）
-  const soldKey = `achar-sold-${effectiveDate}`
-  const [acharSold, setAcharSold] = useState(0)
-  useEffect(() => {
-    try {
-      setAcharSold(Number(localStorage.getItem(soldKey)) || 0)
-    } catch {
-      setAcharSold(0)
-    }
-  }, [soldKey])
-  const bumpSold = (d: number) => {
-    const next = Math.max(0, acharSold + d)
-    setAcharSold(next)
-    try {
-      localStorage.setItem(soldKey, String(next))
-    } catch {
-      /* 保存できなくても画面上は動く */
-    }
-  }
-  // 席ごとの伝票(注文)で、当日に追加で注文された分。取り置きの分は含めない
+  const acharReserved = acharMenu ? acharReservedOf(list, acharMenu.id) : 0
+  // 席ごとの伝票(注文)で、当日に追加で注文された分。取り置きの分は含めない。会計済みも数える
   const ticketQ = useDayTickets(effectiveDate)
   const ticketList = ticketQ.error ? [] : (ticketQ.data ?? [])
   const walkinOrdered = walkinBiryaniPortions(ticketList)
   const acharOrdered = walkinAchar(ticketList)
-  const { biryaniLeft, acharWalk, acharLeft } = remaining({ walkinQty, walkinOrdered, acharPrep, acharReserved, acharSold, acharOrdered })
+  const reservedQty = reservedPortions(list)
+  const { biryaniLeft, acharLeft } = remaining({ cap, reservedPortions: reservedQty, walkinOrdered, acharPrep, acharReserved, acharOrdered })
   const adjustAchar = async (delta: number) => {
     if (!acharMenu) return
     await saveMenuStock(effectiveDate, { [acharMenu.id]: Math.max(0, (acharPrep ?? acharReserved) + delta) })
     invalidate()
   }
-  const peopleCount = summary.count - (walkin && walkin.status === 'reserved' ? 1 : 0)
-  const adjustWalkin = async (delta: number) => {
-    const next = Math.max(0, Math.round((walkinQty + delta) * 2) / 2)
-    if (next === walkinQty) return
-    if (next === 0 && walkin) await deleteReservation(walkin.id)
-    else
-      await saveReservation({
-        id: walkin?.id,
-        service_date: effectiveDate,
-        platform: 'other',
-        handle: '',
-        name: WALKIN_NAME,
-        items: [{ menu_id: null, name: WALKIN_ITEM, qty: next }],
-        note: '',
-        status: 'reserved',
-        visit_time: '',
-        uzura: false,
-        is_new: false,
-      })
-    invalidate()
-  }
+  const peopleCount = list.filter((r) => (r.status === 'reserved' || r.status === 'picked_up') && !isWalkin(r)).length
   // 登録のある営業日（新しい順）。過去の日を開いて、直したり消したりするため
   const pastDates = [...new Set((allRes.data ?? []).map((r) => r.service_date))].sort().reverse().slice(0, 40)
   const reserved = reservedByMenu(list)
@@ -279,27 +232,13 @@ export default function ReservationsPage() {
               ))}
           </div>
 
-          <div className="flex items-center gap-x-3 gap-y-1 flex-wrap text-sm">
+          <div className="flex items-center gap-2 text-sm">
             <span className="font-bold text-stone-900">
               {md(effectiveDate)}（{weekday(effectiveDate)}）
             </span>
             <span className="text-stone-700">
-              <b>{peopleCount}</b>件 <b>{fmtPortions(summary.qty)}</b>食{walkinQty > 0 && <span className="text-xs text-stone-500">（当日分{fmtPortions(walkinQty)}食を含む）</span>}
+              取り置き <b>{peopleCount}</b>件 <b>{fmtPortions(reservedQty)}</b>食
             </span>
-            <span className={summary.left <= 0 ? 'text-red-600 font-bold' : 'text-green-700 font-bold'}>
-              残り{fmtPortions(Math.max(0, summary.left))}食{summary.left < 0 && `（${fmtPortions(-summary.left)}食オーバー）`}
-            </span>
-            <label className="flex items-center gap-1 text-xs text-stone-500">
-              上限
-              <input
-                type="number"
-                inputMode="numeric"
-                value={cap}
-                onChange={(e) => setCap(Math.max(0, Number(e.target.value) || 0))}
-                className="w-12 text-center text-sm font-bold bg-transparent border-b border-stone-300 text-stone-900"
-                aria-label="取り置きの上限（食）"
-              />
-            </label>
             {!adding && !editing && (
               <button onClick={() => setAdding(true)} className="ml-auto flex items-center gap-1 bg-amber-700 text-[#faf9f5] px-3 py-1.5 rounded-lg font-bold text-sm">
                 <Plus className="w-4 h-4" /> 追加
@@ -308,65 +247,43 @@ export default function ReservationsPage() {
           </div>
 
           {/* フリーのお客さんが来たとき、あと何食出せるか */}
-          <RemainingTiles
-            biryaniLeft={biryaniLeft}
-            acharLeft={acharLeft}
-            showAchar={!!acharMenu}
-            biryaniNote={`当日分${fmtPortions(walkinQty)} − 注文${fmtPortions(walkinOrdered)}`}
-            acharNote={acharWalk != null ? `当日分${acharWalk} − 注文${acharOrdered}${acharSold > 0 ? ` − 手売り${acharSold}` : ''}` : undefined}
-          />
-
-          <details className="bg-white border border-stone-200 rounded-xl px-2.5 py-1.5">
-            <summary className="text-sm font-semibold text-stone-700 cursor-pointer">当日分・仕込みの数を直す</summary>
-            <div className="mt-2 space-y-2">
-          <div className="flex items-center gap-1.5 bg-sky-50 border border-sky-200 rounded-xl px-2.5 py-1.5">
-            <span className="text-sm font-bold text-sky-800 shrink-0">当日分</span>
-            <span className="text-sm font-bold text-sky-950 w-14 shrink-0" style={{ color: "#0c4a6e" }}>{fmtPortions(walkinQty)}食</span>
-            {walkinOrdered > 0 && (
-              <span className={`text-xs font-bold shrink-0 ${walkinQty - walkinOrdered < 0 ? 'text-red-600' : 'text-sky-800'}`}>
-                注文{fmtPortions(walkinOrdered)} あと{fmtPortions(Math.max(0, walkinQty - walkinOrdered))}
-              </span>
-            )}
-            <button onClick={() => void adjustWalkin(-0.5)} disabled={walkinQty <= 0} className="h-9 px-2.5 rounded-lg bg-white border border-stone-300 text-sm font-bold text-stone-600 disabled:opacity-30 active:scale-95">
-              −0.5
-            </button>
-            <button onClick={() => void adjustWalkin(0.5)} className="h-9 flex-1 rounded-lg bg-sky-600 text-white text-sm font-bold active:scale-95">
-              ＋0.5食
-            </button>
-            <button onClick={() => void adjustWalkin(1)} className="h-9 flex-1 rounded-lg bg-sky-700 text-white text-sm font-bold active:scale-95">
-              ＋1食
-            </button>
+          <div className="bg-white border border-stone-200 rounded-xl p-2.5 space-y-2">
+            <RemainingTiles
+              biryaniLeft={biryaniLeft}
+              acharLeft={acharLeft}
+              showAchar={!!acharMenu}
+              biryaniNote={`${fmtPortions(cap)} − 取り置き${fmtPortions(reservedQty)} − 注文${fmtPortions(walkinOrdered)}`}
+              acharNote={acharPrep != null ? `${acharPrep} − 取り置き${acharReserved} − 注文${acharOrdered}` : undefined}
+            />
+            <div className="space-y-1.5 text-xs text-stone-600">
+              <div className="flex items-center gap-1.5">
+                <span className="shrink-0">今日つくる食数</span>
+                <input
+                  type="number"
+                  inputMode="numeric"
+                  value={cap}
+                  onChange={(e) => setCap(Math.max(0, Number(e.target.value) || 0))}
+                  className="w-14 text-center text-base font-bold border border-stone-300 rounded-lg py-1 text-stone-900"
+                  aria-label="今日つくるビリヤニの食数"
+                />
+                <span>食</span>
+              </div>
+              {acharMenu && (
+                <div className="flex items-center gap-1.5">
+                  <span className="shrink-0">アチャールの仕込み</span>
+                  <button onClick={() => void adjustAchar(-1)} disabled={(acharPrep ?? 0) <= 0} className="w-9 h-9 rounded-lg bg-white border border-stone-300 text-base font-bold text-stone-600 disabled:opacity-30 active:scale-95">
+                    −
+                  </button>
+                  <b className="w-8 text-center text-base text-stone-900">{acharPrep ?? '—'}</b>
+                  <button onClick={() => void adjustAchar(1)} className="w-9 h-9 rounded-lg bg-stone-800 text-white text-base font-bold active:scale-95">
+                    ＋
+                  </button>
+                  <span>個</span>
+                </div>
+              )}
+              <p className="text-stone-400">あと ＝ つくる食数 − 取り置き − 当日の注文（オーダー画面で入れた分）</p>
+            </div>
           </div>
-
-          {acharMenu && (
-            <div className="bg-pink-50 border border-pink-200 rounded-xl px-2.5 py-1.5 space-y-1">
-              <div className="flex items-center gap-1.5">
-                <span className="text-sm font-bold shrink-0" style={{ color: '#be185d' }}>アチャール</span>
-                <span className="text-sm font-bold" style={{ color: '#831843' }}>
-                  仕込み{acharPrep ?? '—'}　取り置き{acharReserved}　当日分{acharWalk ?? '—'}{acharOrdered > 0 ? `　注文${acharOrdered}` : ''}
-                </span>
-                <span className={`ml-auto text-sm font-bold shrink-0 ${acharLeft != null && acharLeft <= 0 ? 'text-red-600' : ''}`} style={acharLeft != null && acharLeft <= 0 ? undefined : { color: '#be185d' }}>
-                  {acharLeft == null ? '' : acharLeft < 0 ? `${-acharLeft}個不足` : `あと${acharLeft}食`}
-                </span>
-              </div>
-              <div className="flex items-center gap-1.5">
-                <button onClick={() => bumpSold(-1)} disabled={acharSold <= 0} className="h-9 px-2.5 rounded-lg bg-white border border-stone-300 text-sm font-bold text-stone-600 disabled:opacity-30 active:scale-95">
-                  −1
-                </button>
-                <button onClick={() => bumpSold(1)} className="h-9 flex-1 rounded-lg text-white text-sm font-bold active:scale-95" style={{ background: '#db2777' }}>
-                  ＋1（注文を入れずに売った {acharSold}）
-                </button>
-                <button onClick={() => void adjustAchar(-1)} disabled={(acharPrep ?? 0) <= 0} className="h-9 px-2.5 rounded-lg bg-white border border-stone-300 text-xs font-bold text-stone-600 disabled:opacity-30 active:scale-95">
-                  仕込み−1
-                </button>
-                <button onClick={() => void adjustAchar(1)} className="h-9 px-2.5 rounded-lg text-white text-xs font-bold active:scale-95" style={{ background: '#be185d' }}>
-                  仕込み＋1
-                </button>
-              </div>
-            </div>
-          )}
-            </div>
-          </details>
 
           <label className="flex items-center gap-1.5 text-xs">
             <span className="text-stone-500 shrink-0">特典の名前</span>

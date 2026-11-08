@@ -42,7 +42,7 @@ export function RemainingTiles({
 }) {
   return (
     <div className="flex gap-2">
-      <Tile label="ビリヤニ 当日分" left={biryaniLeft} unit="食" fmt={fmtPortions} note={biryaniNote} />
+      <Tile label="ビリヤニ（フリーに出せる分）" left={biryaniLeft} unit="食" fmt={fmtPortions} note={biryaniNote} />
       {showAchar && <Tile label="アチャール" left={acharLeft} unit="個" note={acharNote} />}
     </div>
   )

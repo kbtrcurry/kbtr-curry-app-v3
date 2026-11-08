@@ -5,7 +5,7 @@ import { CARD_COUNT } from './tickets'
 export type Spot = { n: number; x: number; y: number; w: number; h: number }
 
 export const GRID_COLS = 8
-export const GRID_ROWS = 8
+export const GRID_ROWS = 6
 
 /** 最初の置き方(目安)。下がキッチン側: カウンター4席、2名席3つ、4名席1つ、上がテイクアウト待ち */
 export function defaultLayout(): Spot[] {

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react'
 import { itemsFromReservation, nextFreeLabel, useTicketActions, useTickets, walkinAchar, walkinBiryaniPortions } from '../lib/tickets'
 import { TablePicker } from '../components/TablePicker'
+import { DEFAULT_UZURA_LABEL, setUzuraLabel, useUzuraLabel } from '../lib/uzuraLabel'
 import { Check, ClipboardPaste, Copy, ExternalLink, Pencil, Plus, Trash2, Users } from 'lucide-react'
 import { useAuth } from '../lib/auth'
 import { Spinner } from '../components/Spinner'
@@ -76,6 +77,7 @@ export default function ReservationsPage() {
   const today = todayStr()
   const [date, setDate] = useStoredState('kbtr_v3_res_date', nextSaturday(today))
   const effectiveDate = date
+  const uzuraLabel = useUzuraLabel()
   const [tab, setTab] = useState<Tab>('list')
   const [sortKey, setSortKey] = useStoredState<SortKey>('kbtr_v3_res_sort', 'time')
   const [sortRev, setSortRev] = useStoredState<boolean>('kbtr_v3_res_sort_rev', false)
@@ -370,6 +372,19 @@ export default function ReservationsPage() {
             </div>
           )}
 
+          <label className="flex items-center gap-1.5 text-xs">
+            <span className="text-stone-500 shrink-0">特典の名前</span>
+            <input
+              defaultValue={uzuraLabel}
+              onBlur={(e) => setUzuraLabel(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
+              placeholder={DEFAULT_UZURA_LABEL}
+              className="w-28 border border-stone-300 rounded-lg px-2 py-1 text-sm bg-white"
+              aria-label="取り置きの特典の名前（うずら・ふりかけなど）"
+            />
+            <span className="text-stone-400">月ごとに変えられます</span>
+          </label>
+
           <div className="flex items-center gap-1.5 text-xs">
             <span className="text-stone-500 shrink-0">並び替え</span>
             {SORTS.map(([k, label]) => (
@@ -384,7 +399,7 @@ export default function ReservationsPage() {
                 }}
                 className={`px-3 py-1.5 rounded-full font-semibold ${sortKey === k ? 'bg-amber-700 text-[#faf9f5]' : 'bg-stone-100 text-stone-600'}`}
               >
-                {label}
+                {k === 'uzura' ? uzuraLabel : label}
                 {sortKey === k && k !== 'time' && (sortRev ? ' ↑' : ' ↓')}
               </button>
             ))}
@@ -559,6 +574,7 @@ function ReservationForm({
   onClose: () => void
   onSaved: () => void
 }) {
+  const uzuraLabel = useUzuraLabel()
   const [platform, setPlatform] = useState<Platform>(editing?.platform ?? 'x')
   const [handle, setHandle] = useState(editing?.handle ?? '')
   const [name, setName] = useState(editing?.name ?? '')
@@ -752,10 +768,10 @@ function ReservationForm({
           {time === '' ? '時間 指定なし' : '指定なしに戻す'}
         </button>
         <button onClick={() => setUzura((v) => !v)} aria-pressed={uzura} className={`px-3 py-2 rounded-lg text-sm font-semibold border ${uzura ? 'bg-amber-700 text-[#faf9f5] border-amber-700' : 'bg-white text-stone-600 border-stone-300'}`}>
-          うずら{uzura ? '付き' : 'なし'}
+          {uzuraLabel}{uzura ? '付き' : 'なし'}
         </button>
       </div>
-      <p className="text-xs text-stone-500">来店時間はお客さんの任意です（空欄でもかまいません）。うずらアチャールは、営業日の前の木曜24時までに受けたら付く、として自動で決めています。</p>
+      <p className="text-xs text-stone-500">来店時間はお客さんの任意です（空欄でもかまいません）。「{uzuraLabel}」は、営業日の前の木曜24時までに受けたら付く、として自動で決めています。名前は取り置き一覧の「特典の名前」で変えられます。</p>
       <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="メモ（アレルギーなど）" className="w-full border border-stone-300 rounded-lg px-3 py-2.5 text-sm" />
 
       {error && <p className="text-sm text-red-600">{error}</p>}
@@ -843,6 +859,7 @@ function ReservationRow({
   onDelete: () => void
   onStatus: (s: ResStatus) => Promise<void>
 }) {
+  const uzuraLabel = useUzuraLabel()
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const all = shortItems(r.items)
@@ -878,14 +895,14 @@ function ReservationRow({
               <span className="w-[5.4em] shrink-0 font-bold text-[15px] text-stone-900 truncate">{idx === 0 ? r.name || '（名前なし）' : ''}</span>
               {ln && <ItemChip it={ln} />}
               {/* うずらは、1食ごとの行すべてに付ける */}
-              {ln && r.uzura && <Chip kind="うずら">うずら</Chip>}
+              {ln && r.uzura && <Chip kind="うずら">{uzuraLabel}</Chip>}
               {ln && r.is_new && <span className="text-[11px] font-bold text-sky-700">新</span>}
               {idx === 0 && (
                 <span className="flex flex-wrap items-center gap-[3px] min-w-0">
                   {extras.map((it) => (
                     <ItemChip key={it.key} it={it} />
                   ))}
-                  {r.uzura && !ln && <Chip kind="うずら">うずら</Chip>}
+                  {r.uzura && !ln && <Chip kind="うずら">{uzuraLabel}</Chip>}
                   {r.note && <Chip kind="備考あり">備考あり</Chip>}
                   {r.is_new && !ln && <span className="text-[11px] font-bold text-sky-700">新</span>}
                   {r.visit_time && <span className="text-[11px] text-stone-500">{r.visit_time}</span>}
@@ -935,6 +952,7 @@ function ReservationCard({
   onDelete: () => void
   onStatus: (s: ResStatus) => Promise<void>
 }) {
+  const uzuraLabel = useUzuraLabel()
   const [copied, setCopied] = useState(false)
   const url = profileUrl(r.platform, r.handle)
   // この取り置きに「◯回目」が書かれていれば、それを表示。なければ、登録の履歴から数える
@@ -969,7 +987,7 @@ function ReservationCard({
           <p className="text-xs text-stone-500 mt-0.5 flex flex-wrap gap-x-2">
             {r.is_new && <span className="font-bold text-sky-700">新規</span>}
             {r.visit_time && <span>来店 {r.visit_time}頃</span>}
-            <span>{r.uzura ? 'うずら付き' : 'うずらなし'}</span>
+            <span>{r.uzura ? `${uzuraLabel}付き` : `${uzuraLabel}なし`}</span>
           </p>
           {r.note && <p className="text-xs text-stone-500 mt-0.5">メモ: {r.note}</p>}
         </div>

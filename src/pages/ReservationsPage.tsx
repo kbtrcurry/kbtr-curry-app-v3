@@ -848,16 +848,16 @@ function ReservationRow({
         <button
           onClick={() => void toggle()}
           disabled={busy}
-          className={`shrink-0 w-[88px] my-[2px] mr-1 rounded-lg text-sm font-bold active:scale-95 transition-transform disabled:opacity-60 ${
+          className={`shrink-0 ${r.status === 'reserved' ? 'w-[112px]' : 'w-[88px]'} my-[2px] mr-1 rounded-lg text-sm font-bold active:scale-95 transition-transform disabled:opacity-60 ${
             done
               ? 'bg-green-600 text-white'
               : r.status === 'reserved'
-                ? 'bg-transparent text-amber-700 border-2 border-amber-600'
+                ? 'bg-amber-700 text-[#faf9f5]'
                 : 'bg-stone-200 text-stone-600'
           }`}
           aria-label={`${r.name || '取り置き'}は${STATUS_LABEL[r.status]}。押すと${done ? STATUS_LABEL.reserved : r.status === 'reserved' ? STATUS_LABEL.picked_up : STATUS_LABEL.reserved}にします`}
         >
-          {done ? '✓ 来店済み' : STATUS_LABEL[r.status]}
+          {done ? '✓ 来店済み' : r.status === 'reserved' ? '来店済みにする' : STATUS_LABEL[r.status]}
         </button>
       </div>
       {open && (

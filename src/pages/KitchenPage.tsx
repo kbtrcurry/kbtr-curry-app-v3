@@ -191,7 +191,7 @@ export default function KitchenPage() {
               onClick={() => void markServed(t)}
               className="w-full mt-3 py-3 rounded-xl bg-green-600 text-white text-lg font-bold active:scale-95 transition"
             >
-              提供済み
+              提供済みにする
             </button>
           </div>
         ))}

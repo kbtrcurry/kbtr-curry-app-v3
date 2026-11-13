@@ -18,6 +18,8 @@ export type TicketItem = {
   served_prev?: number
   /** 提供済みのあとに足された注文が入った時刻(調理場の並び順に使う) */
   added_at?: string
+  /** ビリヤニの品目だけ: 1皿ずつ(配列の順)に付ける、トッピング・アチャールなどのメニューID */
+  attach?: string[][]
 }
 export type TicketStatus = 'open' | 'served' | 'paid' | 'void'
 export type Ticket = {
@@ -72,8 +74,13 @@ export function addItem(
 
 // ---------- 提供済み(調理場) ----------
 
+/** 調理場では出さず、会計のときにレジで渡すもの(ステッカー)。調理場の「提供前」には数えない */
+export const handedAtRegister = (name: string): boolean => /ステッカー|sticker/i.test(name)
+/** 会計のときに渡すステッカーの数 */
+export const stickerCount = (items: { name: string; qty: number }[]): number => items.filter((i) => handedAtRegister(i.name)).reduce((a, i) => a + i.qty, 0)
+
 /** まだ出していない数 */
-export const pendingQty = (i: TicketItem): number => Math.max(0, i.qty - (i.served_qty ?? 0))
+export const pendingQty = (i: TicketItem): number => (handedAtRegister(i.name) ? 0 : Math.max(0, i.qty - (i.served_qty ?? 0)))
 export const hasPending = (items: TicketItem[]): boolean => items.some((i) => pendingQty(i) > 0)
 
 /** まだ出していない品だけ(数は、出していない分)。調理場のカードに出す */
@@ -209,12 +216,12 @@ export function freeCards(tickets: Ticket[], max = CARD_COUNT): number[] {
 
 /** 取り置きの内容を、伝票の品目にする(取り置き分として、当日分の残りからは引かない) */
 export function itemsFromReservation(
-  resItems: { menu_id: string | null; name: string; qty: number }[],
+  resItems: { menu_id: string | null; name: string; qty: number; attach?: string[][] }[],
   menus: { id: string; price: number }[],
 ): TicketItem[] {
   return resItems
     .filter((i) => i.qty > 0)
-    .map((i) => ({ menu_id: i.menu_id, name: i.name, price: menus.find((m) => m.id === i.menu_id)?.price ?? 0, qty: i.qty, from_res: true }))
+    .map((i) => ({ menu_id: i.menu_id, name: i.name, price: menus.find((m) => m.id === i.menu_id)?.price ?? 0, qty: i.qty, from_res: true, ...(i.attach ? { attach: i.attach } : {}) }))
 }
 
 export const FREE_PREFIX = 'フリー'

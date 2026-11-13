@@ -184,3 +184,51 @@ describe('調理場: メニューごとのチェック', () => {
     expect(back[0].served_qty).toBe(2)
   })
 })
+
+import { dishesOf, toggleDishExtra, removeDish, looseItems } from './dishOrder'
+describe('皿ごとの付け合わせ(注文)', () => {
+  const b = { id: 'b', name: 'ビリヤニ', price: 2000 }
+  const r = { id: 'r', name: '赤玉ねぎ増量', price: 100 }
+  const base = () => addItem(addItem([], b, 1), b, 1)
+  it('付けると、注文にも1つ足される。もう一度押すと外れて、足した分も消える', () => {
+    const a = toggleDishExtra(base(), 0, 1, r)
+    expect(a.find((i) => i.menu_id === 'r')?.qty).toBe(1)
+    expect(dishesOf(a)[1].extras).toEqual(['r'])
+    const off = toggleDishExtra(a, 0, 1, r)
+    expect(off.some((i) => i.menu_id === 'r')).toBe(false)
+    expect(off[0].attach).toBeUndefined()
+  })
+  it('取り置きの分が余っていれば、それを使う(足さない)。外しても取り置きは残る', () => {
+    const items = [...base(), { menu_id: 'r', name: '赤玉ねぎ増量', price: 100, qty: 1, from_res: true }]
+    const a = toggleDishExtra(items, 0, 0, r)
+    expect(a.find((i) => i.menu_id === 'r')?.qty).toBe(1)
+    const off = toggleDishExtra(a, 0, 0, r)
+    expect(off.find((i) => i.menu_id === 'r')?.qty).toBe(1)
+  })
+  it('皿の行に出した分は、別の一覧(looseItems)からは引かれる', () => {
+    const a = toggleDishExtra(base(), 0, 0, r)
+    expect(looseItems(a).some((m) => m.menu_id === 'r')).toBe(false)
+    const more = addItem(a, r, 1)
+    expect(looseItems(more).find((m) => m.menu_id === 'r')?.qty).toBe(1)
+  })
+  it('皿を消すと、その皿に付けていた追加分も減る', () => {
+    const a = toggleDishExtra(toggleDishExtra(base(), 0, 0, r), 0, 1, r)
+    const rm = removeDish(a, 0, 0)
+    expect(rm[0].qty).toBe(1)
+    expect(rm.find((i) => i.menu_id === 'r')?.qty).toBe(1)
+    expect(rm[0].attach).toEqual([['r']])
+  })
+})
+
+import { stickerCount, pendingQty } from './tickets'
+describe('ステッカーは、会計のときにレジで渡す', () => {
+  it('調理場の「提供前」には数えない。数はレジ用に数える', () => {
+    const items = [
+      { menu_id: 'b', name: 'ビリヤニ', price: 2000, qty: 1, served_qty: 1 },
+      { menu_id: 's', name: 'ステッカー6枚セット', price: 1000, qty: 1 },
+    ]
+    expect(pendingQty(items[1])).toBe(0)
+    expect(hasPending(items)).toBe(false)
+    expect(stickerCount(items)).toBe(1)
+  })
+})

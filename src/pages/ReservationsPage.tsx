@@ -6,9 +6,10 @@ import { RemainingTiles } from '../components/RemainingTiles'
 import { TablePicker } from '../components/TablePicker'
 import { StockRow } from '../components/StockRow'
 import { TimeSelect } from '../components/TimeSelect'
-import { useCap } from '../lib/settings'
+import { useAttachableIds, useAttachableSetting, useCap } from '../lib/settings'
 import { ClipboardPaste, Copy, ExternalLink, Pencil, Plus, Trash2, Users } from 'lucide-react'
 import { useAuth } from '../lib/auth'
+import { CHIP, shortName } from '../lib/chips'
 import { Spinner } from '../components/Spinner'
 import ReservationImport from './ReservationImport'
 import { ConfirmModal } from '../components/ConfirmModal'
@@ -46,7 +47,7 @@ import {
   dishCount,
   extraTotals,
   attachedTotals,
-  isExtraName,
+  isExtraItem,
   setReservationStatus,
   useCustomerNotes,
   useInvalidateReservations,
@@ -179,6 +180,8 @@ export default function ReservationsPage() {
   const biryaniLeft = remaining({ cap, reservedPortions: reservedQty, walkinOrdered })
   // 数に限りのあるメニュー(ビリヤニ以外)。月ごとに変えられる。仕込み数 − 取り置き − 当日の注文 = あと何個
   const [limitedIds, setLimitedIds] = useLimitedIds(menus.data ?? [])
+  useAttachableIds()
+  const [attachSetting, setAttachSetting] = useAttachableSetting()
   const rows = limitedRows(limitedIds, menus.data ?? [], stock.data, list, ticketList)
   const setStock = async (menuId: string, qty: number) => {
     await saveMenuStock(effectiveDate, { [menuId]: Math.max(0, qty) })
@@ -318,6 +321,34 @@ export default function ReservationsPage() {
                     </option>
                   ))}
               </select>
+              <div className="pt-1 space-y-1.5">
+                <p className="font-semibold text-stone-700">ビリヤニの皿に付ける品（トッピング・アチャール・ソーダなど）</p>
+                <div className="flex flex-wrap gap-1.5">
+                  {(menus.data ?? [])
+                    .filter((m) => portionOf(m.name) === 0)
+                    .map((m) => {
+                      const on = isExtraItem({ menu_id: m.id, name: m.name })
+                      return (
+                        <button
+                          key={m.id}
+                          onClick={() => {
+                            const cur = (menus.data ?? []).filter((x) => portionOf(x.name) === 0 && isExtraItem({ menu_id: x.id, name: x.name })).map((x) => x.id)
+                            setAttachSetting(on ? cur.filter((id) => id !== m.id) : [...cur, m.id])
+                          }}
+                          aria-pressed={on}
+                          className={`h-11 px-3 rounded-lg text-sm font-semibold border-2 ${on ? 'bg-amber-700 border-amber-700 text-[#faf9f5]' : 'bg-white border-stone-300 text-stone-600'}`}
+                        >
+                          {on ? '✓ ' : ''}
+                          {m.name}
+                        </button>
+                      )
+                    })}
+                </div>
+                <p className="text-stone-500">
+                  オーダー画面と取り置きの、皿ごとのボタンに出る品です。
+                  {attachSetting == null ? '（いまは、名前から自動で選んでいます。押すと、ここで選んだ内容に切り替わります）' : <button onClick={() => setAttachSetting(null)} className="ml-1 underline">名前から自動で選ぶ状態に戻す</button>}
+                </p>
+              </div>
               <p className="text-stone-500">あと ＝ 仕込み − 取り置き − 当日の注文（オーダー画面で入れた分）</p>
               {ticketList.length > 0 && (
                 <p className="text-stone-600">
@@ -777,21 +808,6 @@ function ReservationForm({
 // ---------- 取り置き1件 ----------
 
 // 品目の短い表記と色: ビリヤニ通常=「並」(青)、大盛り=「大」(黄)、ソーダ=茶、それ以外=灰。テイクアウトは緑の「TO」を前に付ける
-type ChipDef = { bg: string; fg: string; border?: string }
-const CHIP: Record<string, ChipDef> = {
-  並: { bg: '#2563eb', fg: '#ffffff' },
-  大: { bg: '#facc15', fg: '#422006' },
-  ソーダ: { bg: '#92400e', fg: '#ffffff' },
-  パク: { bg: '#15803d', fg: '#ffffff' },
-  赤玉: { bg: '#a21d6e', fg: '#ffffff' },
-  ライタ: { bg: '#ffffff', fg: '#000000', border: '#57534e' },
-  TO: { bg: '#16a34a', fg: '#ffffff' },
-  うずら: { bg: '#ea580c', fg: '#ffffff' },
-  アチャ: { bg: '#ec4899', fg: '#ffffff' },
-  備考あり: { bg: '#dc2626', fg: '#ffffff' },
-  他: { bg: '#78716c', fg: '#ffffff' },
-}
-
 function Chip({ kind, children }: { kind: keyof typeof CHIP | string; children: React.ReactNode }) {
   const c = CHIP[kind] ?? CHIP['他']
   return (
@@ -802,27 +818,6 @@ function Chip({ kind, children }: { kind: keyof typeof CHIP | string; children: 
 }
 
 type ShortItem = { key: string; kind: string; label: string; base: string; qty: number; takeout: boolean }
-function shortName(n: string): { kind: string; label: string } {
-  return /大盛/.test(n)
-    ? { kind: '大', label: '大' }
-    : /ビリヤ|biryani/i.test(n)
-      ? { kind: '並', label: '並' }
-      : /ソーダ/.test(n)
-        ? { kind: 'ソーダ', label: 'ソーダ' }
-        : /パクチ/.test(n)
-          ? { kind: 'パク', label: 'パク' }
-          : /赤玉|赤たまねぎ|レッドオニオン/.test(n)
-            ? { kind: '赤玉', label: '赤玉' }
-            : /ライタ/.test(n)
-              ? { kind: 'ライタ', label: 'ライタ' }
-              : /アチャール/.test(n)
-                ? { kind: 'アチャ', label: n.replace(/のアチャール.*$/, '').replace(/アチャール.*$/, '') || 'アチャ' }
-                : /容器/.test(n)
-                  ? { kind: '他', label: '容器' }
-                  : /サワー/.test(n)
-                    ? { kind: '他', label: 'サワー' }
-                    : { kind: '他', label: n.replace(/^スパイス/, '').slice(0, 3) }
-}
 function shortItems(items: ResItem[]): ShortItem[] {
   const m = new Map<string, { kind: string; label: string; takeout: boolean; qty: number }>()
   // TOの容器代は、一覧では狭くなるので出さない(レジには出る。記録は残る)
@@ -897,7 +892,7 @@ function ReservationRow({
     for (const i of r.items) {
       if (portionOf(i.name) > 0 || /容器/.test(i.name)) continue
       let q = i.qty
-      if (i.menu_id && isExtraName(i.name) && (attachedLeft[i.menu_id] ?? 0) > 0) {
+      if (i.menu_id && isExtraItem(i) && (attachedLeft[i.menu_id] ?? 0) > 0) {
         const use = Math.min(q, attachedLeft[i.menu_id])
         attachedLeft[i.menu_id] -= use
         q -= use
@@ -1107,7 +1102,7 @@ function DishPicker({ r, onItems }: { r: Reservation; onItems: (items: ResItem[]
   const totals = extraTotals(r.items)
   const used = attachedTotals(r.items)
   // 付けられる品(同じメニューは1つにまとめる)
-  const extras = [...new Map(r.items.filter((i) => i.menu_id && isExtraName(i.name)).map((i) => [i.menu_id as string, i.name])).entries()]
+  const extras = [...new Map(r.items.filter((i) => i.menu_id && isExtraItem(i)).map((i) => [i.menu_id as string, i.name])).entries()]
   const dishes = r.items.flatMap((i, idx) => Array.from({ length: dishCount(i) }, (_, d) => ({ i, idx, d })))
   if (extras.length === 0 || dishes.length === 0 || r.status === 'cancelled') return null
   const toggle = async (idx: number, d: number, id: string) => {

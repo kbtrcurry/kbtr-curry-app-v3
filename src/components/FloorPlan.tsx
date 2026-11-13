@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { elapsedMinutes, isTakeoutCard, queueTime, ticketCount, type Ticket } from '../lib/tickets'
+import { elapsedMinutes, hasPending, isTakeoutCard, queueTime, stickerCount, ticketCount, type Ticket } from '../lib/tickets'
 import { defaultLayout, GRID_COLS, GRID_ROWS, placeSpot, resizeSpot } from '../lib/floorPlan'
 import { setFloorPlan, useFloorPlan } from '../lib/settings'
 
@@ -78,9 +78,9 @@ export function FloorPlan({
                   ? 'bg-stone-200 border-stone-300 text-stone-500'
                   : waitingOrder
                     ? 'bg-sky-50 border-sky-400 text-sky-900'
-                    : t.status === 'served'
-                      ? 'bg-green-50 border-green-400 text-green-800'
-                      : 'bg-amber-50 border-amber-500 text-amber-900'
+                    : hasPending(t.items)
+                      ? 'bg-amber-300 border-amber-600 text-amber-950'
+                      : 'bg-stone-700 border-stone-800 text-stone-100'
             return (
               <button
                 key={sp.n}
@@ -96,7 +96,8 @@ export function FloorPlan({
                   </span>
                 )}
                 {!busy && !editing && isTakeoutCard(sp.n) && <span className="text-xs mt-0.5">持ち帰り</span>}
-                {min != null && <span className={`absolute top-0.5 right-1 text-xs font-bold ${waitTone(min)}`}>{min}分</span>}
+                {min != null && <span className={`absolute top-0.5 right-1 text-xs font-bold ${t && !waitingOrder && !hasPending(t.items) ? 'text-stone-300' : waitTone(min)}`}>{min}分</span>}
+                {t && !editing && stickerCount(t.items) > 0 && <span className="absolute bottom-0.5 left-1 text-[10px] font-bold bg-pink-600 text-white rounded px-1 leading-4">ステ</span>}
               </button>
             )
           })}

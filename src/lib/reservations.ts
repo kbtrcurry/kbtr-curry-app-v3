@@ -86,24 +86,38 @@ export const fmtPortions = (n: number): string => (Number.isInteger(n) ? String(
 
 // ---------- ビリヤニ1皿ずつへの、トッピング・アチャールの振り分け ----------
 
-/** 1皿ずつに付けられる品(トッピング増量・アチャール・ソーダ)。サワー・容器代などは含めない */
+/** 皿に付けられる品の設定(メニューID)。null は、名前で判断する(パクチー・赤玉・ライタ・アチャール・ソーダ・増量)。画面側で設定から入れる */
+let extraIds: Set<string> | null = null
+export function setExtraConfig(ids: string[] | null): void {
+  extraIds = ids ? new Set(ids) : null
+}
+/** 1皿ずつに付けられる品(トッピング増量・アチャール・ソーダなど)か */
+export function isExtraItem(i: { menu_id: string | null; name: string }): boolean {
+  if (portionOf(i.name) > 0) return false
+  if (extraIds) return !!i.menu_id && extraIds.has(i.menu_id)
+  return isExtraName(i.name)
+}
+/** 名前だけでの判断(設定がないときの初期の決め方) */
 export const isExtraName = (name: string): boolean => portionOf(name) === 0 && /パクチ|赤玉|ライタ|アチャール|増量|トッピング|ソーダ/.test(name) && !/サワー|容器/.test(name)
+
+/** 取り置き・伝票の品目で、振り分けを持てる形(menu_id・name・qty・attach) */
+export type DishLike = { menu_id: string | null; name: string; qty: number; attach?: string[][] }
 /** ビリヤニの皿数(端数は切り上げ。0.5食でも1皿) */
-export const dishCount = (i: Pick<ResItem, 'name' | 'qty'>): number => (portionOf(i.name) > 0 ? Math.max(0, Math.ceil(i.qty)) : 0)
-/** 付けられる品ごとの、取り置きに入っている数(menu_id別) */
-export function extraTotals(items: ResItem[]): Record<string, number> {
+export const dishCount = (i: Pick<DishLike, 'name' | 'qty'>): number => (portionOf(i.name) > 0 ? Math.max(0, Math.ceil(i.qty)) : 0)
+/** 付けられる品ごとの、入っている数(menu_id別) */
+export function extraTotals(items: DishLike[]): Record<string, number> {
   const out: Record<string, number> = {}
-  for (const i of items) if (i.menu_id && isExtraName(i.name)) out[i.menu_id] = (out[i.menu_id] ?? 0) + i.qty
+  for (const i of items) if (i.menu_id && isExtraItem(i)) out[i.menu_id] = (out[i.menu_id] ?? 0) + i.qty
   return out
 }
 /** 振り分け済みの数(menu_id別) */
-export function attachedTotals(items: ResItem[]): Record<string, number> {
+export function attachedTotals(items: DishLike[]): Record<string, number> {
   const out: Record<string, number> = {}
   for (const i of items) for (const d of i.attach ?? []) for (const id of d) out[id] = (out[id] ?? 0) + 1
   return out
 }
 /** 振り分けを、いまの品目・数に合わせて直す。皿数を超えた分・入っていない品・数を超えた分は外す(メニューや数を変えたあとの整合用) */
-export function sanitizeAttach(items: ResItem[]): ResItem[] {
+export function sanitizeAttach<T extends DishLike>(items: T[]): T[] {
   const left = extraTotals(items)
   return items.map((i) => {
     const n = dishCount(i)
@@ -111,7 +125,7 @@ export function sanitizeAttach(items: ResItem[]): ResItem[] {
       if (!('attach' in i)) return i
       const { attach: _drop, ...rest } = i
       void _drop
-      return rest
+      return rest as T
     }
     const att: string[][] = []
     for (let d = 0; d < n; d++) {
@@ -127,13 +141,13 @@ export function sanitizeAttach(items: ResItem[]): ResItem[] {
     if (att.every((d) => d.length === 0)) {
       const { attach: _drop, ...rest } = i
       void _drop
-      return rest
+      return rest as T
     }
     return { ...i, attach: att }
   })
 }
 /** items[itemIdx] の dish 皿目に、extraId を付ける/外す。付けられる数が残っていなければ変えない */
-export function toggleAttach(items: ResItem[], itemIdx: number, dish: number, extraId: string): ResItem[] {
+export function toggleAttach<T extends DishLike>(items: T[], itemIdx: number, dish: number, extraId: string): T[] {
   const it = items[itemIdx]
   if (!it || dish < 0 || dish >= dishCount(it)) return items
   const cur: string[][] = Array.from({ length: dishCount(it) }, (_, d) => [...(it.attach?.[d] ?? [])])

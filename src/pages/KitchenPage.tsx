@@ -5,6 +5,10 @@ import { Spinner } from '../components/Spinner'
 import { todayStr } from '../lib/accounting'
 import { useGuests } from '../lib/guests'
 import { GuestChip } from '../components/GuestChip'
+import { ExtraChip } from '../components/DishList'
+import { extraNames } from '../lib/dishOrder'
+import { dishCount } from '../lib/reservations'
+import { useAttachableIds } from '../lib/settings'
 import {
   biryaniDishes,
   elapsedMinutes,
@@ -13,6 +17,7 @@ import {
   isTakeoutCard,
   itemKey,
   pendingQty,
+  stickerCount,
   kitchenQueue,
   mergeItems,
   pendingBiryaniDishes,
@@ -38,6 +43,7 @@ export default function KitchenPage() {
   const date = todayStr()
   const tq = useTickets(date, POLL_MS)
   const guestOf = useGuests()
+  useAttachableIds()
   const actions = useTicketActions(date)
   const [sound, setSound] = useState(false)
   const [now, setNow] = useState(() => Date.now())
@@ -146,7 +152,7 @@ export default function KitchenPage() {
   }
   // カードに出す行: まだ出していないメニュー + チェックを入れたメニュー(取り消し線)
   const linesOf = (t: Ticket) => {
-    const out: { key: string; name: string; qty: number; done: boolean }[] = []
+    const out: { key: string; name: string; qty: number; done: boolean; dishes: string[][] }[] = []
     for (const it of t.items) {
       const key = itemKey(it)
       const pend = pendingQty(it)
@@ -154,11 +160,14 @@ export default function KitchenPage() {
       if (pend <= 0 && !mine) continue
       const qty = pend > 0 ? pend : it.qty - (it.served_prev ?? 0)
       if (qty <= 0) continue
+      // ビリヤニは、まだ出していない皿ごとの付け合わせ(出し終えた皿は、数えない)
+      const dishes = pend > 0 && dishCount(it) > 0 ? Array.from({ length: pend }, (_, k) => extraNames(t.items, it.attach?.[(it.served_qty ?? 0) + k] ?? [])) : []
       const ex = out.find((x) => x.key === key)
       if (ex) {
         ex.qty += qty
         ex.done = ex.done && pend <= 0
-      } else out.push({ key, name: it.name, qty, done: pend <= 0 })
+        ex.dishes.push(...dishes)
+      } else out.push({ key, name: it.name, qty, done: pend <= 0, dishes })
     }
     return out
   }
@@ -280,9 +289,22 @@ export default function KitchenPage() {
                         {ln.name} <b>×{ln.qty}</b>
                       </span>
                     </button>
+                    {ln.dishes.some((d) => d.length > 0) && (
+                      <ul className="ml-12 mb-1 space-y-0.5">
+                        {ln.dishes.map((d, k) => (
+                          <li key={k} className="flex flex-wrap items-center gap-1.5 text-base text-stone-700">
+                            <span className="text-stone-500">{k + 1}皿目</span>
+                            {d.length === 0 ? <span className="text-sm text-stone-400">なし</span> : d.map((n, j) => <ExtraChip key={j} name={n} big />)}
+                          </li>
+                        ))}
+                      </ul>
+                    )}
                   </li>
                 ))}
               </ul>
+              {stickerCount(t.items) > 0 && (
+                <p className="mt-2 rounded-lg bg-pink-100 text-pink-900 text-base font-bold px-3 py-1.5">ステッカー ×{stickerCount(t.items)}（会計のときにレジで渡す）</p>
+              )}
               <button
                 onClick={() => void markServed(t)}
                 className="w-full mt-3 h-14 rounded-xl bg-green-600 text-white text-lg font-bold active:scale-95 transition"
@@ -302,16 +324,16 @@ export default function KitchenPage() {
           {showServed && (
             <div className="mt-2 grid gap-2 grid-cols-[repeat(auto-fill,minmax(270px,1fr))]">
               {served.map((t) => (
-                <div key={t.id} className="rounded-xl border border-stone-300 bg-stone-50 p-3">
+                <div key={t.id} className="rounded-xl border-2 border-stone-800 bg-stone-700 text-stone-100 p-3">
                   <div className="flex items-baseline gap-2">
-                    <span className="text-sm text-stone-500">テーブル</span>
-                    <span className="text-2xl font-bold text-stone-700 leading-none">{t.card_no}</span>
-                    {t.label && <span className="text-sm text-stone-700">{t.label}</span>}
+                    <span className="text-sm text-stone-300">テーブル</span>
+                    <span className="text-2xl font-bold text-white leading-none">{t.card_no}</span>
+                    {t.label && <span className="text-sm text-stone-100">{t.label}</span>}
                     <GuestChip g={guestOf(t)} />
-                    <span className="ml-auto text-xs text-stone-400">{t.served_at ? `${elapsedMinutes(t.served_at, now)}分前に提供` : ''}</span>
+                    <span className="ml-auto text-xs text-stone-300">{t.served_at ? `${elapsedMinutes(t.served_at, now)}分前に提供` : ''}</span>
                   </div>
-                  <p className="text-sm text-stone-600 mt-1">{mergeItems(t.items).map((it) => `${it.name}×${it.qty}`).join('　')}</p>
-                  <button onClick={() => void actions.unserve(t.id)} className="w-full mt-2 h-11 rounded-lg border-2 border-amber-600 text-amber-700 font-bold active:scale-95 transition">
+                  <p className="text-sm text-stone-200 mt-1">{mergeItems(t.items).map((it) => `${it.name}×${it.qty}`).join('　')}</p>
+                  <button onClick={() => void actions.unserve(t.id)} className="w-full mt-2 h-11 rounded-lg border-2 border-amber-400 text-amber-300 font-bold active:scale-95 transition">
                     未提供に戻す
                   </button>
                 </div>

@@ -26,7 +26,9 @@ import { updateMenu } from '../lib/masterData'
 import { todayStr, useSegments } from '../lib/accounting'
 import { useGuests } from '../lib/guests'
 import { GuestChip } from '../components/GuestChip'
-import { hasPending, ticketCount, ticketTotal, useDayTickets, useTicketActions, useTickets, type Ticket } from '../lib/tickets'
+import { DishList } from '../components/DishList'
+import { useAttachableIds } from '../lib/settings'
+import { hasPending, stickerCount, ticketCount, ticketTotal, useDayTickets, useTicketActions, useTickets, type Ticket } from '../lib/tickets'
 import { isEventCode } from '../lib/events'
 import {
   normHandle,
@@ -94,6 +96,7 @@ export default function PosPage() {
   const [ticketId, setTicketId] = usePersistedState<string | null>('kbtr_v3_pos_ticket', null)
   const ticketsQ = useTickets(todayStr())
   const guestOf = useGuests()
+  useAttachableIds()
   const dayTicketsQ = useDayTickets(todayStr())
   const ticketActions = useTicketActions(todayStr())
   const openTickets = (ticketsQ.data ?? []).filter((t) => t.status === 'open' || t.status === 'served')
@@ -669,7 +672,9 @@ export default function PosPage() {
 
       {openTickets.length > 0 && (
         <div className="mb-3 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 space-y-2">
-          <p className="text-sm font-semibold text-amber-900">会計前の伝票</p>
+          <p className="text-sm font-semibold text-amber-900">
+            会計前の伝票 <span className="text-xs font-normal">（明るい=調理中 / 暗い=提供済みで会計待ち）</span>
+          </p>
           <div className="flex flex-wrap gap-2">
             {openTickets.map((t) => (
               <button
@@ -677,11 +682,12 @@ export default function PosPage() {
                 onClick={() => tapTicket(t)}
                 aria-pressed={t.id === ticketId}
                 className={`min-w-16 rounded-xl border-2 px-3 py-2 text-center active:scale-95 transition ${
-                  t.id === ticketId ? 'bg-amber-700 border-amber-700 text-[#faf9f5]' : t.status === 'served' ? 'bg-green-50 border-green-400 text-green-900' : 'bg-white border-amber-400 text-amber-900'
-                }`}
+                  t.items.length === 0 ? 'bg-sky-50 border-sky-400 text-sky-900' : hasPending(t.items) ? 'bg-amber-300 border-amber-600 text-amber-950' : 'bg-stone-700 border-stone-800 text-white'
+                } ${t.id === ticketId ? 'ring-4 ring-sky-400 ring-offset-1' : ''}`}
               >
                 <span className="block text-xs">テーブル</span>
                 <span className="block text-2xl font-bold leading-none">{t.card_no}</span>
+                <span className="block text-[11px] font-bold mt-0.5">{t.items.length === 0 ? '注文まだ' : hasPending(t.items) ? '調理中' : '会計待ち'}</span>
                 {t.label && <span className="block text-xs font-bold mt-0.5 max-w-[6.5rem] truncate">{t.label}</span>}
                 {guestOf(t) && (
                   <span className="block mt-0.5">
@@ -691,9 +697,14 @@ export default function PosPage() {
                 <span className="block text-xs mt-0.5">
                   {ticketCount(t.items)}点 {ticketTotal(t.items).toLocaleString()}円
                 </span>
+                {stickerCount(t.items) > 0 && <span className="mt-0.5 inline-block rounded bg-pink-600 text-white text-[11px] font-bold px-1.5">ステッカー×{stickerCount(t.items)}</span>}
               </button>
             ))}
           </div>
+          {loadedTicket && stickerCount(loadedTicket.items) > 0 && (
+            <p className="rounded-lg bg-pink-100 text-pink-900 text-base font-bold px-3 py-2">ステッカー ×{stickerCount(loadedTicket.items)} を渡してください</p>
+          )}
+          {loadedTicket && <DishList items={loadedTicket.items} />}
           {loadedTicket && (
             <p className="text-xs text-amber-900">
               カード {loadedTicket.card_no}{loadedTicket.label ? `（${loadedTicket.label}）` : ''} を会計中。グッズなどはメニューから足せます（もう一度押すと解除）。

@@ -7,8 +7,12 @@ import { Spinner } from '../components/Spinner'
 import { ConfirmModal } from '../components/ConfirmModal'
 import { useActiveMenus } from '../lib/pos'
 import { todayStr } from '../lib/accounting'
-import { addItem, CARD_COUNT, flushOutbox, freeCards, isMissingTable, mergeItems, nextFreeLabel, ticketCount, ticketTotal, useTicketActions, useTickets, type Ticket, type TicketItem } from '../lib/tickets'
+import { addItem, CARD_COUNT, flushOutbox, freeCards, isMissingTable, nextFreeLabel, ticketCount, ticketTotal, useTicketActions, useTickets, type Ticket, type TicketItem } from '../lib/tickets'
 import { yen } from '../lib/format'
+import { useAttachableIds } from '../lib/settings'
+import { isExtraItem, sanitizeAttach } from '../lib/reservations'
+import { dishesOf, looseItems, removeDish, toggleDishExtra } from '../lib/dishOrder'
+import { CHIP, shortName } from '../lib/chips'
 import { TablePicker } from '../components/TablePicker'
 import { FloorPlan } from '../components/FloorPlan'
 import { RemainingTiles } from '../components/RemainingTiles'
@@ -28,6 +32,7 @@ export default function OrdersPage() {
   const { session, loading: authLoading, loginWithGoogle } = useAuth()
   const date = todayStr()
   const menus = useActiveMenus().data ?? []
+  useAttachableIds()
   const tq = useTickets(date)
   const actions = useTicketActions(date)
   const loc = useLocation()
@@ -103,11 +108,39 @@ export default function OrdersPage() {
         return
       }
       const before = current.items
-      const next = addItem(before, menu, delta, fromRes)
+      const next = sanitizeAttach(addItem(before, menu, delta, fromRes))
       if (delta < 0 && !next.some((i) => i.menu_id === menu.id && i.name === menu.name)) {
         setGhosts((g) => (g.some((x) => x.menu_id === menu.id && x.name === menu.name) ? g : [...g, { menu_id: menu.id, name: menu.name, price: menu.price }]))
       }
       flashUndo({ ticketId: current.id, cardNo, before, text: delta > 0 ? `${menu.name} を足しました` : `${menu.name} を減らしました` })
+      await actions.setItems(current.id, next)
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '保存できませんでした')
+    }
+  }
+
+  // 皿ごとの付け合わせ: 皿の行のボタンで付ける/外す。皿を消す
+  const toggleExtra = async (row: number, dish: number, extra: { id: string; name: string; price: number }) => {
+    if (!current) return
+    setError(null)
+    try {
+      const before = current.items
+      await actions.setItems(current.id, toggleDishExtra(before, row, dish, extra))
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '保存できませんでした')
+    }
+  }
+  const dropDish = async (row: number, dish: number) => {
+    if (!current) return
+    setError(null)
+    try {
+      const before = current.items
+      const it = before[row]
+      const next = removeDish(before, row, dish)
+      flashUndo({ ticketId: current.id, cardNo: current.card_no, before, text: `${it?.name ?? '皿'} を1皿 減らしました` })
+      if (it && !next.some((i) => i.menu_id === it.menu_id && i.name === it.name)) {
+        setGhosts((g) => (g.some((x) => x.menu_id === it.menu_id && x.name === it.name) ? g : [...g, { menu_id: it.menu_id, name: it.name, price: it.price }]))
+      }
       await actions.setItems(current.id, next)
     } catch (e) {
       setError(e instanceof Error ? e.message : '保存できませんでした')
@@ -199,6 +232,8 @@ export default function OrdersPage() {
 
   // ---- 伝票の編集 ----
   const items = current?.items ?? []
+  // 皿に付けられるメニュー(メニューの並びのまま)
+  const extraMenus = menus.filter((m) => isExtraItem({ menu_id: m.id, name: m.name }))
   // メニューのボタンに出す「あと」: ビリヤニは共通の残り、サイドは仕込みの残り
   const leftOf = (m: { id: string; name: string }): { text: string; out: boolean } | null => {
     const row = rem.rows.find((r) => r.menuId === m.id)
@@ -221,7 +256,44 @@ export default function OrdersPage() {
 
       <div className="bg-stone-50 rounded-xl p-3 space-y-1.5">
         {items.length === 0 && ghosts.length === 0 && <p className="text-base text-stone-500">まだ注文がありません。下のメニューを押してください</p>}
-        {mergeItems(items).map((it) => (
+        {dishesOf(items).map((d) => {
+          const mine = d.extras
+          return (
+            <div key={`${d.row}-${d.dish}`} className="rounded-xl border-2 border-stone-200 bg-white p-2 space-y-1.5">
+              <div className="flex items-center gap-2">
+                <span className="flex-1 min-w-0 text-base font-semibold text-stone-900">
+                  {d.item.name} <span className="text-sm font-normal text-stone-500">{d.n}皿目</span>
+                  {d.item.from_res && <span className="ml-1 text-sm text-sky-700">取り置き</span>}
+                </span>
+                <button onClick={() => void dropDish(d.row, d.dish)} className="w-11 h-11 rounded-lg bg-white border border-stone-300 text-lg text-stone-600 font-bold active:scale-95" aria-label={`${d.n}皿目を消す`}>
+                  −
+                </button>
+              </div>
+              {extraMenus.length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {extraMenus.map((m) => {
+                    const on = mine.includes(m.id)
+                    const sh = shortName(m.name)
+                    const c = CHIP[sh.kind] ?? CHIP['他']
+                    return (
+                      <button
+                        key={m.id}
+                        onClick={() => void toggleExtra(d.row, d.dish, m)}
+                        aria-pressed={on}
+                        className="h-11 min-w-[3.6rem] px-2.5 rounded-lg text-sm font-bold active:scale-95 transition-transform"
+                        style={on ? { background: c.bg, color: c.fg, boxShadow: `inset 0 0 0 2px ${c.border ?? c.bg}` } : { background: '#fff', color: '#57534e', boxShadow: 'inset 0 0 0 1.5px #d6d3d1' }}
+                      >
+                        {on ? '✓ ' : ''}
+                        {sh.label}
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
+            </div>
+          )
+        })}
+        {looseItems(items).map((it) => (
           <div key={it.key} className="flex items-center gap-2 text-base">
             <span className="flex-1 text-stone-800">
               {it.name}

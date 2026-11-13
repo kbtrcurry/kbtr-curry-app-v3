@@ -68,6 +68,10 @@ export async function flushQueue(): Promise<void> {
         const { lines } = r
         const { error: recErr } = await supabase.from('receipts').upsert(row)
         if (recErr) throw recErr
+        if (r.deletedLineIds && r.deletedLineIds.length > 0) {
+          const { error: delErr } = await supabase.from('receipt_lines').delete().in('id', r.deletedLineIds)
+          if (delErr) throw delErr
+        }
         if (lines.length > 0) {
           const lineRows = lines.map((l) => ({
             id: l.id,
@@ -80,7 +84,7 @@ export async function flushQueue(): Promise<void> {
           const { error: lineErr } = await supabase.from('receipt_lines').upsert(lineRows)
           if (lineErr) throw lineErr
         }
-        await localReceipts.put({ ...r, synced: true })
+        await localReceipts.put({ ...r, synced: true, deletedLineIds: [] })
       } catch {
         // 次回のフラッシュで再試行
       }

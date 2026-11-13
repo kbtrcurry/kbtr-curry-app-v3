@@ -73,6 +73,12 @@ export type LocalReceiptRow = {
   createdAt: string
   lines: LocalReceiptLine[]
   synced: boolean
+  /** 会計した伝票の名前(取り置きの名前・フリー1など)。端末の中だけに持つ(締めると消える) */
+  label?: string
+  cardNo?: number
+  ticketId?: string
+  /** 編集で消した明細。次に送るとき、サーバー側からも消す */
+  deletedLineIds?: string[]
 }
 
 export const localSessions = makeStore<LocalSessionRow>(STORE_SESSIONS)

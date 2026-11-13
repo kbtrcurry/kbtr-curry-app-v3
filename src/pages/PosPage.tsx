@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
-import { ShoppingCart, Trash2, Check } from 'lucide-react'
+import { ShoppingCart, Trash2, Check, Pencil, Undo2 } from 'lucide-react'
 import { useAuth } from '../lib/auth'
 import { Spinner } from '../components/Spinner'
 import { Modal } from '../components/Modal'
 import { ConfirmModal } from '../components/ConfirmModal'
+import { ReceiptEditor } from '../components/ReceiptEditor'
+import type { LocalReceiptRow } from '../lib/offlineDb'
 import { usePersistedState } from '../lib/persistState'
 import { useKeyboardOffset } from '../lib/useKeyboardOffset'
 import { useRegisterBack } from '../lib/backHandler'
@@ -15,6 +17,7 @@ import {
   usePendingCount,
   addReceipt,
   voidReceipt,
+  updateReceipt,
   closeTodaySession,
   setSessionSegment,
   type Menu,
@@ -98,6 +101,8 @@ export default function PosPage() {
   const [manualOpen, setManualOpen] = useState(false)
   const [manualVal, setManualVal] = useState('')
   const [showHistory, setShowHistory] = useState(false)
+  const [editingReceipt, setEditingReceipt] = useState<LocalReceiptRow | null>(null)
+  const [returning, setReturning] = useState<LocalReceiptRow | null>(null)
   const [submittingReceipt, setSubmittingReceipt] = useState(false)
 
   const [closing, setClosing] = useState(false)
@@ -284,6 +289,9 @@ export default function PosPage() {
         total: cartTotal,
         received: receivedNum,
         people: Math.max(1, people),
+        label: loadedTicket?.label || undefined,
+        cardNo: loadedTicket?.card_no,
+        ticketId: ticketId ?? undefined,
       })
       refresh()
       if (ticketId) {
@@ -309,6 +317,35 @@ export default function PosPage() {
     if (!r) return
     await voidReceipt(r)
     refresh()
+  }
+
+  // 会計済みの内容を、レジに戻す: その会計は取り消し(売上から外れる)、明細をカートに入れ直す。伝票があった会計は、伝票も会計前に戻す
+  const returnToRegister = async (r: LocalReceiptRow) => {
+    const nextQty: Record<string, number> = {}
+    const manual: ManualItem[] = []
+    for (const l of r.lines) {
+      const m = l.menuId ? menus.find((x) => x.id === l.menuId) : undefined
+      // メニューのままでは、いまの値段に戻ってしまう明細(単価を直したもの)は、金額入力として戻す
+      if (m && m.price === l.unitPrice) nextQty[m.id] = (nextQty[m.id] ?? 0) + l.qty
+      else for (let n = 0; n < l.qty; n++) manual.push({ id: crypto.randomUUID(), price: l.unitPrice })
+    }
+    await voidReceipt(r)
+    refresh()
+    if (r.ticketId) {
+      try {
+        await ticketActions.setStatus(r.ticketId, 'open')
+        setTicketId(r.ticketId)
+      } catch {
+        setTicketId(null)
+      }
+    } else setTicketId(null)
+    setQty(nextQty)
+    setManualItems(manual)
+    setPeople(r.people ?? 1)
+    setReceived('')
+    setStep('select')
+    setReturning(null)
+    setShowHistory(false)
   }
 
   const openClosing = () => {
@@ -585,22 +622,26 @@ export default function PosPage() {
         {showHistory && activeReceipts.length > 0 && (
           <div className="border-t border-stone-200 pt-2 space-y-2">
             {activeReceipts.map((r) => (
-              <div key={r.id} className="flex items-start justify-between gap-2">
+              <div key={r.id} className="flex items-start justify-between gap-1">
                 <div className="flex-1 min-w-0">
-                  <span className="text-xs text-stone-400 mr-2">
-                    {new Date(r.createdAt).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })}
-                  </span>
-                  <span className="text-sm text-stone-700">
-                    {r.lines.map((it) => `${it.nameSnapshot}×${it.qty}`).join('、')}
-                  </span>
-                  <span className="ml-2 font-semibold text-stone-800">¥{r.total.toLocaleString()}</span>
+                  <p className="flex flex-wrap items-baseline gap-x-2">
+                    <span className="text-xs text-stone-400">
+                      {new Date(r.createdAt).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                    {r.label && <span className="text-sm font-bold text-stone-900">{r.label}</span>}
+                    {r.cardNo != null && <span className="text-xs text-stone-500">テーブル{r.cardNo}</span>}
+                    <span className="font-semibold text-stone-800">¥{r.total.toLocaleString()}</span>
+                  </p>
+                  <p className="text-sm text-stone-700">{r.lines.map((it) => `${it.nameSnapshot}×${it.qty}`).join('、')}</p>
                 </div>
-                <button
-                  onClick={() => void handleVoid(r.id)}
-                  className="text-red-400 shrink-0 active:text-red-600"
-                  title="削除"
-                >
-                  <Trash2 className="w-4 h-4" />
+                <button onClick={() => setEditingReceipt(r)} aria-label="会計を直す" title="直す" className="shrink-0 w-11 h-11 flex items-center justify-center text-stone-500 active:bg-stone-100 rounded-lg">
+                  <Pencil className="w-5 h-5" />
+                </button>
+                <button onClick={() => setReturning(r)} aria-label="レジに戻す" title="レジに戻す" className="shrink-0 w-11 h-11 flex items-center justify-center text-amber-700 active:bg-amber-50 rounded-lg">
+                  <Undo2 className="w-5 h-5" />
+                </button>
+                <button onClick={() => void handleVoid(r.id)} className="shrink-0 w-11 h-11 flex items-center justify-center text-red-400 active:text-red-600 rounded-lg" aria-label="削除" title="削除">
+                  <Trash2 className="w-5 h-5" />
                 </button>
               </div>
             ))}
@@ -650,6 +691,26 @@ export default function PosPage() {
             </p>
           )}
         </div>
+      )}
+
+      {editingReceipt && (
+        <ReceiptEditor
+          receipt={editingReceipt}
+          onSave={async (e) => {
+            await updateReceipt(editingReceipt, e)
+            refresh()
+          }}
+          onClose={() => setEditingReceipt(null)}
+        />
+      )}
+      {returning && (
+        <ConfirmModal
+          message={`${returning.label ? `${returning.label}さんの` : ''}この会計（¥${returning.total.toLocaleString()}）を取り消して、内容をレジに戻します。${cartCount > 0 ? '\nいまレジに入れている内容は消えます。' : ''}`}
+          confirmLabel="レジに戻す"
+          tone="primary"
+          onConfirm={() => void returnToRegister(returning)}
+          onCancel={() => setReturning(null)}
+        />
       )}
 
       {confirmRelease && (

@@ -343,3 +343,25 @@ describe('伝票に出す、新規・何回目', () => {
     expect(guestBadge({ ...r, visit_no: 5 }, st(1))).toMatchObject({ isNew: false, nth: 5 })
   })
 })
+
+import { applyReceiptEdit } from './pos'
+describe('会計の編集', () => {
+  const base = {
+    id: 'r', sessionId: 's', total: 2300, received: 3000, people: 1, voided: false, createdAt: '2026-11-14T10:00:00Z', synced: true,
+    lines: [
+      { id: 'a', menuId: 'm1', nameSnapshot: 'ビリヤニ', qty: 1, unitPrice: 2000 },
+      { id: 'b', menuId: 'm2', nameSnapshot: 'アチャール', qty: 1, unitPrice: 300 },
+    ],
+  }
+  it('合計は明細から計算し、消した明細を覚える', () => {
+    const e = applyReceiptEdit(base, { label: 'やまだ', lines: [{ ...base.lines[0], qty: 2 }], received: 5000, people: 2 })
+    expect(e.total).toBe(4000)
+    expect(e.deletedLineIds).toEqual(['b'])
+    expect(e.label).toBe('やまだ')
+    expect(e.synced).toBe(false)
+  })
+  it('名前を空にすると外れる', () => {
+    const e = applyReceiptEdit({ ...base, label: 'x' }, { label: ' ', lines: base.lines, received: 3000, people: 1 })
+    expect(e.label).toBeUndefined()
+  })
+})

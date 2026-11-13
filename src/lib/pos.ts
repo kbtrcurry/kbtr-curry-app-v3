@@ -6,6 +6,7 @@ import {
   localReceipts,
   type LocalSessionRow,
   type LocalReceiptRow,
+  type LocalReceiptLine,
 } from './offlineDb'
 import { flushQueue, getPendingCount, scheduleFlush, subscribeQueue } from './offlineQueue'
 
@@ -121,7 +122,7 @@ export type NewReceiptLine = { menuId: string | null; nameSnapshot: string; qty:
 
 export async function addReceipt(
   session: LocalSessionRow,
-  params: { lines: NewReceiptLine[]; total: number; received: number; people: number },
+  params: { lines: NewReceiptLine[]; total: number; received: number; people: number; label?: string; cardNo?: number; ticketId?: string },
 ): Promise<LocalReceiptRow> {
   const receipt: LocalReceiptRow = {
     id: crypto.randomUUID(),
@@ -133,6 +134,9 @@ export async function addReceipt(
     createdAt: new Date().toISOString(),
     lines: params.lines.map((l) => ({ id: crypto.randomUUID(), ...l })),
     synced: false,
+    ...(params.label ? { label: params.label } : {}),
+    ...(params.cardNo != null ? { cardNo: params.cardNo } : {}),
+    ...(params.ticketId ? { ticketId: params.ticketId } : {}),
   }
   await localReceipts.put(receipt)
   scheduleFlush(0)
@@ -141,6 +145,29 @@ export async function addReceipt(
 
 export async function voidReceipt(receipt: LocalReceiptRow): Promise<void> {
   await localReceipts.put({ ...receipt, voided: true, synced: false })
+  scheduleFlush(0)
+}
+
+/** 会計の内容を直す(名前・明細・預り・人数)。合計は明細から計算し直す。消した明細は、次の送信でサーバーからも消える */
+export type ReceiptEdit = { label: string; lines: LocalReceiptLine[]; received: number; people: number }
+export function applyReceiptEdit(r: LocalReceiptRow, e: ReceiptEdit): LocalReceiptRow {
+  const keep = new Set(e.lines.map((l) => l.id))
+  const removed = r.lines.filter((l) => !keep.has(l.id)).map((l) => l.id)
+  const { label: _old, ...rest } = r
+  void _old
+  return {
+    ...rest,
+    ...(e.label.trim() ? { label: e.label.trim() } : {}),
+    lines: e.lines,
+    total: e.lines.reduce((a, l) => a + l.unitPrice * l.qty, 0),
+    received: e.received,
+    people: Math.max(1, e.people),
+    deletedLineIds: [...new Set([...(r.deletedLineIds ?? []), ...removed])],
+    synced: false,
+  }
+}
+export async function updateReceipt(r: LocalReceiptRow, e: ReceiptEdit): Promise<void> {
+  await localReceipts.put(applyReceiptEdit(r, e))
   scheduleFlush(0)
 }
 

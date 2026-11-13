@@ -86,8 +86,8 @@ export const fmtPortions = (n: number): string => (Number.isInteger(n) ? String(
 
 // ---------- ビリヤニ1皿ずつへの、トッピング・アチャールの振り分け ----------
 
-/** 1皿ずつに付けられる品(トッピング増量・アチャール)。ソーダ・容器代などは含めない */
-export const isExtraName = (name: string): boolean => portionOf(name) === 0 && /パクチ|赤玉|ライタ|アチャール|増量|トッピング/.test(name) && !/ソーダ|サワー|容器/.test(name)
+/** 1皿ずつに付けられる品(トッピング増量・アチャール・ソーダ)。サワー・容器代などは含めない */
+export const isExtraName = (name: string): boolean => portionOf(name) === 0 && /パクチ|赤玉|ライタ|アチャール|増量|トッピング|ソーダ/.test(name) && !/サワー|容器/.test(name)
 /** ビリヤニの皿数(端数は切り上げ。0.5食でも1皿) */
 export const dishCount = (i: Pick<ResItem, 'name' | 'qty'>): number => (portionOf(i.name) > 0 ? Math.max(0, Math.ceil(i.qty)) : 0)
 /** 付けられる品ごとの、取り置きに入っている数(menu_id別) */

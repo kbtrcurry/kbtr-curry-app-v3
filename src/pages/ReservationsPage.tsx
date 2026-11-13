@@ -912,7 +912,7 @@ function ReservationRow({
     }
     return [...m.values()]
   })()
-  const sharedKinds = (it: ShortItem) => lines.length > 1 && ['パク', '赤玉', 'ライタ', 'アチャ'].includes(it.kind)
+  const sharedKinds = (it: ShortItem) => lines.length > 1 && ['パク', '赤玉', 'ライタ', 'アチャ', 'ソーダ'].includes(it.kind)
   const done = r.status === 'picked_up'
   const off = r.status === 'cancelled' || r.status === 'no_show'
   // 来店前 → 来店済み。来店済み・キャンセル・来なかった → 来店前（押し間違いは、もう一度押せば戻る）
@@ -940,11 +940,11 @@ function ReservationRow({
               {/* チップが多いときは、はみ出さず、この中で折り返す */}
               <span className="flex flex-wrap items-center gap-x-1 gap-y-[3px] min-w-0 flex-1 py-[3px]">
                 {ln && <ItemChip it={ln.it} />}
+                {/* うずらは、1食ごとの行すべてに付ける。ビリヤニの次に出す */}
+                {ln && r.uzura && <Chip kind="うずら">特典</Chip>}
                 {ln?.with.map((w) => (
                   <ItemChip key={w.key} it={w} />
                 ))}
-                {/* うずらは、1食ごとの行すべてに付ける */}
-                {ln && r.uzura && <Chip kind="うずら">特典</Chip>}
                 {ln && r.is_new && <span className="text-[11px] font-bold text-sky-700">新</span>}
                 {idx === 0 && (
                   <>

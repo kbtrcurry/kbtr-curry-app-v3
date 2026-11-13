@@ -714,10 +714,7 @@ export default function PosPage() {
       )}
       {deleting && (
         <ConfirmModal
-          message={`${deleting.label ? `${deleting.label}さんの` : ''}この会計（¥${deleting.total.toLocaleString()}）を削除します。売上から外れます。${deleting.ticketId ? '
-席の注文も取り消されるので、「あと何食」も元に戻ります。' : ''}
-
-やり直すだけなら、削除ではなく「直す」か「レジに戻す」を使ってください。`}
+          message={`${deleting.label ? `${deleting.label}さんの` : ''}この会計（¥${deleting.total.toLocaleString()}）を削除します。売上から外れます。${deleting.ticketId ? '\n席の注文も取り消されるので、「あと何食」も元に戻ります。' : ''}\n\nやり直すだけなら、削除ではなく「直す」か「レジに戻す」を使ってください。`}
           confirmLabel="削除する"
           onConfirm={() => {
             const id = deleting.id

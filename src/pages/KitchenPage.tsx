@@ -18,6 +18,7 @@ import {
   isTakeoutCard,
   itemKey,
   pendingQty,
+  withoutAttached,
   stickerCount,
   handedAtRegister,
   kitchenQueue,
@@ -147,7 +148,7 @@ export default function KitchenPage() {
       await actions.unserveItem(t.id, key)
       return
     }
-    const last = t.items.filter((i) => pendingQty(i) > 0).every((i) => itemKey(i) === key)
+    const last = pendingItems(t.items).every((i) => itemKey(i) === key)
     setChecked((c) => ({ ...c, [t.id]: [...new Set([...(c[t.id] ?? []), key])] }))
     if (last) {
       setUndos((u) => [...u, { id: t.id, card: t.card_no, key }])
@@ -158,7 +159,8 @@ export default function KitchenPage() {
   // カードに出す行: まだ出していないメニュー + チェックを入れたメニュー(取り消し線)
   const linesOf = (t: Ticket) => {
     const out: { key: string; name: string; pend: number; doneQty: number; fresh: boolean; dishes: string[][] }[] = []
-    for (const it of t.items) {
+    // 皿に付けた品は、ビリヤニの下に出すので、単品の行からは外す
+    for (const it of withoutAttached(t.items)) {
       const key = itemKey(it)
       const pend = pendingQty(it)
       const mine = checked[t.id]?.includes(key)

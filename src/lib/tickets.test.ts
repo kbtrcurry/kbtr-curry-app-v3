@@ -305,3 +305,29 @@ describe('出し終えた席への追加注文を、確定すると調理場に�
     expect(pendingItems(r.items).map((i) => i.qty)).toEqual([1, 1])
   })
 })
+
+import { normalizeAgainst, withoutAttached } from './tickets'
+describe('追加注文が調理場の「未提供」に出る・皿の付け合わせは単品に出さない', () => {
+  it('提供済みの伝票に足した新しい品は、まだ出していない扱いになる', () => {
+    const prev = [{ menu_id: 'b', name: 'ビリヤニ', price: 2000, qty: 1, served_qty: 1 }]
+    const edited = [...prev, { menu_id: 'd', name: 'ソーダ', price: 500, qty: 1 }]
+    const next = normalizeAgainst(prev, 'served', edited)
+    expect(next[1].served_qty).toBe(0)
+    expect(hasPending(next)).toBe(true)
+  })
+  it('古い記録(出した数なし)の提供済みの品は、出し終え扱いのまま', () => {
+    const prev = [{ menu_id: 'b', name: 'ビリヤニ', price: 2000, qty: 1 }]
+    const next = normalizeAgainst(prev, 'served', prev)
+    expect(next[0].served_qty).toBe(1)
+  })
+  it('皿に付けた品は単品に数えない。付けていない分だけ残る', () => {
+    const items = [
+      { menu_id: 'b', name: 'ビリヤニ', price: 2000, qty: 1, attach: [['a']] },
+      { menu_id: 'a', name: '川海老のアチャール', price: 300, qty: 2 },
+    ]
+    const v = withoutAttached(items)
+    expect(v.find((i) => i.menu_id === 'a')?.qty).toBe(1)
+    const only = [items[0], { ...items[1], qty: 1 }]
+    expect(withoutAttached(only).some((i) => i.menu_id === 'a')).toBe(false)
+  })
+})

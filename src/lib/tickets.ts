@@ -2,7 +2,7 @@
 import { useEffect } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from './supabase'
-import { portionOf } from './reservations'
+import { attachedTotals, isExtraItem, portionOf } from './reservations'
 import { enqueue, getEntries, completeEntry, dropEntry, releaseHold, type OutboxEntry } from './ticketOutbox'
 
 export type TicketItem = {
@@ -84,11 +84,28 @@ export const stickerCount = (items: { name: string; qty: number }[]): number => 
 export const CONTAINER_FEE = 100
 export const isContainerName = (name: string): boolean => /容器/.test(name)
 export const pendingQty = (i: TicketItem): number => (handedAtRegister(i.name) || isContainerName(i.name) ? 0 : Math.max(0, i.qty - (i.served_qty ?? 0)))
-export const hasPending = (items: TicketItem[]): boolean => items.some((i) => pendingQty(i) > 0)
+/**
+ * 皿に付けた品(川海老のアチャール・パクチーなど)は、その皿(ビリヤニ)と一緒に出すので、単品としては数えない。
+ * 皿に付けていない分だけを、単品として残す。調理場・提供前の判定に使う。
+ */
+export function withoutAttached(items: TicketItem[]): TicketItem[] {
+  const att = { ...attachedTotals(items) }
+  return items
+    .map((i) => {
+      if (!i.menu_id || !isExtraItem(i) || !(att[i.menu_id] > 0)) return i
+      const use = Math.min(i.qty, att[i.menu_id])
+      att[i.menu_id] -= use
+      const qty = i.qty - use
+      return { ...i, qty, ...(i.served_qty != null ? { served_qty: Math.min(i.served_qty, qty) } : {}) }
+    })
+    .filter((i) => i.qty > 0)
+}
+
+export const hasPending = (items: TicketItem[]): boolean => withoutAttached(items).some((i) => pendingQty(i) > 0)
 
 /** まだ出していない品だけ(数は、出していない分)。調理場のカードに出す */
 export function pendingItems(items: TicketItem[]): TicketItem[] {
-  return items.filter((i) => pendingQty(i) > 0).map((i) => ({ ...i, qty: pendingQty(i) }))
+  return withoutAttached(items).filter((i) => pendingQty(i) > 0).map((i) => ({ ...i, qty: pendingQty(i) }))
 }
 
 /** 「提供済みにする」: 全部を出した状態にする(押す前の数を控えて、戻せるようにする) */
@@ -121,12 +138,28 @@ export const unserveItemKey = (items: TicketItem[], key: string): TicketItem[] =
 export const normalizeServed = (items: TicketItem[], status: TicketStatus): TicketItem[] =>
   status === 'served' ? items.map((i) => (i.served_qty == null ? { ...i, served_qty: i.qty } : i)) : items
 
+/**
+ * 注文を直したあとの品目に、出した数(served_qty)を合わせる。
+ * 以前からあった品は、その出した数を引き継ぐ(提供済みの伝票で記録のない古い品は、出し終えたものとして扱う)。
+ * 新しく足された品は、まだ出していない(0)。ここで出し終え扱いにすると、追加の注文が調理場に出なくなる。
+ */
+export function normalizeAgainst(prev: TicketItem[], status: TicketStatus, items: TicketItem[]): TicketItem[] {
+  const key = (i: TicketItem) => `${i.menu_id ?? ''}|${i.name}|${i.from_res ? 'r' : 'a'}`
+  const before = new Map(normalizeServed(prev, status).map((i) => [key(i), i]))
+  return items.map((i) => {
+    if (i.served_qty != null) return i
+    const o = before.get(key(i))
+    if (o) return { ...i, served_qty: Math.min(o.served_qty ?? 0, i.qty) }
+    return status === 'served' ? { ...i, served_qty: 0 } : i
+  })
+}
+
 /** 調理場での順番を決める時刻。追加注文は、足された時刻から数える */
 export function queueTime(t: Ticket): string {
   const followUp = t.items.some((i) => (i.served_qty ?? 0) > 0)
   if (!followUp) return t.created_at
   return (
-    t.items
+    withoutAttached(t.items)
       .filter((i) => pendingQty(i) > 0)
       .map((i) => i.added_at ?? t.created_at)
       .sort()[0] ?? t.created_at
@@ -516,7 +549,7 @@ export function useTicketActions(date: string) {
     setItems(id: string, items: TicketItem[], opts?: { hold?: boolean }): Promise<void> {
       // 提供済みの席に品を足したら調理場へ出し直し、足した分を取り消して全部出し終えていれば提供済みに戻す
       const cur = (qc.getQueryData<Ticket[]>(['tickets', date]) ?? []).find((t) => t.id === id)
-      const next = cur ? normalizeServed(items, cur.status) : items
+      const next = cur ? normalizeAgainst(cur.items, cur.status, items) : items
       let status: TicketStatus | undefined
       if (cur && next.length > 0) {
         const pending = hasPending(next)

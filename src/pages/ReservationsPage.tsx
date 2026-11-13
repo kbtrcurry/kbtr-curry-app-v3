@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { isMissingTable, itemsFromReservation, nextFreeLabel, useDayTickets, useTicketActions, useTickets, voidDayTickets, walkinBiryaniPortions } from '../lib/tickets'
+import { isMissingTable, itemsFromReservation, nextFreeLabel, useDayTickets, useTicketActions, useTickets, voidDayTickets, walkinBiryaniPortions, type Ticket } from '../lib/tickets'
 import { limitedRows, remaining, reservedPortions, useLimitedIds } from '../lib/walkinStock'
 import { RemainingTiles } from '../components/RemainingTiles'
 import { TablePicker } from '../components/TablePicker'
@@ -120,11 +120,27 @@ export default function ReservationsPage() {
   const [seatError, setSeatError] = useState<string | null>(null)
   const todayTickets = useTickets(today)
   const todayActions = useTicketActions(today)
-  const applyStatus = async (r: Reservation, s: ResStatus) => {
+  // 取り置きから席に入れた伝票(会計前のもの)
+  const seatTickets = (resId: string) => (todayTickets.data ?? []).filter((t) => t.reservation_id === resId && (t.status === 'open' || t.status === 'served'))
+  const voidSeats = async (ts: Ticket[]) => {
+    for (const t of ts) await todayActions.setStatus(t.id, 'void')
+  }
+  // 来店済みを戻したとき、席に入れた注文を消す。追加の注文や、出した品があるときは、先に確認する
+  const [dropAsk, setDropAsk] = useState<{ r: Reservation; s: ResStatus; ts: Ticket[] } | null>(null)
+  const commitStatus = async (r: Reservation, s: ResStatus, ts: Ticket[]) => {
     const prev = r.status
     await setReservationStatus(r.id, s)
+    await voidSeats(ts)
     invalidate()
     setUndo({ id: r.id, prev, text: `${r.name || '取り置き'}：${STATUS_LABEL[prev]} → ${STATUS_LABEL[s]}` })
+  }
+  const applyStatus = async (r: Reservation, s: ResStatus) => {
+    const ts = r.status === 'picked_up' && s !== 'picked_up' ? seatTickets(r.id) : []
+    if (ts.some((t) => t.items.some((i) => !i.from_res || (i.served_qty ?? 0) > 0))) {
+      setDropAsk({ r, s, ts })
+      return
+    }
+    await commitStatus(r, s, ts)
   }
 
   const menus = useActiveMenus()
@@ -549,6 +565,18 @@ export default function ReservationsPage() {
           </div>
         </div>
       )}
+      {dropAsk && (
+        <ConfirmModal
+          message={`${dropAsk.r.name || '取り置き'}さんの席（テーブル${dropAsk.ts.map((t) => t.card_no).join('・')}）には、追加の注文や、すでに出した品があります。「${STATUS_LABEL[dropAsk.s]}」に戻すと、その席の注文も消えます。`}
+          confirmLabel="注文を消して戻す"
+          onConfirm={() => {
+            const a = dropAsk
+            setDropAsk(null)
+            void commitStatus(a.r, a.s, a.ts)
+          }}
+          onCancel={() => setDropAsk(null)}
+        />
+      )}
       {undo && (
         <div className="fixed left-0 right-0 bottom-[calc(5.5rem+env(safe-area-inset-bottom,0px))] md:bottom-6 z-[60] flex justify-center px-4 pointer-events-none">
           <div className="pointer-events-auto flex items-center gap-3 bg-stone-900 text-stone-50 border border-stone-300 rounded-xl px-4 py-2.5 shadow-lg max-w-md w-full">
@@ -558,6 +586,8 @@ export default function ReservationsPage() {
                 const u = undo
                 setUndo(null)
                 await setReservationStatus(u.id, u.prev)
+                // 来店済みにした操作を戻すときは、席に入れた注文も消す
+                if (u.prev === 'reserved') await voidSeats(seatTickets(u.id))
                 invalidate()
               }}
               className="text-base font-bold text-amber-300 shrink-0 px-3 h-11"

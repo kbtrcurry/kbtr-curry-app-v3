@@ -4,7 +4,14 @@ import { supabase } from './supabase'
 
 export type Platform = 'x' | 'instagram' | 'other'
 export type ResStatus = 'reserved' | 'picked_up' | 'no_show' | 'cancelled'
-export type ResItem = { menu_id: string | null; name: string; qty: number; takeout?: boolean }
+export type ResItem = {
+  menu_id: string | null
+  name: string
+  qty: number
+  takeout?: boolean
+  /** ビリヤニの品目だけ: 1皿ずつ(配列の順)に付ける、トッピング・アチャールのメニューID。付け先を決めていなければなし */
+  attach?: string[][]
+}
 export type Reservation = {
   id: string
   service_date: string
@@ -76,6 +83,68 @@ export const WALKIN_ITEM = 'ビリヤニ（当日・盛り未定）'
 export const isWalkin = (r: Pick<Reservation, 'name' | 'items'>): boolean => r.name === WALKIN_NAME && r.items.length > 0 && r.items.every((i) => i.menu_id === null)
 /** 1.5 のような食数を表示用に（整数なら小数なし） */
 export const fmtPortions = (n: number): string => (Number.isInteger(n) ? String(n) : (Math.round(n * 10) / 10).toFixed(1))
+
+// ---------- ビリヤニ1皿ずつへの、トッピング・アチャールの振り分け ----------
+
+/** 1皿ずつに付けられる品(トッピング増量・アチャール)。ソーダ・容器代などは含めない */
+export const isExtraName = (name: string): boolean => portionOf(name) === 0 && /パクチ|赤玉|ライタ|アチャール|増量|トッピング/.test(name) && !/ソーダ|サワー|容器/.test(name)
+/** ビリヤニの皿数(端数は切り上げ。0.5食でも1皿) */
+export const dishCount = (i: Pick<ResItem, 'name' | 'qty'>): number => (portionOf(i.name) > 0 ? Math.max(0, Math.ceil(i.qty)) : 0)
+/** 付けられる品ごとの、取り置きに入っている数(menu_id別) */
+export function extraTotals(items: ResItem[]): Record<string, number> {
+  const out: Record<string, number> = {}
+  for (const i of items) if (i.menu_id && isExtraName(i.name)) out[i.menu_id] = (out[i.menu_id] ?? 0) + i.qty
+  return out
+}
+/** 振り分け済みの数(menu_id別) */
+export function attachedTotals(items: ResItem[]): Record<string, number> {
+  const out: Record<string, number> = {}
+  for (const i of items) for (const d of i.attach ?? []) for (const id of d) out[id] = (out[id] ?? 0) + 1
+  return out
+}
+/** 振り分けを、いまの品目・数に合わせて直す。皿数を超えた分・入っていない品・数を超えた分は外す(メニューや数を変えたあとの整合用) */
+export function sanitizeAttach(items: ResItem[]): ResItem[] {
+  const left = extraTotals(items)
+  return items.map((i) => {
+    const n = dishCount(i)
+    if (!i.attach || n === 0) {
+      if (!('attach' in i)) return i
+      const { attach: _drop, ...rest } = i
+      void _drop
+      return rest
+    }
+    const att: string[][] = []
+    for (let d = 0; d < n; d++) {
+      const keep: string[] = []
+      for (const id of new Set(i.attach[d] ?? [])) {
+        if ((left[id] ?? 0) >= 1) {
+          left[id] -= 1
+          keep.push(id)
+        }
+      }
+      att.push(keep)
+    }
+    if (att.every((d) => d.length === 0)) {
+      const { attach: _drop, ...rest } = i
+      void _drop
+      return rest
+    }
+    return { ...i, attach: att }
+  })
+}
+/** items[itemIdx] の dish 皿目に、extraId を付ける/外す。付けられる数が残っていなければ変えない */
+export function toggleAttach(items: ResItem[], itemIdx: number, dish: number, extraId: string): ResItem[] {
+  const it = items[itemIdx]
+  if (!it || dish < 0 || dish >= dishCount(it)) return items
+  const cur: string[][] = Array.from({ length: dishCount(it) }, (_, d) => [...(it.attach?.[d] ?? [])])
+  if (cur[dish].includes(extraId)) cur[dish] = cur[dish].filter((x) => x !== extraId)
+  else {
+    const used = attachedTotals(items)[extraId] ?? 0
+    if (used >= (extraTotals(items)[extraId] ?? 0)) return items
+    cur[dish].push(extraId)
+  }
+  return sanitizeAttach(items.map((x, k) => (k === itemIdx ? { ...x, attach: cur } : x)))
+}
 
 /** 取り置き中（まだ受け取っていない）の、メニュー別の数 */
 export function reservedByMenu(list: Reservation[]): Record<string, number> {
@@ -404,6 +473,12 @@ export type ReservationInput = Omit<Reservation, 'id' | 'created_at' | 'status' 
   visit_time?: string
   is_new?: boolean
   uzura?: boolean
+}
+
+/** 品目だけを更新する(1皿ずつの振り分けなど) */
+export async function saveReservationItems(id: string, items: ResItem[]): Promise<void> {
+  const { error } = await supabase.from('reservations').update({ items: sanitizeAttach(items) }).eq('id', id)
+  if (error) throw error
 }
 
 export async function saveReservation(r: ReservationInput): Promise<void> {

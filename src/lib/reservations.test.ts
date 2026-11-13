@@ -1,6 +1,10 @@
 import { describe, it, expect } from 'vitest'
 import {
   parseReservationText,
+  sanitizeAttach,
+  toggleAttach,
+  attachedTotals,
+  type ResItem,
   extractName,
   isWalkin,
   WALKIN_ITEM,
@@ -296,3 +300,30 @@ describe('当日分の枠', () => {
   })
 })
 
+
+describe('ビリヤニ1皿ずつの振り分け', () => {
+  const base: ResItem[] = [
+    { menu_id: 'b', name: 'ビリヤニ', qty: 2 },
+    { menu_id: 'p', name: 'パクチー増量', qty: 1 },
+    { menu_id: 'a', name: '川海老のアチャール', qty: 2 },
+  ]
+  it('押した皿に付き、もう一度押すと外れる', () => {
+    const on = toggleAttach(base, 0, 1, 'p')
+    expect(on[0].attach).toEqual([[], ['p']])
+    const off = toggleAttach(on, 0, 1, 'p')
+    expect(off[0].attach).toBeUndefined()
+  })
+  it('取り置きに入っている数を超えては付けられない', () => {
+    const a = toggleAttach(base, 0, 0, 'p')
+    const b = toggleAttach(a, 0, 1, 'p')
+    expect(b).toBe(a)
+    expect(attachedTotals(b)).toEqual({ p: 1 })
+  })
+  it('数を減らしたら、合わなくなった振り分けは外れる', () => {
+    const a = toggleAttach(toggleAttach(base, 0, 0, 'a'), 0, 1, 'a')
+    const less = a.map((i) => (i.menu_id === 'a' ? { ...i, qty: 1 } : i))
+    expect(attachedTotals(sanitizeAttach(less))).toEqual({ a: 1 })
+    const fewerDishes = a.map((i) => (i.menu_id === 'b' ? { ...i, qty: 1 } : i))
+    expect(sanitizeAttach(fewerDishes)[0].attach).toEqual([['a']])
+  })
+})

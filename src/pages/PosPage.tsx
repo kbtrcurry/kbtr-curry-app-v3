@@ -20,6 +20,8 @@ import {
 } from '../lib/pos'
 import { updateMenu } from '../lib/masterData'
 import { todayStr, useSegments } from '../lib/accounting'
+import { useGuests } from '../lib/guests'
+import { GuestChip } from '../components/GuestChip'
 import { ticketCount, ticketTotal, useTicketActions, useTickets, type Ticket } from '../lib/tickets'
 import { isEventCode } from '../lib/events'
 import {
@@ -87,6 +89,7 @@ export default function PosPage() {
   // 会計中の伝票（カード番号の伝票を会計に呼び出したとき）
   const [ticketId, setTicketId] = usePersistedState<string | null>('kbtr_v3_pos_ticket', null)
   const ticketsQ = useTickets(todayStr())
+  const guestOf = useGuests()
   const ticketActions = useTicketActions(todayStr())
   const openTickets = (ticketsQ.data ?? []).filter((t) => t.status === 'open' || t.status === 'served')
   const loadedTicket = openTickets.find((t) => t.id === ticketId)
@@ -605,6 +608,12 @@ export default function PosPage() {
               >
                 <span className="block text-xs">テーブル</span>
                 <span className="block text-2xl font-bold leading-none">{t.card_no}</span>
+                {t.label && <span className="block text-xs font-bold mt-0.5 max-w-[6.5rem] truncate">{t.label}</span>}
+                {guestOf(t) && (
+                  <span className="block mt-0.5">
+                    <GuestChip g={guestOf(t)} />
+                  </span>
+                )}
                 <span className="block text-xs mt-0.5">
                   {ticketCount(t.items)}点 {ticketTotal(t.items).toLocaleString()}円
                 </span>
@@ -613,7 +622,10 @@ export default function PosPage() {
           </div>
           {loadedTicket && (
             <p className="text-xs text-amber-900">
-              カード {loadedTicket.card_no} を会計中。グッズなどはメニューから足せます。
+              カード {loadedTicket.card_no}{loadedTicket.label ? `（${loadedTicket.label}）` : ''} を会計中。グッズなどはメニューから足せます。
+              <span className="ml-1 align-middle">
+                <GuestChip g={guestOf(loadedTicket)} />
+              </span>
               <button onClick={clearTicket} className="ml-2 underline text-stone-500">
                 解除
               </button>

@@ -3,6 +3,8 @@ import { ChefHat } from 'lucide-react'
 import { useAuth } from '../lib/auth'
 import { Spinner } from '../components/Spinner'
 import { todayStr } from '../lib/accounting'
+import { useGuests } from '../lib/guests'
+import { GuestChip } from '../components/GuestChip'
 import {
   biryaniDishes,
   elapsedMinutes,
@@ -33,6 +35,7 @@ export default function KitchenPage() {
   const { session, loading: authLoading, loginWithGoogle } = useAuth()
   const date = todayStr()
   const tq = useTickets(date, POLL_MS)
+  const guestOf = useGuests()
   const actions = useTicketActions(date)
   const [sound, setSound] = useState(false)
   const [now, setNow] = useState(() => Date.now())
@@ -218,7 +221,8 @@ export default function KitchenPage() {
                 <span className="text-4xl font-bold text-amber-800 leading-none">{t.card_no}</span>
                 {isTakeoutCard(t.card_no) && <span className="text-xs font-bold text-white bg-orange-600 rounded px-1.5 py-0.5">持ち帰り</span>}
                 {isFollowUp(t) && <span className="text-xs font-bold text-white bg-sky-600 rounded px-1.5 py-0.5">追加</span>}
-                {t.label && <span className="text-sm font-semibold text-sky-700">{t.label}</span>}
+                {t.label && <span className="text-base font-bold text-stone-800">{t.label}</span>}
+                <GuestChip g={guestOf(t)} big />
                 <span className={`ml-auto text-lg font-bold ${waitTone(min)}`}>{min}分</span>
               </div>
               <p className="text-xs text-stone-400 mt-0.5">
@@ -254,7 +258,8 @@ export default function KitchenPage() {
                   <div className="flex items-baseline gap-2">
                     <span className="text-sm text-stone-500">テーブル</span>
                     <span className="text-2xl font-bold text-stone-700 leading-none">{t.card_no}</span>
-                    {t.label && <span className="text-sm text-sky-700">{t.label}</span>}
+                    {t.label && <span className="text-sm text-stone-700">{t.label}</span>}
+                    <GuestChip g={guestOf(t)} />
                     <span className="ml-auto text-xs text-stone-400">{t.served_at ? `${elapsedMinutes(t.served_at, now)}分前に提供` : ''}</span>
                   </div>
                   <p className="text-sm text-stone-600 mt-1">{mergeItems(t.items).map((it) => `${it.name}×${it.qty}`).join('　')}</p>

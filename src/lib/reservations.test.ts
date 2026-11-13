@@ -327,3 +327,19 @@ describe('ビリヤニ1皿ずつの振り分け', () => {
     expect(sanitizeAttach(fewerDishes)[0].attach).toEqual([['a']])
   })
 })
+
+import { guestBadge } from './guests'
+describe('伝票に出す、新規・何回目', () => {
+  const r = { name: 'やまだ', is_new: false, visit_no: null, platform: 'x' as const, handle: 'y' }
+  const st = (reservations: number, visitNo = 0) => ({ key: 'x:y', platform: 'x' as const, handle: 'y', name: 'やまだ', reservations, pickedUp: 0, noShow: 0, visitNo, lastDate: '', note: null })
+  it('履歴がこの1件だけなら新規', () => {
+    expect(guestBadge(r, st(1))).toMatchObject({ isNew: true, nth: 1 })
+    expect(guestBadge(r, undefined)).toMatchObject({ isNew: true, nth: 1 })
+  })
+  it('前に取り置きがあれば何回目(この1件は数えない)', () => {
+    expect(guestBadge(r, st(3))).toMatchObject({ isNew: false, nth: 3 })
+  })
+  it('メモの「◯回目」が優先', () => {
+    expect(guestBadge({ ...r, visit_no: 5 }, st(1))).toMatchObject({ isNew: false, nth: 5 })
+  })
+})

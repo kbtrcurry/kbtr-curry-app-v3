@@ -2,6 +2,8 @@
 import { useState } from 'react'
 import PnlTab from './analysis/PnlTab'
 import SessionsTab from './analysis/SessionsTab'
+import OverviewTab from './analysis/OverviewTab'
+import type { MenuStat } from '../lib/menuStats'
 import { sessionStats, summarizeSessions, weekdayStats, segmentSessionStats, type SessionInput } from '../lib/sessionStats'
 import { foodCostView, lastMonths, monthlyProfitSeries, pnlFromEntries, entriesOfMonth, type FoodChoice } from '../lib/analysis'
 import type { JournalEntry } from '../lib/accounting'
@@ -74,9 +76,12 @@ const SESSIONS: SessionInput[] = [
 const SALES: Record<string, number> = { a: 41000, b: 64000, c: 182000, d: 18500, e: 47000, p: 39000 }
 const FOOD: Record<string, number> = { a: 12000, b: 19500, c: 52000, d: 6000, e: 14500, p: 11800 }
 
+const menu = (name: string, qty: number, sales: number): MenuStat => ({ key: name, name, qty, sales, cost: null, gross: null, costRate: null, unitGross: null, quadrant: null, hidden: false, unsold: false })
+const DEMO_MENUS = [menu('マトンビリヤニ 並', 62, 124000), menu('チキンカレー', 40, 52000), menu('ライタ', 55, 16500), menu('川海老のアチャール', 21, 6300), menu('ソーダ', 18, 9000), menu('ステッカー', 8, 4000)]
+
 export default function AnalysisDemo() {
   const [choice, setChoice] = useState<FoodChoice>('auto')
-  const [tab, setTab] = useState<'pnl' | 'sessions'>('sessions')
+  const [tab, setTab] = useState<'overview' | 'pnl' | 'sessions'>('overview')
   const m = '2026-10'
   const pnl = pnlFromEntries(entriesOfMonth(ENTRIES, m))
   const prevPnl = pnlFromEntries(entriesOfMonth(ENTRIES, '2026-09'))
@@ -87,17 +92,19 @@ export default function AnalysisDemo() {
     <>
       <div className="p-4 pb-24 max-w-2xl mx-auto space-y-3">
         <div className="flex gap-1.5" role="tablist">
-          {(['pnl', 'sessions'] as const).map((k) => (
+          {(['overview', 'pnl', 'sessions'] as const).map((k) => (
             <button
               key={k}
               onClick={() => setTab(k)}
               className={`flex-1 py-2 rounded-full text-sm font-semibold ${tab === k ? 'bg-amber-700 text-[#faf9f5]' : 'bg-stone-100 text-stone-600'}`}
             >
-              {k === 'pnl' ? '損益' : '営業'}
+              {k === 'overview' ? '概要' : k === 'pnl' ? '損益' : '営業'}
             </button>
           ))}
         </div>
-        {tab === 'pnl' ? (
+        {tab === 'overview' ? (
+          <OverviewTab month={m} stats={inMonth} prevStats={prevStats} menus={DEMO_MENUS} oneOffTotal={64800} oneOffIncluded={false} />
+        ) : tab === 'pnl' ? (
           <PnlTab
             month={m}
             pnl={pnl}

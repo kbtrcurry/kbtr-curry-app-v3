@@ -117,6 +117,50 @@ export function Stat({ label, value, sub, tone }: { label: string; value: string
   )
 }
 
+// 営業日ごとの売上（Airレジ・Squareの日別売上のような、数字つきの縦棒）。いちばん高い日を濃く、平均を点線で示す。
+export function SalesBars({ data, avg }: { data: { label: string; value: number }[]; avg?: number }) {
+  const n = data.length
+  if (n === 0) return null
+  const slot = 44
+  const W = Math.max(300, n * slot)
+  const height = 150
+  const top = 18
+  const bottom = 22
+  const plotH = height - top - bottom
+  const max = Math.max(1, ...data.map((d) => d.value))
+  const peak = data.findIndex((d) => d.value === max)
+  const bw = Math.min(26, (W / n) * 0.6)
+  const base = top + plotH
+  const avgY = avg != null && avg > 0 ? base - (avg / max) * plotH : null
+  return (
+    <div className="overflow-x-auto">
+      <svg viewBox={`0 0 ${W} ${height}`} style={{ width: W, minWidth: '100%' }} height={height} role="img" aria-label="営業日ごとの売上">
+        <line x1={0} x2={W} y1={base} y2={base} stroke="#d6d3d1" strokeWidth={1} />
+        {avgY != null && (
+          <g>
+            <line x1={0} x2={W} y1={avgY} y2={avgY} stroke="#a8a29e" strokeWidth={1} strokeDasharray="4 3" />
+          </g>
+        )}
+        {data.map((d, i) => {
+          const h = (d.value / max) * plotH
+          const x = i * (W / n) + (W / n - bw) / 2
+          return (
+            <g key={`${d.label}-${i}`}>
+              <rect x={x} y={base - h} width={bw} height={Math.max(h, d.value === 0 ? 0 : 1)} rx={3} fill={i === peak ? '#b45309' : '#d6b98c'} />
+              <text x={x + bw / 2} y={base - h - 3} textAnchor="middle" fontSize={10} className="fill-stone-800" fontWeight={i === peak ? 700 : 500}>
+                {shortYen(d.value)}
+              </text>
+              <text x={x + bw / 2} y={height - 6} textAnchor="middle" fontSize={10} className="fill-stone-500">
+                {d.label}
+              </text>
+            </g>
+          )
+        })}
+      </svg>
+    </div>
+  )
+}
+
 // 営業日ごとの 売上・経費・利益 の棒グラフ（日が多いときは横にスクロール）
 export function DayBars({ data }: { data: { label: string; sales: number; cost: number; profit: number }[] }) {
   const n = data.length

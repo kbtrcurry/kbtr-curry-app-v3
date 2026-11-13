@@ -24,12 +24,14 @@ import { expenseTotal, suggestOneOff, useOneOff } from '../lib/journalTags'
 import { useMetaAds } from '../lib/ads'
 import { OTHER_BUSINESS_CODES } from '../lib/events'
 import PnlTab from './analysis/PnlTab'
+import OverviewTab from './analysis/OverviewTab'
 import MenusTab from './analysis/MenusTab'
 import AdsTab from './analysis/AdsTab'
 import SessionsTab from './analysis/SessionsTab'
 
-type AnalysisTab = 'pnl' | 'sessions' | 'menus' | 'ads'
+type AnalysisTab = 'overview' | 'pnl' | 'sessions' | 'menus' | 'ads'
 const TABS: { key: AnalysisTab; label: string }[] = [
+  { key: 'overview', label: '概要' },
   { key: 'pnl', label: '損益' },
   { key: 'sessions', label: '営業' },
   { key: 'menus', label: 'メニュー' },
@@ -42,9 +44,9 @@ export default function AnalysisPage() {
   const thisMonth = currentYearMonth()
   const [month, setMonth] = useStoredState('kbtr_v3_analysis_month', thisMonth)
   const [choice, setChoice] = useStoredState<FoodChoice>('kbtr_v3_food_basis', 'auto')
-  const [tab, setTab] = usePersistedState<AnalysisTab>('kbtr_v3_analysis_tab', 'pnl')
+  const [tab, setTab] = usePersistedState<AnalysisTab>('kbtr_v3_analysis_tab2', 'overview')
   const data = useAnalysisData(month)
-  const activeTab: AnalysisTab = TABS.some((t) => t.key === tab) ? tab : 'pnl'
+  const activeTab: AnalysisTab = TABS.some((t) => t.key === tab) ? tab : 'overview'
   const metaAds = useMetaAds()
   const oneOff = useOneOff()
   const [includeOneOff, setIncludeOneOff] = useStoredState('kbtr_v3_include_one_off', false)
@@ -70,6 +72,8 @@ export default function AnalysisPage() {
     const spendOf = (m: string) => ads.filter((x) => x.date.startsWith(m)).reduce((a, x) => a + x.spend, 0)
     return {
       gap: foodGapSeries(kento, lastMonths(month, 6), data.theoreticalByMonth),
+      overview: { stats: inMonth, prevStats },
+      overviewMenus: menuStats(data.lines, new Set(inMonth.filter((x) => !x.isEvent).map((x) => x.id)), data.costByMenuId, []),
       menus: menuStats(data.lines, new Set(inMonth.map((x) => x.id)), data.costByMenuId, data.allMenus),
       ads: {
         metaSpend: spendOf(month),
@@ -160,6 +164,9 @@ export default function AnalysisPage() {
         ))}
       </div>
 
+      {!data.loading && activeTab === 'overview' && (
+        <OverviewTab month={month} stats={view.overview.stats} prevStats={view.overview.prevStats} menus={view.overviewMenus} oneOffTotal={view.oneOff.total} oneOffIncluded={includeOneOff} />
+      )}
       {!data.loading && activeTab === 'pnl' && (
         <PnlTab month={month} choice={choice} onChoice={setChoice} pnl={view.pnl} prevPnl={view.prevPnl} food={view.food} prevFood={view.prevFood} series={view.series} gap={view.gap} oneOff={view.oneOff} includeOneOff={includeOneOff} onIncludeOneOff={setIncludeOneOff} onMarkOneOff={(id, on) => void oneOff.set(id, on)} />
       )}

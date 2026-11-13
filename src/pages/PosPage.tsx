@@ -26,7 +26,7 @@ import { updateMenu } from '../lib/masterData'
 import { todayStr, useSegments } from '../lib/accounting'
 import { useGuests } from '../lib/guests'
 import { GuestChip } from '../components/GuestChip'
-import { ticketCount, ticketTotal, useTicketActions, useTickets, type Ticket } from '../lib/tickets'
+import { hasPending, ticketCount, ticketTotal, useDayTickets, useTicketActions, useTickets, type Ticket } from '../lib/tickets'
 import { isEventCode } from '../lib/events'
 import {
   normHandle,
@@ -94,6 +94,7 @@ export default function PosPage() {
   const [ticketId, setTicketId] = usePersistedState<string | null>('kbtr_v3_pos_ticket', null)
   const ticketsQ = useTickets(todayStr())
   const guestOf = useGuests()
+  const dayTicketsQ = useDayTickets(todayStr())
   const ticketActions = useTicketActions(todayStr())
   const openTickets = (ticketsQ.data ?? []).filter((t) => t.status === 'open' || t.status === 'served')
   const loadedTicket = openTickets.find((t) => t.id === ticketId)
@@ -342,7 +343,9 @@ export default function PosPage() {
     refresh()
     if (r.ticketId) {
       try {
-        await ticketActions.setStatus(r.ticketId, 'open')
+        // 会計の前に出し終えていた伝票は「提供済み」に、まだ出していない品が残っていたものは「注文中」に戻す
+        const t = (dayTicketsQ.data ?? []).find((x) => x.id === r.ticketId)
+        await ticketActions.setStatus(r.ticketId, t && !hasPending(t.items) ? 'served' : 'open')
         setTicketId(r.ticketId)
       } catch {
         setTicketId(null)

@@ -1,7 +1,9 @@
 import type { ReactNode } from 'react'
 import { lazy, Suspense, useEffect, useState } from 'react'
 import { BrowserRouter, Navigate, NavLink, Route, Routes, useLocation } from 'react-router-dom'
-import { QueryClient, QueryClientProvider, useQueryClient } from '@tanstack/react-query'
+import { QueryClient, useQueryClient } from '@tanstack/react-query'
+import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client'
+import { CACHE_MAX_AGE, queryPersister, shouldPersist } from './lib/queryPersist'
 import { useRegisterSW } from 'virtual:pwa-register/react'
 import {
   ShoppingCart,
@@ -50,7 +52,8 @@ import { SettingsSync } from './components/SettingsSync'
 
 const queryClient = new QueryClient({
   defaultOptions: {
-    queries: { staleTime: 60_000, retry: 2 },
+    // gcTime: 端末に残すデータを、使わない間も捨てないため(保存期間以上にする)
+    queries: { staleTime: 60_000, retry: 2, gcTime: CACHE_MAX_AGE },
   },
 })
 
@@ -248,7 +251,10 @@ function Content({ children }: { children: ReactNode }) {
 
 export default function App() {
   return (
-    <QueryClientProvider client={queryClient}>
+    <PersistQueryClientProvider
+      client={queryClient}
+      persistOptions={{ persister: queryPersister, maxAge: CACHE_MAX_AGE, buster: 'v1', dehydrateOptions: { shouldDehydrateQuery: shouldPersist } }}
+    >
       <AuthProvider>
         <BrowserRouter basename="/kbtr-curry-app-v3">
           <Preloader />
@@ -301,6 +307,6 @@ export default function App() {
           </BackHandlerProvider>
         </BrowserRouter>
       </AuthProvider>
-    </QueryClientProvider>
+    </PersistQueryClientProvider>
   )
 }

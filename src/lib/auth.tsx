@@ -1,5 +1,7 @@
 import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
 import type { Session } from '@supabase/supabase-js'
+import { useQueryClient } from '@tanstack/react-query'
+import { clearPersistedQueries } from './queryPersist'
 import { supabase } from './supabase'
 import { GMAIL_SCOPE } from './gmail'
 
@@ -17,6 +19,7 @@ type AuthCtx = {
 const Ctx = createContext<AuthCtx | null>(null)
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const qc = useQueryClient()
   const [session, setSession] = useState<Session | null>(null)
   const [loading, setLoading] = useState(true)
 
@@ -47,6 +50,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = async () => {
     await supabase.auth.signOut()
+    // 端末に残したデータ(取り置きなど)も消す。別の人が使うときに見えないように
+    qc.clear()
+    await clearPersistedQueries()
   }
 
   return (

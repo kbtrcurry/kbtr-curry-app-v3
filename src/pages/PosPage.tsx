@@ -679,8 +679,8 @@ export default function PosPage() {
       )}
 
       {openTickets.length > 0 && (
-        <div className="mb-3 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 space-y-2">
-          <p className="text-sm font-semibold text-amber-900">
+        <div className="mb-3 rounded-xl border border-stone-300 bg-stone-100 px-3 py-2 space-y-2">
+          <p className="text-sm font-semibold text-stone-900">
             会計前の伝票 <span className="text-xs font-normal">（オレンジ=調理中 / グレー=提供済みで会計待ち）</span>
           </p>
           <div className="flex flex-wrap gap-2">
@@ -705,7 +705,7 @@ export default function PosPage() {
                 <span className="block text-xs mt-0.5">
                   {ticketCount(t.items)}点 {ticketTotal(t.items).toLocaleString()}円
                 </span>
-                {stickerCount(t.items) > 0 && <span className="mt-0.5 inline-block rounded bg-pink-600 text-white text-[11px] font-bold px-1.5">ステッカー×{stickerCount(t.items)}</span>}
+                {stickerCount(t.items) > 0 && <span className="mt-0.5 inline-block rounded bg-pink-200 border border-pink-500 text-pink-950 text-[11px] font-bold px-1.5">ステッカー×{stickerCount(t.items)}</span>}
               </button>
             ))}
           </div>

@@ -936,7 +936,7 @@ function ReservationRow({
           {/* 1食＝1行。2食なら2行、3食なら3行。ソーダなど食に数えないものは、1行目に並べる */}
           {lines.map((ln, idx) => (
             <span key={idx} className="flex items-start gap-1.5 min-h-[26px]">
-              <span className="w-[5.4em] shrink-0 font-bold text-[15px] leading-[26px] text-stone-900 truncate">{idx === 0 ? r.name || '（名前なし）' : ''}</span>
+              <span className="w-[6em] shrink-0 font-bold text-[15px] leading-[18px] py-1 text-stone-900 break-all">{idx === 0 ? r.name || '（名前なし）' : ''}</span>
               {/* チップが多いときは、はみ出さず、この中で折り返す */}
               <span className="flex flex-wrap items-center gap-x-1 gap-y-[3px] min-w-0 flex-1 py-[3px]">
                 {ln && <ItemChip it={ln.it} />}

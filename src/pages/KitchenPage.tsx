@@ -4,6 +4,7 @@ import { useAuth } from '../lib/auth'
 import { Spinner } from '../components/Spinner'
 import { todayStr } from '../lib/accounting'
 import { useGuests } from '../lib/guests'
+import { PENDING_TONE } from '../lib/ticketTone'
 import { GuestChip } from '../components/GuestChip'
 import { ExtraChip } from '../components/DishList'
 import { extraNames } from '../lib/dishOrder'
@@ -36,8 +37,6 @@ import {
 const POLL_MS = 8000
 const STALE_SEC = 45
 
-// 経過時間の色: 10分を過ぎたら黄色、15分を過ぎたら赤
-const waitTone = (min: number) => (min >= 15 ? 'text-red-600' : min >= 10 ? 'text-amber-600' : 'text-stone-500')
 
 export default function KitchenPage() {
   const { session, loading: authLoading, loginWithGoogle } = useAuth()
@@ -263,17 +262,17 @@ export default function KitchenPage() {
           const min = elapsedMinutes(queueTime(t), now)
           const pend = pendingItems(t.items)
           return (
-            <div key={t.id} className="rounded-2xl border-2 border-amber-600 bg-white p-3">
+            <div key={t.id} className={`rounded-2xl border-2 p-3 ${PENDING_TONE}`}>
               <div className="flex items-baseline gap-2 flex-wrap">
-                <span className="text-sm text-stone-500">テーブル</span>
-                <span className="text-4xl font-bold text-amber-800 leading-none">{t.card_no}</span>
-                {isTakeoutCard(t.card_no) && <span className="text-xs font-bold text-white bg-orange-600 rounded px-1.5 py-0.5">持ち帰り</span>}
+                <span className="text-sm text-stone-800">テーブル</span>
+                <span className="text-4xl font-bold text-stone-950 leading-none">{t.card_no}</span>
+                {isTakeoutCard(t.card_no) && <span className="text-xs font-bold text-white bg-stone-800 rounded px-1.5 py-0.5">持ち帰り</span>}
                 {isFollowUp(t) && <span className="text-xs font-bold text-white bg-sky-600 rounded px-1.5 py-0.5">追加</span>}
                 {t.label && <span className="text-base font-bold text-stone-800">{t.label}</span>}
                 <GuestChip g={guestOf(t)} big />
-                <span className={`ml-auto text-lg font-bold ${waitTone(min)}`}>{min}分</span>
+                <span className={`ml-auto text-lg font-bold rounded px-1.5 ${min >= 15 ? 'bg-red-700 text-white' : min >= 10 ? 'bg-stone-900 text-amber-300' : 'text-stone-900'}`}>{min}分</span>
               </div>
-              <p className="text-xs text-stone-400 mt-0.5">
+              <p className="text-xs text-stone-800 mt-0.5">
                 {idx + 1}番目{biryaniDishes(pend) > 0 ? `　ビリヤニ ${biryaniDishes(pend)}皿` : ''}
               </p>
               <ul className="mt-2 space-y-1">
@@ -286,16 +285,16 @@ export default function KitchenPage() {
                       className="w-full min-h-12 flex items-center gap-3 text-left active:bg-stone-100 rounded-lg"
                     >
                       <span className={`shrink-0 w-9 h-9 rounded-lg border-2 flex items-center justify-center text-xl font-bold ${ln.done ? 'bg-green-600 border-green-600 text-white' : 'bg-white border-stone-400 text-transparent'}`}>✓</span>
-                      <span className={`text-xl ${ln.done ? 'text-stone-400 line-through' : 'text-stone-900'}`}>
+                      <span className={`text-xl ${ln.done ? 'text-stone-600 line-through' : 'text-stone-950'}`}>
                         {ln.name} <b>×{ln.qty}</b>
                       </span>
                     </button>
                     {ln.dishes.some((d) => d.length > 0) && (
                       <ul className="ml-12 mb-1 space-y-0.5">
                         {ln.dishes.map((d, k) => (
-                          <li key={k} className="flex flex-wrap items-center gap-1.5 text-base text-stone-700">
-                            <span className="text-stone-500">{k + 1}皿目</span>
-                            {d.length === 0 ? <span className="text-sm text-stone-400">なし</span> : d.map((n, j) => <ExtraChip key={j} name={n} big />)}
+                          <li key={k} className="flex flex-wrap items-center gap-1.5 text-base text-stone-900">
+                            <span className="text-stone-800">{k + 1}皿目</span>
+                            {d.length === 0 ? <span className="text-sm text-stone-700">なし</span> : d.map((n, j) => <ExtraChip key={j} name={n} big />)}
                           </li>
                         ))}
                       </ul>

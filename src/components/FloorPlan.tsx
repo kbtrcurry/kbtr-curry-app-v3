@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { elapsedMinutes, hasPending, isTakeoutCard, queueTime, stickerCount, ticketCount, type Ticket } from '../lib/tickets'
 import { defaultLayout, GRID_COLS, GRID_ROWS, placeSpot, resizeSpot } from '../lib/floorPlan'
+import { PENDING_TONE, SERVED_TONE } from '../lib/ticketTone'
 import { setFloorPlan, useFloorPlan } from '../lib/settings'
 
 // 店の間取りのとおりにテーブルを並べて見せる。使用中のテーブルには、誰の席か(名前・フリー○)と、経過時間を出す。
@@ -79,8 +80,8 @@ export function FloorPlan({
                   : waitingOrder
                     ? 'bg-sky-50 border-sky-400 text-sky-900'
                     : hasPending(t.items)
-                      ? 'bg-orange-500 border-orange-700 text-white'
-                      : 'bg-stone-700 border-stone-800 text-stone-100'
+                      ? PENDING_TONE
+                      : SERVED_TONE
             return (
               <button
                 key={sp.n}
@@ -96,7 +97,7 @@ export function FloorPlan({
                   </span>
                 )}
                 {!busy && !editing && isTakeoutCard(sp.n) && <span className="text-xs mt-0.5">持ち帰り</span>}
-                {min != null && <span className={`absolute top-0.5 right-1 text-xs font-bold ${t && !waitingOrder ? (hasPending(t.items) ? 'text-white' : 'text-stone-300') : waitTone(min)}`}>{min}分</span>}
+                {min != null && <span className={`absolute top-0.5 right-1 text-xs font-bold ${t && !waitingOrder ? (hasPending(t.items) ? 'text-stone-900' : 'text-stone-300') : waitTone(min)}`}>{min}分</span>}
                 {t && !editing && stickerCount(t.items) > 0 && <span className="absolute bottom-0.5 left-1 text-[10px] font-bold bg-pink-600 text-white rounded px-1 leading-4">ステ</span>}
               </button>
             )

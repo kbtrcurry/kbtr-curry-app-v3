@@ -25,6 +25,7 @@ import {
 import { updateMenu } from '../lib/masterData'
 import { todayStr, useSegments } from '../lib/accounting'
 import { useGuests } from '../lib/guests'
+import { PENDING_TONE, SERVED_TONE } from '../lib/ticketTone'
 import { GuestChip } from '../components/GuestChip'
 import { DishList } from '../components/DishList'
 import { useAttachableIds } from '../lib/settings'
@@ -682,7 +683,7 @@ export default function PosPage() {
                 onClick={() => tapTicket(t)}
                 aria-pressed={t.id === ticketId}
                 className={`min-w-16 rounded-xl border-2 px-3 py-2 text-center active:scale-95 transition ${
-                  t.items.length === 0 ? 'bg-sky-50 border-sky-400 text-sky-900' : hasPending(t.items) ? 'bg-orange-500 border-orange-700 text-white' : 'bg-stone-700 border-stone-800 text-white'
+                  t.items.length === 0 ? 'bg-sky-50 border-sky-400 text-sky-900' : hasPending(t.items) ? PENDING_TONE : SERVED_TONE
                 } ${t.id === ticketId ? 'ring-4 ring-sky-400 ring-offset-1' : ''}`}
               >
                 <span className="block text-xs">テーブル</span>

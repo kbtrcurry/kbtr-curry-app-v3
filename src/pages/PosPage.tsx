@@ -103,6 +103,7 @@ export default function PosPage() {
   const [showHistory, setShowHistory] = useState(false)
   const [editingReceipt, setEditingReceipt] = useState<LocalReceiptRow | null>(null)
   const [returning, setReturning] = useState<LocalReceiptRow | null>(null)
+  const [deleting, setDeleting] = useState<LocalReceiptRow | null>(null)
   const [submittingReceipt, setSubmittingReceipt] = useState(false)
 
   const [closing, setClosing] = useState(false)
@@ -316,6 +317,14 @@ export default function PosPage() {
     const r = receipts.find((x) => x.id === id)
     if (!r) return
     await voidReceipt(r)
+    // 席の伝票から会計したものは、伝票も取り消す(残すと、「あと何食」が戻らない)
+    if (r.ticketId) {
+      try {
+        await ticketActions.setStatus(r.ticketId, 'void')
+      } catch {
+        /* 会計の取り消しは済んでいる */
+      }
+    }
     refresh()
   }
 
@@ -640,7 +649,7 @@ export default function PosPage() {
                 <button onClick={() => setReturning(r)} aria-label="レジに戻す" title="レジに戻す" className="shrink-0 w-11 h-11 flex items-center justify-center text-amber-700 active:bg-amber-50 rounded-lg">
                   <Undo2 className="w-5 h-5" />
                 </button>
-                <button onClick={() => void handleVoid(r.id)} className="shrink-0 w-11 h-11 flex items-center justify-center text-red-400 active:text-red-600 rounded-lg" aria-label="削除" title="削除">
+                <button onClick={() => setDeleting(r)} className="shrink-0 w-11 h-11 flex items-center justify-center text-red-400 active:text-red-600 rounded-lg" aria-label="削除" title="削除">
                   <Trash2 className="w-5 h-5" />
                 </button>
               </div>
@@ -701,6 +710,21 @@ export default function PosPage() {
             refresh()
           }}
           onClose={() => setEditingReceipt(null)}
+        />
+      )}
+      {deleting && (
+        <ConfirmModal
+          message={`${deleting.label ? `${deleting.label}さんの` : ''}この会計（¥${deleting.total.toLocaleString()}）を削除します。売上から外れます。${deleting.ticketId ? '
+席の注文も取り消されるので、「あと何食」も元に戻ります。' : ''}
+
+やり直すだけなら、削除ではなく「直す」か「レジに戻す」を使ってください。`}
+          confirmLabel="削除する"
+          onConfirm={() => {
+            const id = deleting.id
+            setDeleting(null)
+            void handleVoid(id)
+          }}
+          onCancel={() => setDeleting(null)}
         />
       )}
       {returning && (

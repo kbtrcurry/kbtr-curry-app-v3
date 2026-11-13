@@ -1,12 +1,13 @@
 import { useMemo, useRef, useState } from 'react'
 import { ClipboardList } from 'lucide-react'
 import { useLocation } from 'react-router-dom'
+import { useQueryClient } from '@tanstack/react-query'
 import { useAuth } from '../lib/auth'
 import { Spinner } from '../components/Spinner'
 import { ConfirmModal } from '../components/ConfirmModal'
 import { useActiveMenus } from '../lib/pos'
 import { todayStr } from '../lib/accounting'
-import { addItem, CARD_COUNT, freeCards, isMissingTable, mergeItems, nextFreeLabel, ticketCount, ticketTotal, useTicketActions, useTickets, type Ticket, type TicketItem } from '../lib/tickets'
+import { addItem, CARD_COUNT, flushOutbox, freeCards, isMissingTable, mergeItems, nextFreeLabel, ticketCount, ticketTotal, useTicketActions, useTickets, type Ticket, type TicketItem } from '../lib/tickets'
 import { yen } from '../lib/format'
 import { TablePicker } from '../components/TablePicker'
 import { FloorPlan } from '../components/FloorPlan'
@@ -30,6 +31,8 @@ export default function OrdersPage() {
   const tq = useTickets(date)
   const actions = useTicketActions(date)
   const loc = useLocation()
+  const qc = useQueryClient()
+  const [confirming, setConfirming] = useState(false)
   const [cardNo, setCardNo] = useState<number | null>(() => tableFromSearch(loc.search))
   const [undo, setUndo] = useState<{ ticketId: string | null; cardNo: number; before: TicketItem[]; text: string; menu?: { id: string; name: string; price: number } } | null>(null)
   const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -129,6 +132,17 @@ export default function OrdersPage() {
     } catch (e) {
       setError(e instanceof Error ? e.message : '移動できませんでした')
       setMoving(false)
+    }
+  }
+
+  // 注文を確定: 送れていない分があれば、いま送ってから、席の一覧に戻る(押すたびに保存・調理場への送信は済んでいる)
+  const confirmOrder = async () => {
+    setConfirming(true)
+    try {
+      if (await flushOutbox()) void qc.invalidateQueries({ queryKey: ['tickets'] })
+    } finally {
+      setConfirming(false)
+      setCardNo(null)
     }
   }
 
@@ -241,6 +255,15 @@ export default function OrdersPage() {
           )
         })}
       </div>
+
+      <button
+        onClick={() => void confirmOrder()}
+        disabled={confirming}
+        className="w-full h-36 rounded-2xl bg-green-600 text-white text-2xl font-bold active:scale-[0.98] transition-transform disabled:opacity-60"
+      >
+        {confirming ? '送信中…' : items.length > 0 ? '注文を確定' : '席の一覧に戻る'}
+        {!confirming && items.length > 0 && <span className="block text-sm font-normal mt-1">テーブル{cardNo}・{ticketCount(items)}点 {yen(ticketTotal(items))}</span>}
+      </button>
 
       {current && (
         <button onClick={() => setMoving(true)} className="w-full h-12 rounded-xl border-2 border-stone-300 bg-white text-stone-700 font-semibold active:scale-95">

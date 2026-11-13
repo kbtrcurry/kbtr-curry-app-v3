@@ -122,9 +122,10 @@ export default function AnalysisDemo() {
           />
         ) : (
           <SessionsTab
-            stats={inMonth}
-            prevSummary={summarizeSessions(prevStats)}
-            weekday={weekdayStats(inMonth)}
+            stats={inMonth.filter((x) => !x.isEvent)}
+            events={inMonth.filter((x) => x.isEvent)}
+            prevSummary={summarizeSessions(prevStats.filter((x) => !x.isEvent))}
+            weekday={weekdayStats(inMonth.filter((x) => !x.isEvent))}
             segments={segmentSessionStats(inMonth)}
           />
         )}

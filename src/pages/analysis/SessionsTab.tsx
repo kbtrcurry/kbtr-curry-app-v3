@@ -6,7 +6,10 @@ import { WEEKDAY_LABELS, summarizeSessions, totalsOf, type GroupStat, type Sessi
 import { percent, yen } from '../../lib/format'
 
 export type SessionsTabProps = {
+  /** 普段の営業（間借り）。平均・ランキング・曜日別はこれだけで出す */
   stats: SessionStat[]
+  /** イベント・ケータリングの営業。平均には入れず、別枠で並べる */
+  events: SessionStat[]
   prevSummary: SessionSummary | null
   weekday: GroupStat[]
   segments: GroupStat[]
@@ -29,17 +32,19 @@ function SessionMini({ label, s }: { label: string; s: SessionStat }) {
 }
 
 // 営業ごとの儲け: 利益は 売上 − 食材原価(理論) − 取り置き原価 − 場所代 − その他経費。
-export default function SessionsTab({ stats, prevSummary, weekday, segments }: SessionsTabProps) {
+export default function SessionsTab({ stats, events, prevSummary, weekday, segments }: SessionsTabProps) {
   const sum = summarizeSessions(stats)
   const regular = [...stats].sort((a, b) => a.date.localeCompare(b.date))
   const ranked = [...stats].sort((a, b) => b.profit - a.profit)
+  const eventList = [...events].sort((a, b) => a.date.localeCompare(b.date))
 
   if (stats.length === 0) {
     return (
       <div className="space-y-3">
         <Card>
-          <p className="text-sm text-stone-500">この月の営業（レジ締め）はありません。</p>
+          <p className="text-sm text-stone-500">この月の普段の営業（レジ締め）はありません。</p>
         </Card>
+        <EventsCard events={eventList} />
         <HistoryLink />
       </div>
     )
@@ -48,7 +53,7 @@ export default function SessionsTab({ stats, prevSummary, weekday, segments }: S
   return (
     <div className="space-y-3">
       <section className="rounded-2xl border border-stone-200 bg-gradient-to-b from-stone-50 to-white p-5">
-        <p className="text-xs text-stone-500">{sum.count}回の営業・1回あたりの平均利益</p>
+        <p className="text-xs text-stone-500">{sum.count}回の営業・1回あたりの平均利益{eventList.length > 0 && '（イベント・ケータリングは除く）'}</p>
         <p className={`text-4xl font-extrabold leading-tight mt-0.5 ${tone(sum.avgProfit)}`}>{yen(sum.avgProfit)}</p>
         <div className="mt-1">
           <DeltaBadge delta={prevSummary && prevSummary.count > 0 ? delta(sum.avgProfit, prevSummary.avgProfit) : null} />
@@ -82,7 +87,7 @@ export default function SessionsTab({ stats, prevSummary, weekday, segments }: S
             {regular.map((s) => (
               <li key={s.id} className="flex items-baseline justify-between gap-2 py-1.5 text-sm">
                 <span className="text-stone-800 shrink-0">
-                  {md(s.date)}（{WEEKDAY_LABELS[s.weekday]}）{s.isEvent && <span className="ml-1 text-xs text-amber-700">{s.segmentName}</span>}
+                  {md(s.date)}（{WEEKDAY_LABELS[s.weekday]}）
                 </span>
                 <span className="text-xs text-stone-500 truncate">売上 {yen(s.sales)} − 経費 {yen(s.cost)}</span>
                 <span className={`font-bold shrink-0 ${tone(s.profit)}`}>{yen(s.profit)}</span>
@@ -135,6 +140,8 @@ export default function SessionsTab({ stats, prevSummary, weekday, segments }: S
         {sum.count < 4 && <p className="text-xs text-stone-400 mt-2">回数が少ないうちは参考程度です。</p>}
       </Card>
 
+      <EventsCard events={eventList} />
+
       {segments.length > 1 && (
         <Card title="事業区分別（1回あたりの平均利益）">
           <HBarList
@@ -146,6 +153,30 @@ export default function SessionsTab({ stats, prevSummary, weekday, segments }: S
 
       <HistoryLink />
     </div>
+  )
+}
+
+// イベント・ケータリングの営業。平均がゆがまないよう、普段の営業とは別に並べる
+function EventsCard({ events }: { events: SessionStat[] }) {
+  if (events.length === 0) return null
+  return (
+    <Card title="イベント・ケータリング（平均には入れていません）">
+      <ul className="divide-y divide-stone-100">
+        {events.map((s) => (
+          <li key={s.id} className="flex items-baseline justify-between gap-2 py-1.5 text-sm">
+            <span className="text-stone-800 shrink-0">
+              {md(s.date)} <span className="text-xs text-amber-700">{s.segmentName}</span>
+            </span>
+            <span className="text-xs text-stone-500 truncate">売上 {yen(s.sales)} − 経費 {yen(s.cost)}</span>
+            <span className={`font-bold shrink-0 ${tone(s.profit)}`}>{yen(s.profit)}</span>
+          </li>
+        ))}
+      </ul>
+      {events.length > 1 && <TotalLine label="イベントの合計" t={totalsOf(events)} />}
+      <Link to="/events" className="block text-xs text-amber-700 font-semibold underline mt-2">
+        イベントの収支（経費込み）を見る
+      </Link>
+    </Card>
   )
 }
 

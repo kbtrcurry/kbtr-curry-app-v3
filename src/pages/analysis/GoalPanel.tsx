@@ -19,6 +19,7 @@ export default function GoalPanel() {
     const inMonth = sessionStats(data.sessions, data.salesMap, data.foodBySession, data.reservedCostPerServing).filter((x) =>
       x.date.startsWith(month),
     )
+    const regular = inMonth.filter((x) => !x.isEvent)
     const sales = inMonth.reduce((a, x) => a + x.sales, 0)
     const variable = inMonth.reduce((a, x) => a + x.foodCost + x.reservedCost, 0)
     const recent = lastMonths(month, 4)
@@ -36,8 +37,9 @@ export default function GoalPanel() {
         profit: f.profit,
       },
       recent,
-      avgRent: inMonth.length ? inMonth.reduce((a, x) => a + x.rent, 0) / inMonth.length : 7000,
-      avgOther: inMonth.length ? inMonth.reduce((a, x) => a + x.otherCost, 0) / inMonth.length : 0,
+      // 1回あたりの場所代・経費は普段の営業（間借り）だけで平均する。イベントの出店料で上振れさせない
+      avgRent: regular.length ? regular.reduce((a, x) => a + x.rent, 0) / regular.length : 7000,
+      avgOther: regular.length ? regular.reduce((a, x) => a + x.otherCost, 0) / regular.length : 0,
     }
   }, [data.entries, data.theoreticalByMonth, data.sessions, data.salesMap, data.foodBySession, data.reservedCostPerServing, month, choice])
   if (data.loading) return <Spinner />

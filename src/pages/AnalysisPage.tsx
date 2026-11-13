@@ -63,7 +63,10 @@ export default function AnalysisPage() {
       .map((e) => ({ id: e.id, date: e.entry_date, label: e.description || e.journal_lines.find((l) => l.side === 'debit')?.accounts.name || '', amount: expenseTotal(e) }))
     const pnl = pnlFromEntries(entriesOfMonth(base, month))
     const prevPnl = pnlFromEntries(entriesOfMonth(base, prev))
-    const all = sessionStats(data.sessions, data.salesMap, data.foodBySession, data.reservedCostPerServing)
+    const everything = sessionStats(data.sessions, data.salesMap, data.foodBySession, data.reservedCostPerServing)
+    // 平均・曜日・広告の効果は普段の営業（間借り）だけで見る。イベント・ケータリングは別枠で並べる
+    const all = everything.filter((x) => !x.isEvent)
+    const inMonthAll = everything.filter((x) => x.date.startsWith(month))
     const inMonth = all.filter((x) => x.date.startsWith(month))
     const prevStats = all.filter((x) => x.date.startsWith(prev))
     const sum = (st: typeof inMonth) => st.reduce((a, x) => a + x.sales, 0)
@@ -72,9 +75,10 @@ export default function AnalysisPage() {
     const spendOf = (m: string) => ads.filter((x) => x.date.startsWith(m)).reduce((a, x) => a + x.spend, 0)
     return {
       gap: foodGapSeries(kento, lastMonths(month, 6), data.theoreticalByMonth),
-      overview: { stats: inMonth, prevStats },
-      overviewMenus: menuStats(data.lines, new Set(inMonth.filter((x) => !x.isEvent).map((x) => x.id)), data.costByMenuId, []),
-      menus: menuStats(data.lines, new Set(inMonth.map((x) => x.id)), data.costByMenuId, data.allMenus),
+      // 概要タブは自分でイベントを分けるので、イベント込みで渡す
+      overview: { stats: inMonthAll, prevStats: everything.filter((x) => x.date.startsWith(prev)) },
+      overviewMenus: menuStats(data.lines, new Set(inMonth.map((x) => x.id)), data.costByMenuId, []),
+      menus: menuStats(data.lines, new Set(inMonthAll.map((x) => x.id)), data.costByMenuId, data.allMenus),
       ads: {
         metaSpend: spendOf(month),
         booked: pnl.adSpend,
@@ -85,9 +89,10 @@ export default function AnalysisPage() {
       },
       sessions: {
         stats: inMonth,
+        events: inMonthAll.filter((x) => x.isEvent),
         prevSummary: prevStats.length > 0 ? summarizeSessions(prevStats) : null,
         weekday: weekdayStats(inMonth),
-        segments: segmentSessionStats(inMonth),
+        segments: segmentSessionStats(inMonthAll),
       },
       oneOff: {
         items: oneOffItems,

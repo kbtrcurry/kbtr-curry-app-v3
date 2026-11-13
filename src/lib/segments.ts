@@ -38,7 +38,8 @@ export function nextSortOrder(all: Pick<SegmentRow, 'code' | 'sort_order'>[]): n
   return (others.length ? Math.max(...others) : 0) + 1
 }
 
-export async function createSegment(name: string, all: SegmentRow[]): Promise<void> {
+/** 区分を作って、そのIDを返す */
+export async function createSegment(name: string, all: SegmentRow[]): Promise<string> {
   const trimmed = name.trim()
   if (!trimmed) throw new Error('名前を入力してください')
   if (all.some((s) => s.name === trimmed)) throw new Error('同じ名前の区分があります')
@@ -49,8 +50,9 @@ export async function createSegment(name: string, all: SegmentRow[]): Promise<vo
     const { error: e1 } = await supabase.from('segments').update({ sort_order: order + 1 }).eq('id', common.id)
     if (e1) throw e1
   }
-  const { error } = await supabase.from('segments').insert({ code: newSegmentCode(), name: trimmed, sort_order: order })
+  const { data, error } = await supabase.from('segments').insert({ code: newSegmentCode(), name: trimmed, sort_order: order }).select('id').single()
   if (error) throw error
+  return (data as { id: string }).id
 }
 
 export async function updateSegment(id: string, patch: Partial<Pick<SegmentRow, 'name' | 'active' | 'sort_order'>>): Promise<void> {

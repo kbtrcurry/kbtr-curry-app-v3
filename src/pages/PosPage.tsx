@@ -31,6 +31,7 @@ import { DishList } from '../components/DishList'
 import { useAttachableIds } from '../lib/settings'
 import { handedAtRegister, hasPending, stickerCount, ticketCount, ticketTotal, useDayTickets, useTicketActions, useTickets, type Ticket } from '../lib/tickets'
 import { isEventCode } from '../lib/events'
+import { createSegment, updateSegment, useAllSegments, useInvalidateSegments } from '../lib/segments'
 import {
   normHandle,
   fmtPortions,
@@ -80,6 +81,38 @@ export default function PosPage() {
   const pendingCount = usePendingCount()
   const queryClient = useQueryClient()
   const allSegments = useSegments().data ?? []
+  const allSegRows = useAllSegments().data ?? []
+  const invalidateSegments = useInvalidateSegments()
+  const currentSeg = allSegments.find((sg) => sg.id === posSession?.segment_id)
+  // 営業の種類（イベント）をレジから追加・名前変更する
+  const [segForm, setSegForm] = useState<{ mode: 'add' | 'rename'; name: string } | null>(null)
+  const [segBusy, setSegBusy] = useState(false)
+  const [segError, setSegError] = useState<string | null>(null)
+  const changeSegment = async (segmentId: string) => {
+    if (!posSession) return
+    await setSessionSegment(posSession, segmentId)
+    await queryClient.invalidateQueries({ queryKey: ['pos', 'today-session'] })
+  }
+  const saveSegForm = async () => {
+    if (!segForm || !posSession) return
+    setSegBusy(true)
+    setSegError(null)
+    try {
+      if (segForm.mode === 'add') {
+        const id = await createSegment(segForm.name, allSegRows)
+        await invalidateSegments()
+        await changeSegment(id)
+      } else if (currentSeg) {
+        await updateSegment(currentSeg.id, { name: segForm.name })
+        await invalidateSegments()
+      }
+      setSegForm(null)
+    } catch (e) {
+      setSegError(e instanceof Error ? e.message : '保存できませんでした')
+    } finally {
+      setSegBusy(false)
+    }
+  }
   const [reordering, setReordering] = useState(false)
   // 並び替え中の並び（メニューID）と、いま指でつかんでいるボタン
   const [order, setOrder] = useState<string[] | null>(null)
@@ -599,26 +632,63 @@ export default function PosPage() {
       </div>
 
       {posSession && (
-        <div className="flex items-center gap-2 mb-2 text-sm">
-          <span className="text-stone-500 shrink-0">営業の種類</span>
-          <select
-            value={posSession.segment_id}
-            disabled={receipts.length > 0}
-            onChange={async (e) => {
-              await setSessionSegment(posSession, e.target.value)
-              await queryClient.invalidateQueries({ queryKey: ['pos', 'today-session'] })
-            }}
-            className="flex-1 border border-stone-300 rounded-lg px-2 py-1.5 bg-white text-stone-800 disabled:opacity-60"
-          >
-            {allSegments
-              .filter((sg) => sg.code === 'magari' || isEventCode(sg.code))
-              .map((sg) => (
-                <option key={sg.id} value={sg.id}>
-                  {sg.code === 'magari' ? `間借り営業` : `イベント: ${sg.name}`}
-                </option>
-              ))}
-          </select>
-          {receipts.length > 0 && <span className="text-xs text-stone-400 shrink-0">会計後は変更不可</span>}
+        <div className="mb-2 text-sm space-y-2">
+          <div className="flex items-center gap-2">
+            <span className="text-stone-500 shrink-0">営業の種類</span>
+            {/* 締める前は仕訳がまだ無いので、会計のあとでも変えられる（会計は営業に付いているので一緒に移る） */}
+            <select
+              value={posSession.segment_id}
+              disabled={segBusy}
+              onChange={(e) => void changeSegment(e.target.value)}
+              className="flex-1 min-w-0 border border-stone-300 rounded-lg px-2 py-1.5 bg-white text-stone-800 disabled:opacity-60"
+            >
+              {allSegments
+                .filter((sg) => sg.code === 'magari' || isEventCode(sg.code))
+                .map((sg) => (
+                  <option key={sg.id} value={sg.id}>
+                    {sg.code === 'magari' ? `間借り営業` : `イベント: ${sg.name}`}
+                  </option>
+                ))}
+            </select>
+            {currentSeg && isEventCode(currentSeg.code) && (
+              <button
+                onClick={() => setSegForm({ mode: 'rename', name: currentSeg.name })}
+                aria-label="イベントの名前を直す"
+                title="名前を直す"
+                className="shrink-0 w-9 h-9 flex items-center justify-center text-stone-500 border border-stone-200 rounded-lg active:bg-stone-100"
+              >
+                <Pencil className="w-4 h-4" />
+              </button>
+            )}
+            <button
+              onClick={() => setSegForm({ mode: 'add', name: '' })}
+              className="shrink-0 h-9 px-2 text-amber-700 border border-amber-300 rounded-lg font-semibold active:bg-amber-50"
+            >
+              ＋イベント
+            </button>
+          </div>
+          {segForm && (
+            <div className="flex items-center gap-2">
+              <input
+                value={segForm.name}
+                onChange={(e) => setSegForm({ ...segForm, name: e.target.value })}
+                placeholder={segForm.mode === 'add' ? '例: カレー万博2026、〇〇ケータリング' : 'イベントの名前'}
+                autoFocus
+                className="flex-1 min-w-0 border border-stone-300 rounded-lg px-2 py-1.5 bg-white text-base"
+              />
+              <button
+                onClick={() => void saveSegForm()}
+                disabled={segBusy || !segForm.name.trim()}
+                className="shrink-0 h-9 px-3 bg-amber-700 text-[#faf9f5] rounded-lg font-bold disabled:opacity-40"
+              >
+                {segForm.mode === 'add' ? '追加' : '保存'}
+              </button>
+              <button onClick={() => setSegForm(null)} className="shrink-0 h-9 px-2 text-stone-400">
+                やめる
+              </button>
+            </div>
+          )}
+          {segError && <p className="text-xs text-red-600">{segError}</p>}
         </div>
       )}
 

@@ -4,6 +4,7 @@ import { ShoppingCart, Trash2, Check } from 'lucide-react'
 import { useAuth } from '../lib/auth'
 import { Spinner } from '../components/Spinner'
 import { Modal } from '../components/Modal'
+import { ConfirmModal } from '../components/ConfirmModal'
 import { usePersistedState } from '../lib/persistState'
 import { useKeyboardOffset } from '../lib/useKeyboardOffset'
 import { useRegisterBack } from '../lib/backHandler'
@@ -165,6 +166,25 @@ export default function PosPage() {
     setQty(nextQty)
     setManualItems(manual)
     setTicketId(t.id)
+  }
+  // 伝票を読み込んだあとに、グッズなどを足したり、数を変えたりしているか(解除すると消えるので、確認を出すため)
+  const [confirmRelease, setConfirmRelease] = useState(false)
+  const cartChanged = (t: Ticket): boolean => {
+    const want: Record<string, number> = {}
+    let manual = 0
+    for (const it of t.items) {
+      if (it.menu_id && menus.some((m) => m.id === it.menu_id)) want[it.menu_id] = (want[it.menu_id] ?? 0) + it.qty
+      else manual += it.qty
+    }
+    const ids = new Set([...Object.keys(want), ...Object.keys(qty)])
+    for (const id of ids) if ((want[id] ?? 0) !== (qty[id] ?? 0)) return true
+    return manualItems.length !== manual
+  }
+  const tapTicket = (t: Ticket) => {
+    if (t.id !== ticketId) return loadTicket(t)
+    // 選んでいる伝票をもう一度押すと解除。足した分があれば、確認してから
+    if (cartChanged(t)) setConfirmRelease(true)
+    else clearTicket()
   }
   const clearTicket = () => {
     setTicketId(null)
@@ -601,7 +621,8 @@ export default function PosPage() {
             {openTickets.map((t) => (
               <button
                 key={t.id}
-                onClick={() => loadTicket(t)}
+                onClick={() => tapTicket(t)}
+                aria-pressed={t.id === ticketId}
                 className={`min-w-16 rounded-xl border-2 px-3 py-2 text-center active:scale-95 transition ${
                   t.id === ticketId ? 'bg-amber-700 border-amber-700 text-[#faf9f5]' : t.status === 'served' ? 'bg-green-50 border-green-400 text-green-900' : 'bg-white border-amber-400 text-amber-900'
                 }`}
@@ -622,16 +643,26 @@ export default function PosPage() {
           </div>
           {loadedTicket && (
             <p className="text-xs text-amber-900">
-              カード {loadedTicket.card_no}{loadedTicket.label ? `（${loadedTicket.label}）` : ''} を会計中。グッズなどはメニューから足せます。
+              カード {loadedTicket.card_no}{loadedTicket.label ? `（${loadedTicket.label}）` : ''} を会計中。グッズなどはメニューから足せます（もう一度押すと解除）。
               <span className="ml-1 align-middle">
                 <GuestChip g={guestOf(loadedTicket)} />
               </span>
-              <button onClick={clearTicket} className="ml-2 underline text-stone-500">
-                解除
-              </button>
             </p>
           )}
         </div>
+      )}
+
+      {confirmRelease && (
+        <ConfirmModal
+          message="足した分・変えた数も消えます。この伝票を解除しますか？"
+          confirmLabel="解除する"
+          tone="primary"
+          onConfirm={() => {
+            setConfirmRelease(false)
+            clearTicket()
+          }}
+          onCancel={() => setConfirmRelease(false)}
+        />
       )}
 
       {todayRes.length > 0 && (

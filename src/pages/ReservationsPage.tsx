@@ -912,6 +912,7 @@ function ReservationRow({
     }
     return [...m.values()]
   })()
+  const sharedKinds = (it: ShortItem) => lines.length > 1 && ['パク', '赤玉', 'ライタ', 'アチャ'].includes(it.kind)
   const done = r.status === 'picked_up'
   const off = r.status === 'cancelled' || r.status === 'no_show'
   // 来店前 → 来店済み。来店済み・キャンセル・来なかった → 来店前（押し間違いは、もう一度押せば戻る）
@@ -934,29 +935,43 @@ function ReservationRow({
         >
           {/* 1食＝1行。2食なら2行、3食なら3行。ソーダなど食に数えないものは、1行目に並べる */}
           {lines.map((ln, idx) => (
-            <span key={idx} className="flex items-center gap-1.5 min-h-[26px]">
-              <span className="w-[5.4em] shrink-0 font-bold text-[15px] text-stone-900 truncate">{idx === 0 ? r.name || '（名前なし）' : ''}</span>
-              {ln && <ItemChip it={ln.it} />}
-              {ln?.with.map((w) => (
-                <ItemChip key={w.key} it={w} />
-              ))}
-              {/* うずらは、1食ごとの行すべてに付ける */}
-              {ln && r.uzura && <Chip kind="うずら">特典</Chip>}
-              {ln && r.is_new && <span className="text-[11px] font-bold text-sky-700">新</span>}
-              {idx === 0 && (
-                <span className="flex flex-wrap items-center gap-[3px] min-w-0">
-                  {restExtras.map((it) => (
-                    <ItemChip key={it.key} it={it} />
-                  ))}
-                  {r.uzura && !ln && <Chip kind="うずら">特典</Chip>}
-                  {r.note && <Chip kind="備考あり">備考あり</Chip>}
-                  {r.is_new && !ln && <span className="text-[11px] font-bold text-sky-700">新</span>}
-                  {r.visit_time && <span className="text-[11px] text-stone-500">{r.visit_time}</span>}
-                  {off && <span className="text-[11px] font-bold text-stone-500">{STATUS_LABEL[r.status]}</span>}
-                </span>
-              )}
+            <span key={idx} className="flex items-start gap-1.5 min-h-[26px]">
+              <span className="w-[5.4em] shrink-0 font-bold text-[15px] leading-[26px] text-stone-900 truncate">{idx === 0 ? r.name || '（名前なし）' : ''}</span>
+              {/* チップが多いときは、はみ出さず、この中で折り返す */}
+              <span className="flex flex-wrap items-center gap-x-1 gap-y-[3px] min-w-0 flex-1 py-[3px]">
+                {ln && <ItemChip it={ln.it} />}
+                {ln?.with.map((w) => (
+                  <ItemChip key={w.key} it={w} />
+                ))}
+                {/* うずらは、1食ごとの行すべてに付ける */}
+                {ln && r.uzura && <Chip kind="うずら">特典</Chip>}
+                {ln && r.is_new && <span className="text-[11px] font-bold text-sky-700">新</span>}
+                {idx === 0 && (
+                  <>
+                    {restExtras.filter((it) => !sharedKinds(it)).map((it) => (
+                      <ItemChip key={it.key} it={it} />
+                    ))}
+                    {r.uzura && !ln && <Chip kind="うずら">特典</Chip>}
+                    {r.note && <Chip kind="備考あり">備考あり</Chip>}
+                    {r.is_new && !ln && <span className="text-[11px] font-bold text-sky-700">新</span>}
+                    {r.visit_time && <span className="text-[11px] text-stone-500">{r.visit_time}</span>}
+                    {off && <span className="text-[11px] font-bold text-stone-500">{STATUS_LABEL[r.status]}</span>}
+                  </>
+                )}
+              </span>
             </span>
           ))}
+          {/* 2皿以上のとき、どの皿にも付けていないトッピング・アチャールは、「共有」の行にまとめる(シェアする分) */}
+          {lines.length > 1 && restExtras.some(sharedKinds) && (
+            <span className="flex items-start gap-1.5 min-h-[26px]">
+              <span className="w-[5.4em] shrink-0 text-[11px] font-bold leading-[26px] text-stone-500 text-right pr-1">共有</span>
+              <span className="flex flex-wrap items-center gap-x-1 gap-y-[3px] min-w-0 flex-1 py-[3px]">
+                {restExtras.filter(sharedKinds).map((it) => (
+                  <ItemChip key={it.key} it={it} />
+                ))}
+              </span>
+            </span>
+          )}
         </button>
         <button
           onClick={() => void toggle()}
@@ -1107,7 +1122,7 @@ function DishPicker({ r, onItems }: { r: Reservation; onItems: (items: ResItem[]
   const loose = extras.filter(([id]) => (totals[id] ?? 0) > (used[id] ?? 0))
   return (
     <div className="rounded-xl bg-stone-50 border border-stone-200 p-2 space-y-1.5">
-      <p className="text-xs font-bold text-stone-600">1皿ずつに付ける（押すと付く・もう一度で外れる）</p>
+      <p className="text-xs font-bold text-stone-600">1皿ずつに付ける（押すと付く・もう一度で外れる。シェアする分は、どの皿にも押さずに残す）</p>
       {dishes.map(({ i, idx, d }, n) => {
         const mine = i.attach?.[d] ?? []
         return (
@@ -1137,7 +1152,7 @@ function DishPicker({ r, onItems }: { r: Reservation; onItems: (items: ResItem[]
           </div>
         )
       })}
-      {loose.length > 0 && <p className="text-xs text-stone-500">まだ付け先がない分: {loose.map(([id, name]) => `${shortName(name).label}${fmtPortions((totals[id] ?? 0) - (used[id] ?? 0))}`).join('・')}（一覧では、1行目に出ます）</p>}
+      {loose.length > 0 && <p className="text-xs text-stone-500">どちらにも付けない分（シェア）: {loose.map(([id, name]) => `${shortName(name).label}${fmtPortions((totals[id] ?? 0) - (used[id] ?? 0))}`).join('・')}（一覧では、1行目にまとめて出ます）</p>}
     </div>
   )
 }

@@ -936,7 +936,10 @@ function ReservationRow({
           {/* 1食＝1行。2食なら2行、3食なら3行。ソーダなど食に数えないものは、1行目に並べる */}
           {lines.map((ln, idx) => (
             <span key={idx} className="flex items-start gap-1.5 min-h-[26px]">
-              <span className="w-[6em] shrink-0 font-bold text-[15px] leading-[18px] py-1 text-stone-900 break-all">{idx === 0 ? r.name || '（名前なし）' : ''}</span>
+              <span className="w-[6em] shrink-0 font-bold text-[15px] leading-[18px] py-1 text-stone-900 break-all">
+                {idx === 0 ? r.name || '（名前なし）' : ''}
+                {idx === 0 && r.is_new && <span className="ml-0.5 text-[11px] font-bold text-sky-700 whitespace-nowrap">新</span>}
+              </span>
               {/* チップが多いときは、はみ出さず、この中で折り返す */}
               <span className="flex flex-wrap items-center gap-x-1 gap-y-[3px] min-w-0 flex-1 py-[3px]">
                 {ln && <ItemChip it={ln.it} />}
@@ -945,7 +948,6 @@ function ReservationRow({
                 {ln?.with.map((w) => (
                   <ItemChip key={w.key} it={w} />
                 ))}
-                {ln && r.is_new && <span className="text-[11px] font-bold text-sky-700">新</span>}
                 {idx === 0 && (
                   <>
                     {restExtras.filter((it) => !sharedKinds(it)).map((it) => (
@@ -953,7 +955,6 @@ function ReservationRow({
                     ))}
                     {r.uzura && !ln && <Chip kind="うずら">特典</Chip>}
                     {r.note && <Chip kind="備考あり">備考あり</Chip>}
-                    {r.is_new && !ln && <span className="text-[11px] font-bold text-sky-700">新</span>}
                     {r.visit_time && <span className="text-[11px] text-stone-500">{r.visit_time}</span>}
                     {off && <span className="text-[11px] font-bold text-stone-500">{STATUS_LABEL[r.status]}</span>}
                   </>

@@ -673,7 +673,7 @@ export default function PosPage() {
       {openTickets.length > 0 && (
         <div className="mb-3 rounded-xl border border-amber-300 bg-amber-50 px-3 py-2 space-y-2">
           <p className="text-sm font-semibold text-amber-900">
-            会計前の伝票 <span className="text-xs font-normal">（明るい=調理中 / 暗い=提供済みで会計待ち）</span>
+            会計前の伝票 <span className="text-xs font-normal">（オレンジ=調理中 / グレー=提供済みで会計待ち）</span>
           </p>
           <div className="flex flex-wrap gap-2">
             {openTickets.map((t) => (
@@ -682,7 +682,7 @@ export default function PosPage() {
                 onClick={() => tapTicket(t)}
                 aria-pressed={t.id === ticketId}
                 className={`min-w-16 rounded-xl border-2 px-3 py-2 text-center active:scale-95 transition ${
-                  t.items.length === 0 ? 'bg-sky-50 border-sky-400 text-sky-900' : hasPending(t.items) ? 'bg-amber-300 border-amber-600 text-amber-950' : 'bg-stone-700 border-stone-800 text-white'
+                  t.items.length === 0 ? 'bg-sky-50 border-sky-400 text-sky-900' : hasPending(t.items) ? 'bg-orange-500 border-orange-700 text-white' : 'bg-stone-700 border-stone-800 text-white'
                 } ${t.id === ticketId ? 'ring-4 ring-sky-400 ring-offset-1' : ''}`}
               >
                 <span className="block text-xs">テーブル</span>

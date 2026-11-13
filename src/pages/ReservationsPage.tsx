@@ -1139,7 +1139,7 @@ function DishPicker({ r, onItems }: { r: Reservation; onItems: (items: ResItem[]
                   disabled={busy || full}
                   aria-pressed={on}
                   className={`h-11 min-w-[3.6rem] px-2.5 rounded-lg text-sm font-bold active:scale-95 transition-transform ${full ? 'opacity-30' : ''}`}
-                  style={on ? { background: c.bg, color: c.fg, boxShadow: `inset 0 0 0 2px ${c.border ?? c.bg}` } : { background: '#fff', color: '#57534e', boxShadow: 'inset 0 0 0 1.5px #d6d3d1' }}
+                  style={on ? { background: c.bg, color: c.fg, boxShadow: `inset 0 0 0 3px ${c.border ?? c.bg}` } : { background: '#d6d3d1', color: '#78716c' }}
                 >
                   {on ? '✓ ' : ''}
                   {sh.label}

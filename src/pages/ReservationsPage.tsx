@@ -28,6 +28,7 @@ import {
   customerLabel,
   visitCount,
   customerStats,
+  kanaKey,
   deleteReservation,
   normHandle,
   parseReservationText,
@@ -1163,39 +1164,141 @@ function DishPicker({ r, onItems }: { r: Reservation; onItems: (items: ResItem[]
 function CustomerLedger({ stats, all, onSaved }: { stats: CustomerStat[]; all: Reservation[]; onSaved: () => void }) {
   const [q, setQ] = useState('')
   const [open, setOpen] = useState<string | null>(null)
-  const shown = stats.filter((s) => !q || s.handle.includes(q.toLowerCase()) || s.name.includes(q))
+  // 同じ人のまとめ方: 「同じ人をまとめる」を押す → 同じ人を選ぶ(検索しながら何人でも) → 下の「まとめる」 → どの名前にするか選ぶ → 確定
+  const [selecting, setSelecting] = useState(false)
+  const [picked, setPicked] = useState<string[]>([])
+  const [choosing, setChoosing] = useState(false)
+  const [target, setTarget] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const shown = stats.filter((s) => !q || s.handle.includes(q.toLowerCase()) || s.name.includes(q) || kanaKey(s.name).includes(kanaKey(q)))
+  const pickedStats = picked.map((k) => stats.find((s) => s.key === k)).filter((s): s is CustomerStat => !!s)
+  const toggle = (k: string) => setPicked((p) => (p.includes(k) ? p.filter((x) => x !== k) : [...p, k]))
+  const leave = () => {
+    setSelecting(false)
+    setPicked([])
+    setChoosing(false)
+    setTarget('')
+    setError(null)
+  }
+  const doMerge = async () => {
+    const to = pickedStats.find((s) => s.key === target)
+    if (!to) return
+    setBusy(true)
+    setError(null)
+    try {
+      for (const from of pickedStats) if (from.key !== to.key) await mergeCustomer(from, to, all)
+      onSaved()
+      leave()
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'まとめられませんでした')
+    } finally {
+      setBusy(false)
+    }
+  }
+  const nameOf = (s: CustomerStat) => s.name || `@${s.handle}`
+  const whoOf = (s: CustomerStat) => (s.handle.startsWith('~') ? 'アカウントなし（名前だけ）' : `${PLATFORM_LABEL[s.platform]} @${s.handle}`)
+  const nRes = pickedStats.reduce((a, s) => a + s.reservations, 0)
   return (
-    <div className="space-y-3">
-      <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="アカウント名・名前で探す" className="w-full border border-stone-300 rounded-lg px-3 py-2.5" />
+    <div className={`space-y-3 ${selecting ? 'pb-24' : ''}`}>
+      <div className="flex gap-2">
+        <input type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="アカウント名・名前で探す" className="flex-1 min-w-0 border border-stone-300 rounded-lg px-3 py-2.5" />
+        <button
+          onClick={() => (selecting ? leave() : setSelecting(true))}
+          aria-pressed={selecting}
+          className={`shrink-0 h-11 px-3 rounded-lg text-sm font-bold border-2 ${selecting ? 'bg-stone-800 text-white border-stone-800' : 'bg-white text-amber-700 border-amber-600'}`}
+        >
+          {selecting ? 'やめる' : '同じ人をまとめる'}
+        </button>
+      </div>
+      {selecting && <p className="text-sm text-stone-700 bg-amber-50 border border-amber-300 rounded-lg px-3 py-2">同じ人の行を、タップして選んでください（検索で絞り込みながら、何人でも選べます）。選んだら、下の「まとめる」を押します。</p>}
       {shown.length === 0 && <p className="text-center text-stone-500 text-sm py-6">まだお客さんの記録がありません。取り置きを登録すると、ここに溜まります。</p>}
       <div className="bg-white border border-stone-200 rounded-xl divide-y divide-stone-100 overflow-hidden">
-        {shown.map((s) => (
-          <CustomerRow key={s.key} s={s} others={stats.filter((x) => x.key !== s.key)} all={all} open={open === s.key} onToggle={() => setOpen(open === s.key ? null : s.key)} onSaved={onSaved} />
-        ))}
+        {shown.map((s) =>
+          selecting ? (
+            <button key={s.key} onClick={() => toggle(s.key)} aria-pressed={picked.includes(s.key)} className={`w-full text-left px-3 py-2.5 flex items-center gap-3 min-h-[56px] ${picked.includes(s.key) ? 'bg-amber-50' : ''}`}>
+              <span className={`shrink-0 w-7 h-7 rounded-md border-2 flex items-center justify-center text-base font-bold ${picked.includes(s.key) ? 'bg-amber-700 border-amber-700 text-white' : 'bg-white border-stone-400 text-transparent'}`}>✓</span>
+              <span className="min-w-0 flex-1">
+                <span className="block text-sm font-semibold text-stone-800 truncate">{nameOf(s)}</span>
+                <span className="block text-xs text-stone-500 truncate">
+                  {whoOf(s)}・取り置き{s.reservations}件{s.lastDate && `・最後 ${md(s.lastDate)}`}
+                </span>
+              </span>
+            </button>
+          ) : (
+            <CustomerRow key={s.key} s={s} open={open === s.key} onToggle={() => setOpen(open === s.key ? null : s.key)} onSaved={onSaved} />
+          ),
+        )}
       </div>
+
+      {selecting && (
+        <div className="fixed left-0 right-0 z-[60] px-4 pointer-events-none" style={{ bottom: 'calc(5.5rem + env(safe-area-inset-bottom, 0px))' }}>
+          <div className="pointer-events-auto max-w-md mx-auto flex items-center gap-2 bg-white border-2 border-stone-800 rounded-xl p-2 shadow-lg">
+            <span className="flex-1 text-sm font-bold text-stone-800 pl-1">{picked.length}人を選択中</span>
+            <button
+              onClick={() => {
+                setTarget(pickedStats[0]?.key ?? '')
+                setChoosing(true)
+              }}
+              disabled={picked.length < 2}
+              className="h-12 px-5 rounded-lg bg-amber-700 text-[#faf9f5] font-bold disabled:opacity-40"
+            >
+              まとめる
+            </button>
+          </div>
+        </div>
+      )}
+
+      {choosing && (
+        <div className="fixed inset-0 z-[100] bg-black/50 flex items-end sm:items-center justify-center p-3" role="dialog" aria-modal="true">
+          <div className="bg-white rounded-2xl w-full max-w-md p-4 space-y-3 max-h-[90vh] overflow-y-auto">
+            <p className="text-lg font-bold text-stone-900">どの名前にまとめますか？</p>
+            <p className="text-sm text-stone-600">選んだ名前・アカウントに、{pickedStats.length}人ぶん（取り置き{nRes}件）をそろえます。</p>
+            <div className="space-y-2">
+              {pickedStats.map((s) => (
+                <button
+                  key={s.key}
+                  onClick={() => setTarget(s.key)}
+                  aria-pressed={target === s.key}
+                  className={`w-full text-left rounded-xl border-2 px-3 py-2.5 flex items-center gap-3 min-h-[56px] ${target === s.key ? 'border-amber-600 bg-amber-50' : 'border-stone-300 bg-white'}`}
+                >
+                  <span className={`shrink-0 w-6 h-6 rounded-full border-2 ${target === s.key ? 'border-amber-700 bg-amber-700 shadow-[inset_0_0_0_3px_white]' : 'border-stone-400'}`} />
+                  <span className="min-w-0">
+                    <span className="block text-base font-bold text-stone-900 truncate">{nameOf(s)}</span>
+                    <span className="block text-xs text-stone-500 truncate">
+                      {whoOf(s)}・{s.reservations}件
+                    </span>
+                  </span>
+                </button>
+              ))}
+            </div>
+            {pickedStats.some((s) => s.key === target && s.handle.startsWith('~')) && pickedStats.some((s) => !s.handle.startsWith('~')) && (
+              <p className="text-xs text-red-600">「名前だけ」の人にまとめると、ほかの人のアカウント名は消えます。アカウントのある人にまとめるのがおすすめです。</p>
+            )}
+            <p className="text-xs text-stone-500">まとめると、元に戻せません。</p>
+            {error && <p className="text-sm text-red-600">{error}</p>}
+            <div className="flex gap-2">
+              <button onClick={() => setChoosing(false)} disabled={busy} className="flex-1 h-12 rounded-xl border border-stone-300 text-stone-600 font-semibold">
+                戻る
+              </button>
+              <button onClick={() => void doMerge()} disabled={busy || !target} className="flex-[2] h-12 rounded-xl bg-amber-700 text-[#faf9f5] font-bold disabled:opacity-50">
+                {busy ? 'まとめ中…' : 'この名前にまとめる'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
 
-function CustomerRow({ s, others, all, open, onToggle, onSaved }: { s: CustomerStat; others: CustomerStat[]; all: Reservation[]; open: boolean; onToggle: () => void; onSaved: () => void }) {
-  const [mergeTo, setMergeTo] = useState('')
+function CustomerRow({ s, open, onToggle, onSaved }: { s: CustomerStat; open: boolean; onToggle: () => void; onSaved: () => void }) {
   const [flag, setFlag] = useState(s.note?.flag ?? 'none')
   const [review, setReview] = useState(s.note?.posted_review ?? false)
   const [note, setNote] = useState(s.note?.note ?? '')
   const [busy, setBusy] = useState(false)
   const nameOnly = s.handle.startsWith('~')
   const url = nameOnly ? null : profileUrl(s.platform, s.handle)
-  const merge = async () => {
-    const t = others.find((x) => x.key === mergeTo)
-    if (!t) return
-    setBusy(true)
-    try {
-      await mergeCustomer(s, t, all)
-      onSaved()
-    } finally {
-      setBusy(false)
-    }
-  }
   const save = async () => {
     setBusy(true)
     try {
@@ -1241,21 +1344,6 @@ function CustomerRow({ s, others, all, open, onToggle, onSaved }: { s: CustomerS
             <input type="checkbox" checked={review} onChange={(e) => setReview(e.target.checked)} className="w-5 h-5 accent-amber-700" /> 感想を投稿してくれた
           </label>
           <input value={note} onChange={(e) => setNote(e.target.value)} placeholder="メモ" className="w-full border border-stone-300 rounded-lg px-3 py-2 text-sm" />
-          {others.length > 0 && (
-            <div className="flex items-center gap-1.5">
-              <select value={mergeTo} onChange={(e) => setMergeTo(e.target.value)} className="flex-1 min-w-0 border border-stone-300 rounded-lg px-2 py-2 text-sm bg-white" aria-label="同じ人として統合する相手">
-                <option value="">同じ人として統合…（例：漢字の名前とかなの名前）</option>
-                {others.map((o) => (
-                  <option key={o.key} value={o.key}>
-                    {o.name || o.handle}（{o.reservations}回）
-                  </option>
-                ))}
-              </select>
-              <button onClick={() => void merge()} disabled={!mergeTo || busy} className="shrink-0 text-sm font-semibold border border-stone-300 text-stone-600 rounded-lg px-3 py-2 disabled:opacity-40">
-                統合
-              </button>
-            </div>
-          )}
           <div className="flex gap-2">
             <button onClick={() => void save()} disabled={busy} className="flex-1 py-2.5 rounded-lg bg-amber-700 text-[#faf9f5] text-sm font-bold disabled:opacity-50">
               保存

@@ -558,7 +558,8 @@ export async function mergeCustomer(from: CustomerStat, to: CustomerStat, all: R
     .map((r) => r.id)
   if (ids.length === 0) return
   const toNameOnly = to.handle.startsWith('~')
-  const patch = toNameOnly ? { name: to.name } : { name: to.name, platform: to.platform, handle: to.handle }
+  // 名前だけの人にまとめるときは、元のアカウント名を空にする(残すと、アカウントで見分けられて別人のままになるため)
+  const patch = toNameOnly ? { name: to.name, handle: '' } : { name: to.name, platform: to.platform, handle: to.handle }
   const { error } = await supabase.from('reservations').update(patch).in('id', ids)
   if (error) throw error
 }

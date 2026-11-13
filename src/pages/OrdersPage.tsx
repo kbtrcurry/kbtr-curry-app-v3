@@ -7,11 +7,11 @@ import { Spinner } from '../components/Spinner'
 import { ConfirmModal } from '../components/ConfirmModal'
 import { useActiveMenus } from '../lib/pos'
 import { todayStr } from '../lib/accounting'
-import { addItem, CARD_COUNT, flushOutbox, freeCards, isMissingTable, nextFreeLabel, ticketCount, ticketTotal, useTicketActions, useTickets, type Ticket, type TicketItem } from '../lib/tickets'
+import { addItem, CARD_COUNT, flushOutbox, freeCards, isMissingTable, isTakeoutCard, nextFreeLabel, ticketCount, ticketTotal, useTicketActions, useTickets, type Ticket, type TicketItem } from '../lib/tickets'
 import { yen } from '../lib/format'
 import { useAttachableIds } from '../lib/settings'
 import { isExtraItem, sanitizeAttach } from '../lib/reservations'
-import { dishesOf, looseItems, removeDish, toggleDishExtra } from '../lib/dishOrder'
+import { dishesOf, looseItems, removeDish, toggleDishExtra, withContainerFee } from '../lib/dishOrder'
 import { CHIP, shortName } from '../lib/chips'
 import { TablePicker } from '../components/TablePicker'
 import { FloorPlan } from '../components/FloorPlan'
@@ -95,6 +95,9 @@ export default function OrdersPage() {
     setGhostFor(cardNo)
     setGhosts([])
   }
+  // テイクアウトの席(9〜12)は、ビリヤニ1皿につき容器代を自動で合わせる
+  const containerMenu = menus.find((m) => /容器/.test(m.name)) ?? null
+  const feeFor = (n: number | null, list: TicketItem[]): TicketItem[] => (n != null && isTakeoutCard(n) ? withContainerFee(list, containerMenu) : list)
   // 1回押すごとに保存して調理場へ送る
   const tap = async (menu: { id: string; name: string; price: number }, delta: number, fromRes = false) => {
     if (cardNo == null) return
@@ -104,11 +107,11 @@ export default function OrdersPage() {
         if (delta <= 0) return
         flashUndo({ ticketId: null, cardNo, before: [], text: `${menu.name} を入れました`, menu })
         // 空いているテーブルに最初の注文を入れたら、フリー1・フリー2…と名前がつく
-        await actions.create({ cardNo, items: addItem([], menu, 1), label: nextFreeLabel(date) })
+        await actions.create({ cardNo, items: feeFor(cardNo, addItem([], menu, 1)), label: nextFreeLabel(date) })
         return
       }
       const before = current.items
-      const next = sanitizeAttach(addItem(before, menu, delta, fromRes))
+      const next = feeFor(cardNo, sanitizeAttach(addItem(before, menu, delta, fromRes)))
       if (delta < 0 && !next.some((i) => i.menu_id === menu.id && i.name === menu.name)) {
         setGhosts((g) => (g.some((x) => x.menu_id === menu.id && x.name === menu.name) ? g : [...g, { menu_id: menu.id, name: menu.name, price: menu.price }]))
       }
@@ -136,7 +139,7 @@ export default function OrdersPage() {
     try {
       const before = current.items
       const it = before[row]
-      const next = removeDish(before, row, dish)
+      const next = feeFor(cardNo, removeDish(before, row, dish))
       flashUndo({ ticketId: current.id, cardNo: current.card_no, before, text: `${it?.name ?? '皿'} を1皿 減らしました` })
       if (it && !next.some((i) => i.menu_id === it.menu_id && i.name === it.name)) {
         setGhosts((g) => (g.some((x) => x.menu_id === it.menu_id && x.name === it.name) ? g : [...g, { menu_id: it.menu_id, name: it.name, price: it.price }]))

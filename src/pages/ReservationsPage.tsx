@@ -630,6 +630,11 @@ function ReservationForm({
       return old?.attach ? { ...i, attach: old.attach } : i
     }),
   )
+  // テイクアウトのビリヤニ(並でも大でも)1皿につき、容器代を1つ。すでに入れた容器代が足りなければ、足りない分を足す
+  const toDishes = items.filter((i) => i.takeout).reduce((a, i) => a + dishCount(i), 0)
+  const toContainer = items.filter((i) => i.takeout && /容器/.test(i.name)).reduce((a, i) => a + i.qty, 0)
+  const containerMenu = menuRows.find((m) => /容器/.test(m.name))
+  const withFee: ResItem[] = toDishes > toContainer ? [...itemsKept, { menu_id: containerMenu?.id ?? null, name: containerMenu?.name ?? '容器代', qty: toDishes - toContainer, takeout: true }] : itemsKept
   const total = items.reduce((a, i) => a + i.qty, 0)
   // 受付の枠に数える食数（ビリヤニ通常=1、大盛り=1.5、ソーダなどは0）
   const slots = items.reduce((a, i) => a + i.qty * portionOf(i.name), 0)
@@ -670,7 +675,7 @@ function ReservationForm({
     setBusy(true)
     setError(null)
     try {
-      await saveReservation({ id: editing?.id, service_date: svcDate, platform, handle, name: name.trim(), items: itemsKept, note, status: editing?.status, visit_time: time, uzura, is_new: editing ? editing.is_new : !stat })
+      await saveReservation({ id: editing?.id, service_date: svcDate, platform, handle, name: name.trim(), items: withFee, note, status: editing?.status, visit_time: time, uzura, is_new: editing ? editing.is_new : !stat })
       onSaved()
     } catch (e) {
       setError(e instanceof Error ? e.message : '保存できませんでした')
@@ -745,6 +750,7 @@ function ReservationForm({
           </button>
         ))}
       </div>
+      <p className="text-xs text-stone-500">テイクアウトのビリヤニは、並でも大でも1皿につき、容器代（100円）が自動で入ります。</p>
       <div className="grid grid-cols-2 gap-2">
         {menuRows.map((m) => {
           const e = eat[m.id] ?? 0

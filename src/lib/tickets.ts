@@ -80,7 +80,10 @@ export const handedAtRegister = (name: string): boolean => /ステッカー|stic
 export const stickerCount = (items: { name: string; qty: number }[]): number => items.filter((i) => handedAtRegister(i.name)).reduce((a, i) => a + i.qty, 0)
 
 /** まだ出していない数 */
-export const pendingQty = (i: TicketItem): number => (handedAtRegister(i.name) ? 0 : Math.max(0, i.qty - (i.served_qty ?? 0)))
+/** 容器代(テイクアウトのビリヤニ1皿につき加算)。調理場で出すものではないので、「提供前」には数えない */
+export const CONTAINER_FEE = 100
+export const isContainerName = (name: string): boolean => /容器/.test(name)
+export const pendingQty = (i: TicketItem): number => (handedAtRegister(i.name) || isContainerName(i.name) ? 0 : Math.max(0, i.qty - (i.served_qty ?? 0)))
 export const hasPending = (items: TicketItem[]): boolean => items.some((i) => pendingQty(i) > 0)
 
 /** まだ出していない品だけ(数は、出していない分)。調理場のカードに出す */
@@ -216,12 +219,17 @@ export function freeCards(tickets: Ticket[], max = CARD_COUNT): number[] {
 
 /** 取り置きの内容を、伝票の品目にする(取り置き分として、当日分の残りからは引かない) */
 export function itemsFromReservation(
-  resItems: { menu_id: string | null; name: string; qty: number; attach?: string[][] }[],
-  menus: { id: string; price: number }[],
+  resItems: { menu_id: string | null; name: string; qty: number; attach?: string[][]; takeout?: boolean }[],
+  menus: { id: string; price: number; name?: string }[],
 ): TicketItem[] {
-  return resItems
+  // テイクアウトのビリヤニ1皿につき、容器代を1つ。取り置きに入っていなければ足す
+  const need = resItems.filter((i) => i.takeout && portionOf(i.name) > 0).reduce((a, i) => a + Math.ceil(i.qty), 0)
+  const have = resItems.filter((i) => isContainerName(i.name)).reduce((a, i) => a + i.qty, 0)
+  const cm = menus.find((m) => m.name && isContainerName(m.name))
+  const withFee = need > have ? [...resItems, { menu_id: cm?.id ?? null, name: cm?.name ?? '容器代', qty: need - have }] : resItems
+  return withFee
     .filter((i) => i.qty > 0)
-    .map((i) => ({ menu_id: i.menu_id, name: i.name, price: menus.find((m) => m.id === i.menu_id)?.price ?? 0, qty: i.qty, from_res: true, ...(i.attach ? { attach: i.attach } : {}) }))
+    .map((i) => ({ menu_id: i.menu_id, name: i.name, price: menus.find((m) => m.id === i.menu_id)?.price ?? (isContainerName(i.name) ? CONTAINER_FEE : 0), qty: i.qty, from_res: true, ...(i.attach ? { attach: i.attach } : {}) }))
 }
 
 export const FREE_PREFIX = 'フリー'

@@ -1,5 +1,5 @@
 // 注文画面・調理場・レジで、ビリヤニ1皿ずつに付けた品(トッピング・アチャール・ソーダなど)を扱う。純粋な計算だけ(テスト付き)。
-import { addItem, mergeItems, type MergedItem, type TicketItem } from './tickets'
+import { addItem, CONTAINER_FEE, isContainerName, mergeItems, type MergedItem, type TicketItem } from './tickets'
 import { attachedTotals, dishCount, isExtraItem, sanitizeAttach, toggleAttach } from './reservations'
 
 export type Dish = { /** items の何番目の品目か */ row: number; /** その品目の何皿目か(0から) */ dish: number; /** 全体の通し番号(1から) */ n: number; item: TicketItem; extras: string[] }
@@ -68,4 +68,23 @@ export function looseItems(items: TicketItem[]): MergedItem[] {
 /** 皿ごとの付け合わせの名前(調理場・レジの表示用) */
 export function extraNames(items: TicketItem[], ids: string[]): string[] {
   return ids.map((id) => items.find((i) => i.menu_id === id)?.name ?? '').filter(Boolean)
+}
+
+/**
+ * テイクアウトの席: ビリヤニ(並でも大でも)1皿につき、容器代を1つ。
+ * 取り置きで入っている容器代は、そのまま使い、足りない分だけ、追加の容器代として自動で合わせる(皿を減らせば、容器代も減る)。
+ */
+export function withContainerFee(items: TicketItem[], menu: { id: string | null; name: string; price: number } | null): TicketItem[] {
+  const dishes = items.reduce((a, i) => a + dishCount(i), 0)
+  const haveRes = items.filter((i) => isContainerName(i.name) && i.from_res).reduce((a, i) => a + i.qty, 0)
+  const want = Math.max(0, dishes - haveRes)
+  const idx = items.findIndex((i) => isContainerName(i.name) && !i.from_res)
+  if (idx >= 0) {
+    if (want === 0) return items.filter((_, k) => k !== idx)
+    if (items[idx].qty === want) return items
+    return items.map((x, k) => (k === idx ? { ...x, qty: want } : x))
+  }
+  if (want === 0) return items
+  const m = menu ?? { id: null, name: '容器代', price: CONTAINER_FEE }
+  return [...items, { menu_id: m.id, name: m.name, price: m.price, qty: want, from_res: false }]
 }

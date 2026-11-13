@@ -232,3 +232,26 @@ describe('ステッカーは、会計のときにレジで渡す', () => {
     expect(stickerCount(items)).toBe(1)
   })
 })
+
+import { withContainerFee } from './dishOrder'
+describe('テイクアウトの容器代(ビリヤニ1皿につき)', () => {
+  const b = { id: 'b', name: 'ビリヤニ', price: 2000 }
+  const big = { id: 'g', name: 'ビリヤニ 大盛り', price: 2800 }
+  const c = { id: 'c', name: '容器代', price: 100 }
+  it('並でも大でも1皿につき1つ。皿を減らせば減る', () => {
+    const two = addItem(addItem([], b, 1), big, 1)
+    const a = withContainerFee(two, c)
+    expect(a.find((i) => i.menu_id === 'c')?.qty).toBe(2)
+    const one = withContainerFee(addItem(a, big, -1), c)
+    expect(one.find((i) => i.menu_id === 'c')?.qty).toBe(1)
+    expect(withContainerFee(addItem(one, b, -1), c).some((i) => i.menu_id === 'c')).toBe(false)
+  })
+  it('取り置きに容器代が入っていれば、その分は足さない', () => {
+    const items = [{ menu_id: 'b', name: 'ビリヤニ', price: 2000, qty: 2, from_res: true }, { menu_id: 'c', name: '容器代', price: 100, qty: 2, from_res: true }]
+    expect(withContainerFee(items, c)).toEqual(items)
+  })
+  it('取り置きをテイクアウトで席に入れると、容器代が足りなければ足される', () => {
+    const t = itemsFromReservation([{ menu_id: 'b', name: 'ビリヤニ', qty: 2, takeout: true }], [{ id: 'b', price: 2000, name: 'ビリヤニ' }, { id: 'c', price: 100, name: '容器代' }])
+    expect(t.find((i) => i.menu_id === 'c')?.qty).toBe(2)
+  })
+})

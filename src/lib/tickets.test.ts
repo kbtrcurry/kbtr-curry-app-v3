@@ -255,3 +255,37 @@ describe('テイクアウトの容器代(ビリヤニ1皿につき)', () => {
     expect(t.find((i) => i.menu_id === 'c')?.qty).toBe(2)
   })
 })
+
+import { rebaseOnServer } from './tickets'
+import { enqueue, getEntries, releaseHold, isHeld } from './ticketOutbox'
+describe('注文を確定するまで調理場に送らない', () => {
+  it('入力途中は hold。確定すると送れる状態になり、ほかの操作(会計など)でも解除される', () => {
+    enqueue('t1', { items: [] }, false, true)
+    expect(isHeld('t1')).toBe(true)
+    enqueue('t1', { card_no: 3 }, false, 'keep')
+    expect(isHeld('t1')).toBe(true)
+    releaseHold('t1')
+    expect(isHeld('t1')).toBe(false)
+    expect(getEntries().find((e) => e.id === 't1')?.rebase).toBe(true)
+    enqueue('t2', { items: [] }, false, true)
+    enqueue('t2', { status: 'paid' }, false)
+    expect(isHeld('t2')).toBe(false)
+    expect(getEntries().find((e) => e.id === 't2')?.rebase).toBe(true)
+  })
+  it('確定するとき、その間に調理場で出した分は残す。新しい注文は追加として出す', () => {
+    const server = { status: 'served' as const, items: [{ menu_id: 'b', name: 'ビリヤニ', price: 2000, qty: 1, served_qty: 1 }] }
+    const draft = [
+      { menu_id: 'b', name: 'ビリヤニ', price: 2000, qty: 1 },
+      { menu_id: 'd', name: 'ソーダ', price: 500, qty: 1 },
+    ]
+    const r = rebaseOnServer(draft, server)
+    expect(r.items[0].served_qty).toBe(1)
+    expect(r.items[1].served_qty).toBeUndefined()
+    expect(r.items[1].added_at).toBeTruthy()
+    expect(r.status).toBe('open')
+  })
+  it('会計済みの伝票の状態は変えない', () => {
+    const r = rebaseOnServer([{ menu_id: 'b', name: 'ビリヤニ', price: 2000, qty: 1 }], { status: 'paid', items: [] })
+    expect(r.status).toBeUndefined()
+  })
+})

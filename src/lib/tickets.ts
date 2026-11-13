@@ -3,7 +3,7 @@ import { useEffect } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from './supabase'
 import { portionOf } from './reservations'
-import { enqueue, getEntries, completeEntry, dropEntry, type OutboxEntry } from './ticketOutbox'
+import { enqueue, getEntries, completeEntry, dropEntry, releaseHold, type OutboxEntry } from './ticketOutbox'
 
 export type TicketItem = {
   menu_id: string | null
@@ -401,6 +401,31 @@ async function mergeIntoExisting(row: Ticket): Promise<void> {
   if (error) throw error
 }
 
+/**
+ * 注文画面の入力途中だった内容を送るとき、その間に調理場で出した分(提供済み)を、サーバーの状態から引き継ぐ。
+ * これをしないと、確定した瞬間に、出し終えていた品が「未提供」に戻ってしまう。
+ */
+export function rebaseOnServer(draft: TicketItem[], server: { items: TicketItem[]; status: TicketStatus }): { items: TicketItem[]; status?: TicketStatus } {
+  const key = (i: TicketItem) => `${i.menu_id ?? ''}|${i.name}|${i.from_res ? 'r' : 'a'}`
+  const sv = new Map(server.items.map((i) => [key(i), i]))
+  const anyServed = server.items.some((i) => (i.served_qty ?? 0) > 0)
+  const items = draft.map((i) => {
+    const o = sv.get(key(i))
+    if (o) {
+      const { served_prev, added_at, ...rest } = i
+      void served_prev
+      void added_at
+      return { ...rest, served_qty: Math.min(o.served_qty ?? 0, i.qty), ...(o.served_prev != null ? { served_prev: o.served_prev } : {}), ...(o.added_at ? { added_at: o.added_at } : i.added_at ? { added_at: i.added_at } : {}) }
+    }
+    // サーバーになかった品(新しい注文)。すでに何か出し終えている席なら、追加の注文として調理場に出す
+    return anyServed && !i.added_at && !handedAtRegister(i.name) ? { ...i, added_at: new Date().toISOString() } : i
+  })
+  // 会計済み・取り消しになっていたら、状態は変えない
+  if (server.status === 'paid' || server.status === 'void') return { items }
+  const status: TicketStatus = hasPending(items) ? 'open' : items.some((i) => (i.served_qty ?? 0) > 0) ? 'served' : 'open'
+  return { items, status }
+}
+
 async function sendEntry(e: OutboxEntry): Promise<void> {
   if (e.isNew) {
     const row = fullTicket(e.data)
@@ -411,6 +436,17 @@ async function sendEntry(e: OutboxEntry): Promise<void> {
   }
   const patch = { ...e.data }
   delete patch.id
+  if (e.rebase && patch.items) {
+    const { data: cur, error: curErr } = await supabase.from('tickets').select('items,status').eq('id', e.id).maybeSingle()
+    if (curErr) throw curErr
+    if (cur) {
+      const r = rebaseOnServer(patch.items, cur as { items: TicketItem[]; status: TicketStatus })
+      patch.items = r.items
+      if (r.status) patch.status = r.status
+      else delete patch.status
+      if (r.status === 'open') patch.served_at = null
+    }
+  }
   const { data, error } = await supabase.from('tickets').update(patch).eq('id', e.id).select('id')
   if (error) throw error
   if (!data || data.length === 0) throw new Error('伝票が見つかりませんでした')
@@ -427,7 +463,8 @@ export async function flushOutbox(): Promise<boolean> {
   flushing = true
   let progressed = false
   try {
-    for (const e of [...getEntries()]) {
+    // 注文画面で入力途中のもの(まだ確定していない)は、送らない
+    for (const e of getEntries().filter((x) => !x.hold)) {
       try {
         await sendEntry(e)
         completeEntry(e.id, e.v)
@@ -449,15 +486,15 @@ export function useTicketActions(date: string) {
   const qc = useQueryClient()
   const refresh = () => qc.invalidateQueries({ queryKey: ['tickets'] })
   // 変更は、まず端末に控えて画面に出す。送信は OutboxSync が(通信が戻るまで繰り返し)行う
-  const stage = (id: string, data: Partial<Ticket>, isNew = false) => {
-    enqueue(id, data, isNew)
+  const stage = (id: string, data: Partial<Ticket>, isNew = false, hold: boolean | 'keep' = false) => {
+    enqueue(id, data, isNew, hold)
     qc.setQueryData<Ticket[]>(['tickets', date], (old) => applyOutbox(old ?? [], getEntries(), date))
     qc.setQueryData<Ticket[]>(['tickets', 'day', date], (old) => applyOutbox(old ?? [], getEntries(), date, DAY_STATUSES))
   }
 
   return {
     refresh,
-    create(p: { cardNo: number; items: TicketItem[]; reservationId?: string | null; label?: string }): Promise<Ticket> {
+    create(p: { cardNo: number; items: TicketItem[]; reservationId?: string | null; label?: string }, opts?: { hold?: boolean }): Promise<Ticket> {
       const cache = qc.getQueryData<Ticket[]>(['tickets', date]) ?? []
       const ex = cache.find((t) => t.card_no === p.cardNo && (t.status === 'open' || t.status === 'served'))
       if (ex) {
@@ -467,14 +504,14 @@ export function useTicketActions(date: string) {
         const data: Partial<Ticket> = { items, status: hasPending(items) ? 'open' : ex.status }
         if (!ex.label && p.label) data.label = p.label
         if (!ex.reservation_id && p.reservationId) data.reservation_id = p.reservationId
-        stage(ex.id, data)
+        stage(ex.id, data, false, opts?.hold === true ? true : false)
         return Promise.resolve({ ...ex, ...data })
       }
       const t = fullTicket({ id: newId(), service_date: date, card_no: p.cardNo, label: p.label ?? '', items: p.items, reservation_id: p.reservationId ?? null })
-      stage(t.id, t, true)
+      stage(t.id, t, true, opts?.hold === true)
       return Promise.resolve(t)
     },
-    setItems(id: string, items: TicketItem[]): Promise<void> {
+    setItems(id: string, items: TicketItem[], opts?: { hold?: boolean }): Promise<void> {
       // 提供済みの席に品を足したら調理場へ出し直し、足した分を取り消して全部出し終えていれば提供済みに戻す
       const cur = (qc.getQueryData<Ticket[]>(['tickets', date]) ?? []).find((t) => t.id === id)
       const next = cur ? normalizeServed(items, cur.status) : items
@@ -484,8 +521,12 @@ export function useTicketActions(date: string) {
         if (cur.status === 'served' && pending) status = 'open'
         else if (cur.status === 'open' && !pending && next.some((i) => (i.served_qty ?? 0) > 0)) status = 'served'
       }
-      stage(id, { items: next, ...(status ? { status } : {}) })
+      stage(id, { items: next, ...(status ? { status } : {}) }, false, opts?.hold === true)
       return Promise.resolve()
+    },
+    /** 注文画面の「注文を確定」: 入力途中の分を、調理場へ送る */
+    confirm(id: string): void {
+      releaseHold(id)
     },
     /** 調理場で「提供済みにする」 */
     serve(id: string): Promise<void> {
@@ -520,7 +561,7 @@ export function useTicketActions(date: string) {
     },
     /** テーブルを移る(使用中の番号には移れない。画面側で選べないようにしてある) */
     moveTo(id: string, cardNo: number): Promise<void> {
-      stage(id, { card_no: cardNo })
+      stage(id, { card_no: cardNo }, false, 'keep')
       return Promise.resolve()
     },
     setStatus(id: string, status: TicketStatus): Promise<void> {

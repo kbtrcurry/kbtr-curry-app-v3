@@ -2,6 +2,8 @@ import { useMemo, useRef, useState } from 'react'
 import { ClipboardList } from 'lucide-react'
 import { useLocation } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
+import { useHeldIds } from '../lib/ticketOutbox'
+import { Modal } from '../components/Modal'
 import { useAuth } from '../lib/auth'
 import { Spinner } from '../components/Spinner'
 import { ConfirmModal } from '../components/ConfirmModal'
@@ -39,6 +41,8 @@ export default function OrdersPage() {
   const qc = useQueryClient()
   const invalidateRes = useInvalidateReservations()
   const [confirming, setConfirming] = useState(false)
+  const [leaving, setLeaving] = useState(false)
+  const heldIds = useHeldIds()
   const [cardNo, setCardNo] = useState<number | null>(() => tableFromSearch(loc.search))
   const [undo, setUndo] = useState<{ ticketId: string | null; cardNo: number; before: TicketItem[]; text: string; menu?: { id: string; name: string; price: number } } | null>(null)
   const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -60,6 +64,8 @@ export default function OrdersPage() {
   const byCard = useMemo(() => new Map(tickets.map((t) => [t.card_no, t])), [tickets])
   const free = freeCards(tickets)
   const current: Ticket | undefined = cardNo != null ? byCard.get(cardNo) : undefined
+  // 入力途中で、まだ「注文を確定」を押していない(調理場には届いていない)
+  const held = !!current && heldIds.includes(current.id)
   // 席に案内したけれど、まだ注文を聞いていないテーブル(案内した順)
   const waitingOrder = useMemo(() => tickets.filter((t) => t.items.length === 0).sort((a, b) => a.created_at.localeCompare(b.created_at)), [tickets])
 
@@ -108,7 +114,7 @@ export default function OrdersPage() {
         if (delta <= 0) return
         flashUndo({ ticketId: null, cardNo, before: [], text: `${menu.name} を入れました`, menu })
         // 空いているテーブルに最初の注文を入れたら、フリー1・フリー2…と名前がつく
-        await actions.create({ cardNo, items: feeFor(cardNo, addItem([], menu, 1)), label: nextFreeLabel(date) })
+        await actions.create({ cardNo, items: feeFor(cardNo, addItem([], menu, 1)), label: nextFreeLabel(date) }, { hold: true })
         return
       }
       const before = current.items
@@ -117,7 +123,7 @@ export default function OrdersPage() {
         setGhosts((g) => (g.some((x) => x.menu_id === menu.id && x.name === menu.name) ? g : [...g, { menu_id: menu.id, name: menu.name, price: menu.price }]))
       }
       flashUndo({ ticketId: current.id, cardNo, before, text: delta > 0 ? `${menu.name} を足しました` : `${menu.name} を減らしました` })
-      await actions.setItems(current.id, next)
+      await actions.setItems(current.id, next, { hold: true })
     } catch (e) {
       setError(e instanceof Error ? e.message : '保存できませんでした')
     }
@@ -129,7 +135,7 @@ export default function OrdersPage() {
     setError(null)
     try {
       const before = current.items
-      await actions.setItems(current.id, toggleDishExtra(before, row, dish, extra))
+      await actions.setItems(current.id, toggleDishExtra(before, row, dish, extra), { hold: true })
     } catch (e) {
       setError(e instanceof Error ? e.message : '保存できませんでした')
     }
@@ -145,7 +151,7 @@ export default function OrdersPage() {
       if (it && !next.some((i) => i.menu_id === it.menu_id && i.name === it.name)) {
         setGhosts((g) => (g.some((x) => x.menu_id === it.menu_id && x.name === it.name) ? g : [...g, { menu_id: it.menu_id, name: it.name, price: it.price }]))
       }
-      await actions.setItems(current.id, next)
+      await actions.setItems(current.id, next, { hold: true })
     } catch (e) {
       setError(e instanceof Error ? e.message : '保存できませんでした')
     }
@@ -158,8 +164,8 @@ export default function OrdersPage() {
     try {
       const t = tickets.find((x) => (u.ticketId ? x.id === u.ticketId : x.card_no === u.cardNo))
       if (!t) return
-      if (!u.ticketId && u.menu) await actions.setItems(t.id, addItem(t.items, u.menu, -1, false))
-      else await actions.setItems(t.id, u.before)
+      if (!u.ticketId && u.menu) await actions.setItems(t.id, addItem(t.items, u.menu, -1, false), { hold: true })
+      else await actions.setItems(t.id, u.before, { hold: true })
     } catch (e) {
       setError(e instanceof Error ? e.message : '取り消せませんでした')
     }
@@ -183,10 +189,12 @@ export default function OrdersPage() {
     }
   }
 
-  // 注文を確定: 送れていない分があれば、いま送ってから、席の一覧に戻る(押すたびに保存・調理場への送信は済んでいる)
+  // 注文を確定: 入力途中の分を調理場へ送って(同期して)、席の一覧に戻る
   const confirmOrder = async () => {
     setConfirming(true)
+    setLeaving(false)
     try {
+      if (current) actions.confirm(current.id)
       if (await flushOutbox()) void qc.invalidateQueries({ queryKey: ['tickets'] })
     } finally {
       setConfirming(false)
@@ -257,7 +265,7 @@ export default function OrdersPage() {
   return (
     <div className="p-4 pb-32 max-w-md mx-auto space-y-3">
       <div className="flex items-center gap-3">
-        <button onClick={() => setCardNo(null)} className="h-11 pr-3 text-base text-stone-600">
+        <button onClick={() => (held ? setLeaving(true) : setCardNo(null))} className="h-11 pr-3 text-base text-stone-600">
           ← テーブル一覧
         </button>
         <div className="ml-auto text-right">
@@ -266,6 +274,7 @@ export default function OrdersPage() {
         </div>
       </div>
       {error && <p className="text-sm text-red-600">{error}</p>}
+      {held && <p className="rounded-xl bg-red-600 text-white text-base font-bold px-3 py-2.5 text-center">まだ調理場に送っていません（未確定）。下の「注文を確定して調理場へ送る」を押してください</p>}
 
       <div className="bg-stone-50 rounded-xl p-3 space-y-1.5">
         {items.length === 0 && ghosts.length === 0 && <p className="text-base text-stone-500">まだ注文がありません。下のメニューを押してください</p>}
@@ -380,9 +389,9 @@ export default function OrdersPage() {
       <button
         onClick={() => void confirmOrder()}
         disabled={confirming}
-        className="w-full h-36 rounded-2xl bg-green-600 text-white text-2xl font-bold active:scale-[0.98] transition-transform disabled:opacity-60"
+        className={`w-full h-36 rounded-2xl text-2xl font-bold active:scale-[0.98] transition-transform disabled:opacity-60 ${held ? 'bg-green-600 text-white ring-4 ring-red-500' : 'bg-stone-300 text-stone-700'}`}
       >
-        {confirming ? '送信中…' : items.length > 0 ? '注文を確定' : '席の一覧に戻る'}
+        {confirming ? '送信中…' : held ? '注文を確定して調理場へ送る' : items.length > 0 ? '送信済み（席の一覧に戻る）' : '席の一覧に戻る'}
         {!confirming && items.length > 0 && <span className="block text-sm font-normal mt-1">テーブル{cardNo}・{ticketCount(items)}点 {yen(ticketTotal(items))}</span>}
       </button>
 
@@ -406,6 +415,30 @@ export default function OrdersPage() {
           onPick={(n) => void moveTable(n)}
           onCancel={() => setMoving(false)}
         />
+      )}
+
+      {leaving && (
+        <Modal onClose={() => setLeaving(false)}>
+          <div className="bg-white rounded-2xl p-5 w-full max-w-sm shadow-xl space-y-3">
+            <p className="text-lg font-bold text-stone-900">まだ確定していません</p>
+            <p className="text-sm text-stone-700">この注文は、調理場にまだ届いていません。確定して送りますか？</p>
+            <button onClick={() => void confirmOrder()} className="w-full h-14 rounded-xl bg-green-600 text-white text-lg font-bold">
+              確定して調理場へ送る
+            </button>
+            <button
+              onClick={() => {
+                setLeaving(false)
+                setCardNo(null)
+              }}
+              className="w-full h-12 rounded-xl border-2 border-stone-300 text-stone-700 font-semibold"
+            >
+              送らずに戻る（未確定のまま残る）
+            </button>
+            <button onClick={() => setLeaving(false)} className="w-full h-11 text-stone-500">
+              続けて入力する
+            </button>
+          </div>
+        </Modal>
       )}
 
       {confirmVoid && current && (

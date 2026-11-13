@@ -1,4 +1,4 @@
-import { useSyncExternalStore } from 'react'
+import { useMemo, useSyncExternalStore } from 'react'
 import type { Ticket } from './tickets'
 
 // 伝票の「未送信」の控え。通信が切れていても注文を失わないよう、端末に残して、つながったら自動で送る。
@@ -10,6 +10,10 @@ export type OutboxEntry = {
   /** 変更のたびに増える番号(送っている間に変更が入ったかを見分ける) */
   v: number
   data: Partial<Ticket>
+  /** 注文画面で入れている途中(まだ「注文を確定」を押していない)。確定するまで、調理場へは送らない */
+  hold?: boolean
+  /** 確定した。送るとき、その間に調理場で出した分(提供済み)を残して合わせる */
+  rebase?: boolean
 }
 
 const KEY = 'kbtr_v3_ticket_outbox'
@@ -41,11 +45,28 @@ function commit(next: OutboxEntry[]) {
 
 export const getEntries = (): OutboxEntry[] => entries
 
-export function enqueue(id: string, data: Partial<Ticket>, isNew = false): void {
+/**
+ * hold: true=注文画面の入力途中として、確定まで送らない / false(省略)=すぐ送る(途中の分が残っていれば、それも一緒に送る) / 'keep'=いまの状態のまま
+ */
+export function enqueue(id: string, data: Partial<Ticket>, isNew = false, hold: boolean | 'keep' = false): void {
   const i = entries.findIndex((e) => e.id === id)
-  if (i >= 0) commit(entries.map((e, j) => (j === i ? { ...e, v: e.v + 1, data: { ...e.data, ...data } } : e)))
-  else commit([...entries, { id, isNew, v: 1, data: { ...data, id } }])
+  if (i >= 0) {
+    commit(
+      entries.map((e, j) => {
+        if (j !== i) return e
+        const nextHold = hold === 'keep' ? !!e.hold : hold === true
+        return { ...e, v: e.v + 1, data: { ...e.data, ...data }, hold: nextHold, rebase: e.rebase || (!!e.hold && !nextHold) }
+      }),
+    )
+  } else commit([...entries, { id, isNew, v: 1, data: { ...data, id }, hold: hold === true }])
 }
+
+/** 「注文を確定」: 入力途中の分を、送れる状態にする */
+export function releaseHold(id: string): void {
+  if (!entries.some((e) => e.id === id && e.hold)) return
+  commit(entries.map((e) => (e.id === id ? { ...e, hold: false, rebase: true, v: e.v + 1 } : e)))
+}
+export const isHeld = (id: string): boolean => entries.some((e) => e.id === id && !!e.hold)
 
 /** 送れた。送っている間に新しい変更が入っていれば、残りを送るため控えは残す */
 export function completeEntry(id: string, v: number): void {
@@ -68,6 +89,13 @@ const subscribe = (cb: () => void) => {
   listeners.add(cb)
   return () => listeners.delete(cb)
 }
-export const useOutboxCount = (): number => useSyncExternalStore(subscribe, () => entries.length)
+/** 送るべき控えの数(確定前の入力途中は、数えない) */
+export const useOutboxCount = (): number => useSyncExternalStore(subscribe, () => entries.filter((e) => !e.hold).length)
+/** 確定前(まだ調理場に送っていない)の伝票 */
+export function useHeldIds(): string[] {
+  const st = useSyncExternalStore(subscribe, () => stamp)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  return useMemo(() => entries.filter((e) => e.hold).map((e) => e.id), [st])
+}
 export const useOutboxStamp = (): number => useSyncExternalStore(subscribe, () => stamp)
 export const useOutboxError = (): string | null => useSyncExternalStore(subscribe, () => lastError)

@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react'
 import { elapsedMinutes, hasPending, isTakeoutCard, queueTime, stickerCount, ticketCount, type Ticket } from '../lib/tickets'
 import { defaultLayout, GRID_COLS, GRID_ROWS, placeSpot, resizeSpot } from '../lib/floorPlan'
 import { PENDING_TONE, SERVED_TONE } from '../lib/ticketTone'
+import { useHeldIds } from '../lib/ticketOutbox'
 import { setFloorPlan, useFloorPlan } from '../lib/settings'
 
 // 店の間取りのとおりにテーブルを並べて見せる。使用中のテーブルには、誰の席か(名前・フリー○)と、経過時間を出す。
@@ -22,6 +23,7 @@ export function FloorPlan({
   startEditing?: boolean
 }) {
   const layout = useFloorPlan()
+  const heldIds = useHeldIds()
   const [editing, setEditing] = useState(startEditing)
   const [sel, setSel] = useState<number | null>(null)
   const [now, setNow] = useState(() => Date.now())
@@ -98,6 +100,7 @@ export function FloorPlan({
                 )}
                 {!busy && !editing && isTakeoutCard(sp.n) && <span className="text-xs mt-0.5">持ち帰り</span>}
                 {min != null && <span className={`absolute top-0.5 right-1 text-xs font-bold ${t && !waitingOrder ? (hasPending(t.items) ? 'text-stone-900' : 'text-stone-300') : waitTone(min)}`}>{min}分</span>}
+                {t && !editing && heldIds.includes(t.id) && <span className="absolute top-0.5 left-1 text-[10px] font-bold bg-red-600 text-white rounded px-1 leading-4">未確定</span>}
                 {t && !editing && stickerCount(t.items) > 0 && <span className="absolute bottom-0.5 left-1 text-[10px] font-bold bg-pink-600 text-white rounded px-1 leading-4">ステ</span>}
               </button>
             )

@@ -48,6 +48,7 @@ import DataPage from './pages/DataPage'
 import { useStoredState } from './lib/persistState'
 import { GmailReturnRedirect } from './components/GmailReturnRedirect'
 import { OutboxSync } from './components/OutboxSync'
+import { useHeldIds } from './lib/ticketOutbox'
 import { SettingsSync } from './components/SettingsSync'
 
 const queryClient = new QueryClient({
@@ -172,6 +173,7 @@ function Preloader() {
 
 function Layout({ children }: { children: ReactNode }) {
   const pathname = useLocation().pathname
+  const heldCount = useHeldIds().length
   // 調理場のタブレットは画面いっぱいに使いたいので、ナビを隠せる(隠したままでも、右下のボタンで出せる)
   const [kitchenNav, setKitchenNav] = useStoredState('kbtr_v3_kitchen_nav', false)
   const hideNav = pathname === '/kitchen' && !kitchenNav
@@ -234,7 +236,10 @@ function Layout({ children }: { children: ReactNode }) {
               }`
             }
           >
-            <item.icon className="w-6 h-6" strokeWidth={2} />
+            <span className="relative">
+              <item.icon className="w-6 h-6" strokeWidth={2} />
+              {item.to === '/orders' && heldCount > 0 && <span className="absolute -top-1 -right-2 min-w-4 h-4 px-1 rounded-full bg-red-600 text-white text-[10px] font-bold flex items-center justify-center">{heldCount}</span>}
+            </span>
             {item.label}
           </NavLink>
         ))}

@@ -38,6 +38,7 @@ import {
   resPortions,
   setReservationStatus,
   useInvalidateReservations,
+  revertPickedUp,
   useReservations,
   type Reservation,
 } from '../lib/reservations'
@@ -326,6 +327,12 @@ export default function PosPage() {
     if (r.ticketId) {
       try {
         await ticketActions.setStatus(r.ticketId, 'void')
+        // 取り置きから席に入れた伝票なら、取り置きも「来店前」に戻す
+        const t = (dayTicketsQ.data ?? []).find((x) => x.id === r.ticketId)
+        if (t?.reservation_id) {
+          await revertPickedUp(t.reservation_id)
+          invalidateRes()
+        }
       } catch {
         /* 会計の取り消しは済んでいる */
       }

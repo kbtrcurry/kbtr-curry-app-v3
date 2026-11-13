@@ -532,6 +532,12 @@ export async function setReservationStatus(id: string, status: ResStatus): Promi
   if (error) throw error
 }
 
+/** 席に入れた取り置きの伝票を消したとき、取り置きを「来店前」に戻す(来店済みのときだけ。キャンセルなどは、そのまま) */
+export async function revertPickedUp(id: string): Promise<void> {
+  const { error } = await supabase.from('reservations').update({ status: 'reserved', picked_up_at: null }).eq('id', id).eq('status', 'picked_up')
+  if (error) throw error
+}
+
 export async function deleteReservation(id: string): Promise<void> {
   const { error } = await supabase.from('reservations').delete().eq('id', id)
   if (error) throw error

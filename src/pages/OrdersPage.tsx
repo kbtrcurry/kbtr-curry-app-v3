@@ -16,7 +16,7 @@ import { CHIP, shortName } from '../lib/chips'
 import { TablePicker } from '../components/TablePicker'
 import { FloorPlan } from '../components/FloorPlan'
 import { RemainingTiles } from '../components/RemainingTiles'
-import { fmtPortions, portionOf } from '../lib/reservations'
+import { fmtPortions, portionOf, revertPickedUp, useInvalidateReservations } from '../lib/reservations'
 import { useWalkinRemaining } from '../lib/walkinStock'
 
 const SQL_HINT = 'データベースに「tickets」テーブルがまだありません。supabase/migrations の 20261108000017_tickets.sql を SQL Editor で実行してください。'
@@ -37,6 +37,7 @@ export default function OrdersPage() {
   const actions = useTicketActions(date)
   const loc = useLocation()
   const qc = useQueryClient()
+  const invalidateRes = useInvalidateReservations()
   const [confirming, setConfirming] = useState(false)
   const [cardNo, setCardNo] = useState<number | null>(() => tableFromSearch(loc.search))
   const [undo, setUndo] = useState<{ ticketId: string | null; cardNo: number; before: TicketItem[]; text: string; menu?: { id: string; name: string; price: number } } | null>(null)
@@ -196,6 +197,15 @@ export default function OrdersPage() {
   const cancelTicket = async () => {
     if (!current) return
     await actions.setStatus(current.id, 'void')
+    // 取り置きから席に入れた伝票なら、取り置きも「来店前」に戻す
+    if (current.reservation_id) {
+      try {
+        await revertPickedUp(current.reservation_id)
+        invalidateRes()
+      } catch {
+        /* 伝票の取り消しは済んでいる。取り置きは、取り置きの画面で戻せる */
+      }
+    }
     setConfirmVoid(false)
     setCardNo(null)
   }
@@ -400,7 +410,7 @@ export default function OrdersPage() {
 
       {confirmVoid && current && (
         <ConfirmModal
-          message={`テーブル${cardNo}${current.label ? `（${current.label}）` : ''}の伝票を取り消します。\n${ticketCount(items)}点 ${yen(ticketTotal(items))} の注文が消えます。`}
+          message={`テーブル${cardNo}${current.label ? `（${current.label}）` : ''}の伝票を取り消します。\n${ticketCount(items)}点 ${yen(ticketTotal(items))} の注文が消えます。${current.reservation_id ? '\n取り置きは「来店前」に戻ります。' : ''}`}
           confirmLabel="取り消す"
           onConfirm={() => void cancelTicket()}
           onCancel={() => setConfirmVoid(false)}

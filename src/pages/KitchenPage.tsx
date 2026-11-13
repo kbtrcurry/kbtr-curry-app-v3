@@ -259,7 +259,7 @@ export default function KitchenPage() {
         <span className={`text-xs ${stale ? 'text-red-600 font-bold' : 'text-stone-400'}`}>{ageSec != null ? `更新 ${ageSec}秒前` : ''}</span>
         <button
           onClick={enableSound}
-          className={`ml-auto px-3 py-2.5 rounded-lg text-sm font-semibold ${sound ? 'bg-green-100 text-green-900' : 'bg-orange-300 border-2 border-orange-500 text-stone-900'}`}
+          className={`ml-auto px-3 py-2.5 rounded-lg text-sm font-semibold ${sound ? 'bg-green-100 text-green-900' : 'bg-orange-300 border-2 border-orange-500 text-amber-950'}`}
         >
           {sound ? '音 ON' : '音 OFF（画面をタッチで有効）'}
         </button>
@@ -275,15 +275,15 @@ export default function KitchenPage() {
           return (
             <div key={t.id} className={`rounded-2xl border-2 p-3 ${PENDING_TONE}`}>
               <div className="flex items-baseline gap-2 flex-wrap">
-                <span className="text-sm text-stone-800">テーブル</span>
-                <span className="text-4xl font-bold text-stone-950 leading-none">{t.card_no}</span>
-                {isTakeoutCard(t.card_no) && <span className="text-xs font-bold text-stone-900 bg-stone-300 border border-stone-500 rounded px-1.5 py-0.5">持ち帰り</span>}
+                <span className="text-sm text-amber-950">テーブル</span>
+                <span className="text-4xl font-bold text-amber-950 leading-none">{t.card_no}</span>
+                {isTakeoutCard(t.card_no) && <span className="text-xs font-bold text-amber-950 bg-stone-300 border border-stone-500 rounded px-1.5 py-0.5">持ち帰り</span>}
                 {isFollowUp(t) && <span className="text-xs font-bold text-sky-950 bg-sky-200 border border-sky-500 rounded px-1.5 py-0.5">追加</span>}
-                {t.label && <span className="text-base font-bold text-stone-800">{t.label}</span>}
+                {t.label && <span className="text-base font-bold text-amber-950">{t.label}</span>}
                 <GuestChip g={guestOf(t)} big />
-                <span className={`ml-auto text-lg font-bold rounded px-1.5 ${min >= 15 ? 'bg-red-200 border border-red-500 text-red-900' : min >= 10 ? 'bg-amber-200 border border-amber-500 text-amber-950' : 'text-stone-900'}`}>{min}分</span>
+                <span className={`ml-auto text-lg font-bold rounded px-1.5 ${min >= 15 ? 'bg-red-200 border border-red-500 text-red-900' : min >= 10 ? 'bg-amber-200 border border-amber-500 text-amber-950' : 'text-amber-950'}`}>{min}分</span>
               </div>
-              <p className="text-xs text-stone-800 mt-0.5">
+              <p className="text-xs text-amber-950 mt-0.5">
                 {idx + 1}番目{biryaniDishes(pend) > 0 ? `　ビリヤニ ${biryaniDishes(pend)}皿` : ''}
               </p>
               <ul className="mt-2 space-y-1">
@@ -296,7 +296,7 @@ export default function KitchenPage() {
                       className="w-full min-h-12 flex items-center gap-3 text-left active:bg-stone-100 rounded-lg"
                     >
                       <span className={`shrink-0 w-9 h-9 rounded-lg border-2 flex items-center justify-center text-xl font-bold ${ln.done ? 'bg-green-600 border-green-600 text-white' : 'bg-white border-stone-400 text-transparent'}`}>✓</span>
-                      <span className={`text-xl ${ln.done ? 'text-stone-600 line-through' : 'text-stone-950'}`}>
+                      <span className={`text-xl ${ln.done ? 'text-amber-900 line-through' : 'text-amber-950'}`}>
                         {ln.name} <b>×{ln.qty}</b>
                         {ln.fresh && <span className="ml-2 align-middle text-xs font-bold text-sky-950 bg-sky-200 border border-sky-500 rounded px-1.5 py-0.5">追加</span>}
                       </span>
@@ -304,9 +304,9 @@ export default function KitchenPage() {
                     {ln.dishes.some((d) => d.length > 0) && (
                       <ul className="ml-12 mb-1 space-y-0.5">
                         {ln.dishes.map((d, k) => (
-                          <li key={k} className="flex flex-wrap items-center gap-1.5 text-base text-stone-900">
-                            <span className="text-stone-800">{k + 1}皿目</span>
-                            {d.length === 0 ? <span className="text-sm text-stone-700">なし</span> : d.map((n, j) => <ExtraChip key={j} name={n} big />)}
+                          <li key={k} className="flex flex-wrap items-center gap-1.5 text-base text-amber-950">
+                            <span className="text-amber-950">{k + 1}皿目</span>
+                            {d.length === 0 ? <span className="text-sm text-amber-950">なし</span> : d.map((n, j) => <ExtraChip key={j} name={n} big />)}
                           </li>
                         ))}
                       </ul>

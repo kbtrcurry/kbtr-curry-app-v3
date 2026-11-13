@@ -99,7 +99,7 @@ export function FloorPlan({
                   </span>
                 )}
                 {!busy && !editing && isTakeoutCard(sp.n) && <span className="text-xs mt-0.5">持ち帰り</span>}
-                {min != null && <span className={`absolute top-0.5 right-1 text-xs font-bold ${t && !waitingOrder ? (hasPending(t.items) ? 'text-stone-900' : 'text-stone-300') : waitTone(min)}`}>{min}分</span>}
+                {min != null && <span className={`absolute top-0.5 right-1 text-xs font-bold ${t && !waitingOrder ? (hasPending(t.items) ? 'text-amber-950' : 'text-stone-300') : waitTone(min)}`}>{min}分</span>}
                 {t && !editing && heldIds.includes(t.id) && <span className="absolute top-0.5 left-1 text-[10px] font-bold bg-red-200 border border-red-500 text-red-900 rounded px-1 leading-4">未確定</span>}
                 {t && !editing && stickerCount(t.items) > 0 && <span className="absolute bottom-0.5 left-1 text-[10px] font-bold bg-pink-200 border border-pink-500 text-pink-950 rounded px-1 leading-4">ステ</span>}
               </button>

@@ -134,7 +134,8 @@ export default function ReservationsPage() {
     setSeatError(null)
     try {
       if (n != null) {
-        await todayActions.create({ cardNo: n, items: itemsFromReservation(r.items, menus.data ?? []), reservationId: r.id, label: r.name || '取り置き' })
+        // 席に案内した時点では、調理場へは送らない(席に伺って、追加の注文を聞いてから、オーダー画面で「注文を確定」)
+        await todayActions.create({ cardNo: n, items: itemsFromReservation(r.items, menus.data ?? []), reservationId: r.id, label: r.name || '取り置き' }, { hold: true })
       }
       await applyStatus(r, 'picked_up')
       setSeatRes(null)

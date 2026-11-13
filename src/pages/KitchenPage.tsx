@@ -50,7 +50,10 @@ export default function KitchenPage() {
   const [online, setOnline] = useState(() => (typeof navigator === 'undefined' ? true : navigator.onLine))
   const [showServed, setShowServed] = useState(false)
   const audio = useRef<AudioContext | null>(null)
-  const seen = useRef<Set<string> | null>(null)
+  // 前回の「まだ出していない数」(伝票×メニュー別)。増えたら音で知らせる
+  const prevPending = useRef<Map<string, number> | null>(null)
+  // この端末で「戻す」操作をした直後は、増えても鳴らさない
+  const quietUntil = useRef(0)
   // 提供済みを押し間違えたときのやり直し(5秒)
   const [undos, setUndos] = useState<{ id: string; card: number; key?: string }[]>([])
   // チェックを入れたメニュー(出し終えても、このカードが消えるまで、取り消し線で残す)
@@ -58,8 +61,6 @@ export default function KitchenPage() {
 
   const queue = kitchenQueue(tq.data ?? [])
   const served = servedRecent(tq.data ?? [])
-  // 新しい注文の見分け: 伝票と、足された時刻(追加注文は別の注文として扱う)
-  const queueKey = queue.map((t) => `${t.id}@${queueTime(t)}`).join(',')
 
   // 経過時間と、通信の状態の表示を更新
   useEffect(() => {
@@ -116,14 +117,16 @@ export default function KitchenPage() {
     }
   }
 
-  // 新しい注文(追加注文を含む)が増えたら知らせる（最初の読み込みと、戻した注文では鳴らさない）
+  // 新しい注文・確定した追加の注文で、「まだ出していない数」が増えたら知らせる（最初の読み込みと、この端末で戻した操作では鳴らさない）
   useEffect(() => {
     if (!tq.data) return
-    const keys = new Set(queue.map((t) => `${t.id}@${queueTime(t)}`))
-    if (seen.current && [...keys].some((k) => !seen.current!.has(k))) beep()
-    seen.current = new Set([...(seen.current ?? []), ...keys])
+    const next = new Map<string, number>()
+    for (const t of queue) for (const it of t.items) if (pendingQty(it) > 0) next.set(`${t.id}|${itemKey(it)}`, (next.get(`${t.id}|${itemKey(it)}`) ?? 0) + pendingQty(it))
+    const prev = prevPending.current
+    if (prev && Date.now() > quietUntil.current && [...next].some(([k, q]) => q > (prev.get(k) ?? 0))) beep()
+    prevPending.current = next
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [queueKey, tq.data])
+  }, [tq.data])
 
   const markServed = async (t: Ticket) => {
     setUndos((u) => [...u, { id: t.id, card: t.card_no }])
@@ -131,6 +134,7 @@ export default function KitchenPage() {
     await actions.serve(t.id)
   }
   const undoServed = async (id: string, key?: string) => {
+    quietUntil.current = Date.now() + 5000
     setUndos((u) => u.filter((x) => x.id !== id))
     if (key) await actions.unserveItem(id, key)
     else await actions.unserve(id)
@@ -138,6 +142,7 @@ export default function KitchenPage() {
   // メニュー1つのチェック。入れると出したことになり、外すと戻る。最後の1つを入れてカードが消えるときだけ、5秒の取り消しを出す
   const toggleItem = async (t: Ticket, key: string, done: boolean) => {
     if (done) {
+      quietUntil.current = Date.now() + 5000
       setChecked((c) => ({ ...c, [t.id]: (c[t.id] ?? []).filter((k) => k !== key) }))
       await actions.unserveItem(t.id, key)
       return
@@ -333,7 +338,7 @@ export default function KitchenPage() {
                     <span className="ml-auto text-xs text-stone-300">{t.served_at ? `${elapsedMinutes(t.served_at, now)}分前に提供` : ''}</span>
                   </div>
                   <p className="text-sm text-stone-200 mt-1">{mergeItems(t.items).map((it) => `${it.name}×${it.qty}`).join('　')}</p>
-                  <button onClick={() => void actions.unserve(t.id)} className="w-full mt-2 h-11 rounded-lg border-2 border-amber-400 text-amber-300 font-bold active:scale-95 transition">
+                  <button onClick={() => { quietUntil.current = Date.now() + 5000; void actions.unserve(t.id) }} className="w-full mt-2 h-11 rounded-lg border-2 border-amber-400 text-amber-300 font-bold active:scale-95 transition">
                     未提供に戻す
                   </button>
                 </div>

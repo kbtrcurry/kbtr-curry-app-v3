@@ -163,3 +163,24 @@ describe('提供済みと追加注文', () => {
     expect(r.map((x) => x.id)).toEqual(['b', 'a'])
   })
 })
+
+import { serveItemKey, unserveItemKey, itemKey } from './tickets'
+describe('調理場: メニューごとのチェック', () => {
+  const items = [
+    { menu_id: 'b', name: 'ビリヤニ', price: 2000, qty: 2 },
+    { menu_id: 'd', name: 'ソーダ', price: 500, qty: 1 },
+  ]
+  it('ドリンクだけ出したことにできる。残りは未提供のまま', () => {
+    const a = serveItemKey(items, itemKey(items[1]))
+    expect(a[1].served_qty).toBe(1)
+    expect(hasPending(a)).toBe(true)
+    expect(a[0].served_qty).toBeUndefined()
+  })
+  it('全部チェックすれば出し終わり。外すと戻る', () => {
+    const a = serveItemKey(serveItemKey(items, itemKey(items[0])), itemKey(items[1]))
+    expect(hasPending(a)).toBe(false)
+    const back = unserveItemKey(a, itemKey(items[1]))
+    expect(back[1].served_qty).toBe(0)
+    expect(back[0].served_qty).toBe(2)
+  })
+})

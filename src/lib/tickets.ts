@@ -92,6 +92,21 @@ export function unserveItems(items: TicketItem[]): TicketItem[] {
   })
 }
 
+/** メニューごとのキー(取り置き分と追加分は、同じメニューなら同じキー) */
+export const itemKey = (i: { menu_id: string | null; name: string }): string => `${i.menu_id ?? ''}|${i.name}`
+
+/** 調理場のチェック: あるメニューを、出した状態にする(押す前の数を控えて、戻せるようにする) */
+export const serveItemKey = (items: TicketItem[], key: string): TicketItem[] =>
+  items.map((i) => (itemKey(i) === key && pendingQty(i) > 0 ? { ...i, served_prev: i.served_qty ?? 0, served_qty: i.qty } : i))
+
+/** チェックを外す: そのメニューを、押す前の状態に戻す */
+export const unserveItemKey = (items: TicketItem[], key: string): TicketItem[] =>
+  items.map((i) => {
+    if (itemKey(i) !== key) return i
+    const { served_prev, ...rest } = i
+    return { ...rest, served_qty: Math.min(served_prev ?? 0, i.qty) }
+  })
+
 /** 以前の記録(提供済みの数がない)で、提供済みになっている伝票は、いまある品をすべて提供済みとして扱う */
 export const normalizeServed = (items: TicketItem[], status: TicketStatus): TicketItem[] =>
   status === 'served' ? items.map((i) => (i.served_qty == null ? { ...i, served_qty: i.qty } : i)) : items
@@ -462,6 +477,23 @@ export function useTicketActions(date: string) {
       const cur = (qc.getQueryData<Ticket[]>(['tickets', date]) ?? []).find((t) => t.id === id)
       if (!cur) return Promise.resolve()
       stage(id, { items: markServedItems(cur.items), status: 'served', served_at: new Date().toISOString() })
+      return Promise.resolve()
+    },
+    /** 調理場で、メニュー1つだけを出したことにする(ドリンクだけ先に出す、など)。全部出し終えたら伝票も提供済みに */
+    serveItem(id: string, key: string): Promise<void> {
+      const cur = (qc.getQueryData<Ticket[]>(['tickets', date]) ?? []).find((t) => t.id === id)
+      if (!cur) return Promise.resolve()
+      const items = serveItemKey(cur.items, key)
+      if (hasPending(items)) stage(id, { items })
+      else stage(id, { items, status: 'served', served_at: new Date().toISOString() })
+      return Promise.resolve()
+    },
+    /** メニュー1つのチェックを外す(まだ出していない状態に戻す。伝票が提供済みだったときは調理場に戻る) */
+    unserveItem(id: string, key: string): Promise<void> {
+      const cur = (qc.getQueryData<Ticket[]>(['tickets', date]) ?? []).find((t) => t.id === id)
+      if (!cur) return Promise.resolve()
+      const items = unserveItemKey(cur.items, key)
+      stage(id, { items, ...(hasPending(items) && cur.status === 'served' ? { status: 'open' as const, served_at: null } : {}) })
       return Promise.resolve()
     },
     /** 提供済みを取り消す(押し間違い・確認し直したいとき) */

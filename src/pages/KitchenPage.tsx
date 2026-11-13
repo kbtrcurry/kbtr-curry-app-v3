@@ -11,6 +11,8 @@ import {
   isFollowUp,
   isMissingTable,
   isTakeoutCard,
+  itemKey,
+  pendingQty,
   kitchenQueue,
   mergeItems,
   pendingBiryaniDishes,
@@ -44,7 +46,9 @@ export default function KitchenPage() {
   const audio = useRef<AudioContext | null>(null)
   const seen = useRef<Set<string> | null>(null)
   // 提供済みを押し間違えたときのやり直し(5秒)
-  const [undos, setUndos] = useState<{ id: string; card: number }[]>([])
+  const [undos, setUndos] = useState<{ id: string; card: number; key?: string }[]>([])
+  // チェックを入れたメニュー(出し終えても、このカードが消えるまで、取り消し線で残す)
+  const [checked, setChecked] = useState<Record<string, string[]>>({})
 
   const queue = kitchenQueue(tq.data ?? [])
   const served = servedRecent(tq.data ?? [])
@@ -120,9 +124,43 @@ export default function KitchenPage() {
     setTimeout(() => setUndos((u) => u.filter((x) => x.id !== t.id)), 5000)
     await actions.serve(t.id)
   }
-  const undoServed = async (id: string) => {
+  const undoServed = async (id: string, key?: string) => {
     setUndos((u) => u.filter((x) => x.id !== id))
-    await actions.unserve(id)
+    if (key) await actions.unserveItem(id, key)
+    else await actions.unserve(id)
+  }
+  // メニュー1つのチェック。入れると出したことになり、外すと戻る。最後の1つを入れてカードが消えるときだけ、5秒の取り消しを出す
+  const toggleItem = async (t: Ticket, key: string, done: boolean) => {
+    if (done) {
+      setChecked((c) => ({ ...c, [t.id]: (c[t.id] ?? []).filter((k) => k !== key) }))
+      await actions.unserveItem(t.id, key)
+      return
+    }
+    const last = t.items.filter((i) => pendingQty(i) > 0).every((i) => itemKey(i) === key)
+    setChecked((c) => ({ ...c, [t.id]: [...new Set([...(c[t.id] ?? []), key])] }))
+    if (last) {
+      setUndos((u) => [...u, { id: t.id, card: t.card_no, key }])
+      setTimeout(() => setUndos((u) => u.filter((x) => !(x.id === t.id && x.key === key))), 5000)
+    }
+    await actions.serveItem(t.id, key)
+  }
+  // カードに出す行: まだ出していないメニュー + チェックを入れたメニュー(取り消し線)
+  const linesOf = (t: Ticket) => {
+    const out: { key: string; name: string; qty: number; done: boolean }[] = []
+    for (const it of t.items) {
+      const key = itemKey(it)
+      const pend = pendingQty(it)
+      const mine = checked[t.id]?.includes(key)
+      if (pend <= 0 && !mine) continue
+      const qty = pend > 0 ? pend : it.qty - (it.served_prev ?? 0)
+      if (qty <= 0) continue
+      const ex = out.find((x) => x.key === key)
+      if (ex) {
+        ex.qty += qty
+        ex.done = ex.done && pend <= 0
+      } else out.push({ key, name: it.name, qty, done: pend <= 0 })
+    }
+    return out
   }
 
   // 音は、画面を開いたら自動で準備する。ブラウザが許さない間は、画面のどこかを最初に触った瞬間に有効になる
@@ -228,10 +266,20 @@ export default function KitchenPage() {
               <p className="text-xs text-stone-400 mt-0.5">
                 {idx + 1}番目{biryaniDishes(pend) > 0 ? `　ビリヤニ ${biryaniDishes(pend)}皿` : ''}
               </p>
-              <ul className="mt-2 space-y-0.5">
-                {mergeItems(pend).map((it) => (
-                  <li key={it.key} className="text-xl text-stone-900">
-                    {it.name} <b>×{it.qty}</b>
+              <ul className="mt-2 space-y-1">
+                {linesOf(t).map((ln) => (
+                  <li key={ln.key}>
+                    <button
+                      onClick={() => void toggleItem(t, ln.key, ln.done)}
+                      aria-pressed={ln.done}
+                      aria-label={`${ln.name}を${ln.done ? '未提供に戻す' : '出した'}`}
+                      className="w-full min-h-12 flex items-center gap-3 text-left active:bg-stone-100 rounded-lg"
+                    >
+                      <span className={`shrink-0 w-9 h-9 rounded-lg border-2 flex items-center justify-center text-xl font-bold ${ln.done ? 'bg-green-600 border-green-600 text-white' : 'bg-white border-stone-400 text-transparent'}`}>✓</span>
+                      <span className={`text-xl ${ln.done ? 'text-stone-400 line-through' : 'text-stone-900'}`}>
+                        {ln.name} <b>×{ln.qty}</b>
+                      </span>
+                    </button>
                   </li>
                 ))}
               </ul>
@@ -278,7 +326,7 @@ export default function KitchenPage() {
           {undos.map((u) => (
             <div key={u.id} className="pointer-events-auto w-full max-w-md bg-stone-900 text-white rounded-xl px-4 py-3 flex items-center gap-3 shadow-lg">
               <span className="flex-1 text-base">テーブル{u.card} を提供済みにしました</span>
-              <button onClick={() => void undoServed(u.id)} className="font-bold text-amber-300 text-lg px-3 py-2">
+              <button onClick={() => void undoServed(u.id, u.key)} className="font-bold text-amber-300 text-lg px-3 py-2">
                 元に戻す
               </button>
             </div>

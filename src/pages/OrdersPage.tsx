@@ -228,6 +228,13 @@ export default function OrdersPage() {
               −
             </button>
             <span className="w-7 text-center text-lg font-bold">{it.qty}</span>
+            <button
+              onClick={() => void tap({ id: it.menu_id ?? '', name: it.name, price: it.price }, 1)}
+              className="w-11 h-11 rounded-lg bg-stone-800 text-white text-lg font-bold active:scale-95"
+              aria-label={`${it.name}を1つ増やす`}
+            >
+              ＋
+            </button>
           </div>
         ))}
         {items.length > 0 && (

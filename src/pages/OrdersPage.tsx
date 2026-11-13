@@ -82,6 +82,14 @@ export default function OrdersPage() {
     undoTimer.current = setTimeout(() => setUndo(null), 5000)
   }
 
+  // 一度リストに載ったメニューは、「−」で0にしても、このテーブルを開いている間は0のまま残す(押し間違いで、何を頼まれたか分からなくならないように)
+  type Ghost = { menu_id: string | null; name: string; price: number }
+  const [ghosts, setGhosts] = useState<Ghost[]>([])
+  const [ghostFor, setGhostFor] = useState(cardNo)
+  if (ghostFor !== cardNo) {
+    setGhostFor(cardNo)
+    setGhosts([])
+  }
   // 1回押すごとに保存して調理場へ送る
   const tap = async (menu: { id: string; name: string; price: number }, delta: number, fromRes = false) => {
     if (cardNo == null) return
@@ -96,6 +104,9 @@ export default function OrdersPage() {
       }
       const before = current.items
       const next = addItem(before, menu, delta, fromRes)
+      if (delta < 0 && !next.some((i) => i.menu_id === menu.id && i.name === menu.name)) {
+        setGhosts((g) => (g.some((x) => x.menu_id === menu.id && x.name === menu.name) ? g : [...g, { menu_id: menu.id, name: menu.name, price: menu.price }]))
+      }
       flashUndo({ ticketId: current.id, cardNo, before, text: delta > 0 ? `${menu.name} を足しました` : `${menu.name} を減らしました` })
       await actions.setItems(current.id, next)
     } catch (e) {
@@ -209,7 +220,7 @@ export default function OrdersPage() {
       {error && <p className="text-sm text-red-600">{error}</p>}
 
       <div className="bg-stone-50 rounded-xl p-3 space-y-1.5">
-        {items.length === 0 && <p className="text-base text-stone-500">まだ注文がありません。下のメニューを押してください</p>}
+        {items.length === 0 && ghosts.length === 0 && <p className="text-base text-stone-500">まだ注文がありません。下のメニューを押してください</p>}
         {mergeItems(items).map((it) => (
           <div key={it.key} className="flex items-center gap-2 text-base">
             <span className="flex-1 text-stone-800">
@@ -237,6 +248,24 @@ export default function OrdersPage() {
             </button>
           </div>
         ))}
+        {ghosts
+          .filter((g) => !items.some((i) => i.menu_id === g.menu_id && i.name === g.name))
+          .map((g) => (
+            <div key={`${g.menu_id ?? ''}|${g.name}`} className="flex items-center gap-2 text-base opacity-60">
+              <span className="flex-1 text-stone-500 line-through">{g.name}</span>
+              <button disabled className="w-11 h-11 rounded-lg bg-white border border-stone-300 text-lg text-stone-600 font-bold opacity-40" aria-label={`${g.name}は0です`}>
+                −
+              </button>
+              <span className="w-7 text-center text-lg font-bold">0</span>
+              <button
+                onClick={() => void tap({ id: g.menu_id ?? '', name: g.name, price: g.price }, 1)}
+                className="w-11 h-11 rounded-lg bg-stone-800 text-white text-lg font-bold active:scale-95"
+                aria-label={`${g.name}を1つ増やす`}
+              >
+                ＋
+              </button>
+            </div>
+          ))}
         {items.length > 0 && (
           <p className="text-right text-base text-stone-600 border-t border-stone-200 pt-1.5">
             {ticketCount(items)}点 <b>{yen(ticketTotal(items))}</b>

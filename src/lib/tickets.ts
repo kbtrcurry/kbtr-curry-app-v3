@@ -407,15 +407,17 @@ async function mergeIntoExisting(row: Ticket): Promise<void> {
  */
 export function rebaseOnServer(draft: TicketItem[], server: { items: TicketItem[]; status: TicketStatus }): { items: TicketItem[]; status?: TicketStatus } {
   const key = (i: TicketItem) => `${i.menu_id ?? ''}|${i.name}|${i.from_res ? 'r' : 'a'}`
-  const sv = new Map(server.items.map((i) => [key(i), i]))
-  const anyServed = server.items.some((i) => (i.served_qty ?? 0) > 0)
+  // 提供済みの伝票で、出した数の記録がない古い品は、すべて出し終えたものとして扱う
+  const srvItems = normalizeServed(server.items, server.status)
+  const sv = new Map(srvItems.map((i) => [key(i), i]))
+  const anyServed = srvItems.some((i) => (i.served_qty ?? 0) > 0)
   const items = draft.map((i) => {
     const o = sv.get(key(i))
     if (o) {
       const { served_prev, added_at, ...rest } = i
       void served_prev
       void added_at
-      return { ...rest, served_qty: Math.min(o.served_qty ?? 0, i.qty), ...(o.served_prev != null ? { served_prev: o.served_prev } : {}), ...(o.added_at ? { added_at: o.added_at } : i.added_at ? { added_at: i.added_at } : {}) }
+      return { ...rest, served_qty: Math.min(o.served_qty ?? 0, i.qty), ...(o.served_prev != null ? { served_prev: o.served_prev } : {}), ...(o.added_at ? { added_at: o.added_at } : i.added_at ? { added_at: i.added_at } : (o.served_qty ?? 0) >= o.qty && i.qty > o.qty ? { added_at: new Date().toISOString() } : {}) }
     }
     // サーバーになかった品(新しい注文)。すでに何か出し終えている席なら、追加の注文として調理場に出す
     return anyServed && !i.added_at && !handedAtRegister(i.name) ? { ...i, added_at: new Date().toISOString() } : i

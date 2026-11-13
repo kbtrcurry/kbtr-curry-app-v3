@@ -289,3 +289,19 @@ describe('注文を確定するまで調理場に送らない', () => {
     expect(r.status).toBeUndefined()
   })
 })
+
+describe('出し終えた席への追加注文を、確定すると調理場に未提供として出す', () => {
+  it('数を増やした分・新しい品が、追加として未提供になる。古い品(出した数の記録なし)は出し終え扱い', () => {
+    const server = { status: 'served' as const, items: [{ menu_id: 'b', name: 'ビリヤニ', price: 2000, qty: 1 }] }
+    const draft = [
+      { menu_id: 'b', name: 'ビリヤニ', price: 2000, qty: 2 },
+      { menu_id: 'd', name: 'ソーダ', price: 500, qty: 1 },
+    ]
+    const r = rebaseOnServer(draft, server)
+    expect(r.items[0].served_qty).toBe(1)
+    expect(r.items[0].added_at).toBeTruthy()
+    expect(r.items[1].added_at).toBeTruthy()
+    expect(r.status).toBe('open')
+    expect(pendingItems(r.items).map((i) => i.qty)).toEqual([1, 1])
+  })
+})

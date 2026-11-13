@@ -157,24 +157,28 @@ export default function KitchenPage() {
   }
   // カードに出す行: まだ出していないメニュー + チェックを入れたメニュー(取り消し線)
   const linesOf = (t: Ticket) => {
-    const out: { key: string; name: string; qty: number; done: boolean; dishes: string[][] }[] = []
+    const out: { key: string; name: string; pend: number; doneQty: number; fresh: boolean; dishes: string[][] }[] = []
     for (const it of t.items) {
       const key = itemKey(it)
       const pend = pendingQty(it)
       const mine = checked[t.id]?.includes(key)
       if (pend <= 0 && !mine) continue
-      const qty = pend > 0 ? pend : it.qty - (it.served_prev ?? 0)
-      if (qty <= 0) continue
+      const doneQty = pend > 0 ? 0 : Math.max(0, it.qty - (it.served_prev ?? 0))
+      if (pend <= 0 && doneQty <= 0) continue
       // ビリヤニは、まだ出していない皿ごとの付け合わせ(出し終えた皿は、数えない)
       const dishes = pend > 0 && dishCount(it) > 0 ? Array.from({ length: pend }, (_, k) => extraNames(t.items, it.attach?.[(it.served_qty ?? 0) + k] ?? [])) : []
+      // 出し終えた席に、あとから足された注文(追加)
+      const fresh = pend > 0 && !!it.added_at
       const ex = out.find((x) => x.key === key)
       if (ex) {
-        ex.qty += qty
-        ex.done = ex.done && pend <= 0
+        ex.pend += pend
+        ex.doneQty += doneQty
+        ex.fresh = ex.fresh || fresh
         ex.dishes.push(...dishes)
-      } else out.push({ key, name: it.name, qty, done: pend <= 0, dishes })
+      } else out.push({ key, name: it.name, pend, doneQty, fresh, dishes })
     }
-    return out
+    // まだ出していない分があれば、その数だけを出す(チェックして出し終えた分と、新しく入った分が混ざらないように)
+    return out.map((x) => (x.pend > 0 ? { key: x.key, name: x.name, qty: x.pend, done: false, fresh: x.fresh, dishes: x.dishes } : { key: x.key, name: x.name, qty: x.doneQty, done: true, fresh: false, dishes: x.dishes }))
   }
 
   // 音は、画面を開いたら自動で準備する。ブラウザが許さない間は、画面のどこかを最初に触った瞬間に有効になる
@@ -292,6 +296,7 @@ export default function KitchenPage() {
                       <span className={`shrink-0 w-9 h-9 rounded-lg border-2 flex items-center justify-center text-xl font-bold ${ln.done ? 'bg-green-600 border-green-600 text-white' : 'bg-white border-stone-400 text-transparent'}`}>✓</span>
                       <span className={`text-xl ${ln.done ? 'text-stone-600 line-through' : 'text-stone-950'}`}>
                         {ln.name} <b>×{ln.qty}</b>
+                        {ln.fresh && <span className="ml-2 align-middle text-xs font-bold text-white bg-sky-600 rounded px-1.5 py-0.5">追加</span>}
                       </span>
                     </button>
                     {ln.dishes.some((d) => d.length > 0) && (

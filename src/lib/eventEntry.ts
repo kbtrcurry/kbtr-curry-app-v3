@@ -5,6 +5,13 @@ import { recordReceivable } from './receivables'
 
 export type SalePayment = 'now' | 'later'
 
+/** すでに記帳した経費を、イベントの事業区分に付け替える(金額・日付・科目はそのまま。区分だけ変わる) */
+export async function moveEntriesToSegment(entryIds: string[], segmentId: string): Promise<void> {
+  if (entryIds.length === 0) return
+  const { error } = await supabase.from('journal_entries').update({ segment_id: segmentId }).in('id', entryIds)
+  if (error) throw error
+}
+
 export type EventPreview = { net: number; expenseTotal: number; profit: number }
 
 /** 売上(手数料込み)・手数料・経費から、手取りと利益を出す */

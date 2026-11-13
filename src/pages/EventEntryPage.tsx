@@ -6,9 +6,10 @@ import { useAuth } from '../lib/auth'
 import { Spinner } from '../components/Spinner'
 import { Card } from '../components/charts'
 import { DateInput } from '../components/DateInput'
-import { recordExpense, todayStr, useExpenseAccounts, useInvalidateJournal, useSegments } from '../lib/accounting'
+import { recordExpense, todayStr, useExpenseAccounts, useInvalidateJournal, useJournalEntries, useSegments } from '../lib/accounting'
 import { isEventCode } from '../lib/events'
-import { previewEvent, recordEventSale, type SalePayment } from '../lib/eventEntry'
+import { moveEntriesToSegment, previewEvent, recordEventSale, type SalePayment } from '../lib/eventEntry'
+import { expenseTotal } from '../lib/journalTags'
 import { createSegment, useAllSegments, useInvalidateSegments } from '../lib/segments'
 import { yen } from '../lib/format'
 
@@ -43,6 +44,17 @@ export default function EventEntryPage() {
   const [saving, setSaving] = useState(false)
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
 
+  // これまで別の区分(共通など)で記帳した経費を、このイベントに付け替える
+  const pastRange = useMemo(() => {
+    const d = new Date()
+    d.setDate(d.getDate() - 120)
+    const from = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+    return { from, to: todayStr() }
+  }, [])
+  const past = useJournalEntries(pastRange)
+  const [picked, setPicked] = useState<Set<string>>(new Set())
+  const [moving, setMoving] = useState(false)
+
   if (authLoading) return <Spinner />
   if (!session) {
     return (
@@ -66,6 +78,32 @@ export default function EventEntryPage() {
   )
   const validRows = rows.filter((r) => (Number(r.amount) || 0) > 0 && (r.accountId || defaultAccount))
   const canSave = !!seg && (grossN > 0 || validRows.length > 0) && feeN >= 0 && feeN <= grossN && !saving
+
+  const movable = (past.data ?? []).filter((e) => e.source_type !== 'pos_close' && !isEventCode(e.segments.code) && expenseTotal(e) > 0)
+  const pickedTotal = movable.filter((e) => picked.has(e.id)).reduce((a, e) => a + expenseTotal(e), 0)
+  const togglePick = (id: string) =>
+    setPicked((p) => {
+      const n = new Set(p)
+      if (n.has(id)) n.delete(id)
+      else n.add(id)
+      return n
+    })
+  const moveSelected = async () => {
+    const ids = movable.filter((e) => picked.has(e.id)).map((e) => e.id)
+    if (ids.length === 0 || !seg) return
+    setMoving(true)
+    setMsg(null)
+    try {
+      await moveEntriesToSegment(ids, seg)
+      invalidateJournal()
+      setPicked(new Set())
+      setMsg({ ok: true, text: `${ids.length}件(${yen(pickedTotal)})を、このイベントの経費にしました` })
+    } catch (e) {
+      setMsg({ ok: false, text: `付け替えに失敗しました: ${e instanceof Error ? e.message : ''}` })
+    } finally {
+      setMoving(false)
+    }
+  }
 
   const addRow = () => setRows((rs) => [...rs, { key: Date.now() + rs.length, accountId: defaultAccount, amount: '', memo: '' }])
   const patchRow = (key: number, p: Partial<ExpRow>) => setRows((rs) => rs.map((r) => (r.key === key ? { ...r, ...p } : r)))
@@ -217,6 +255,37 @@ export default function EventEntryPage() {
           </button>
           <p className="text-xs text-stone-400">場所代は「地代家賃」、友人への謝礼は「外注工賃」、材料は「仕入高」を選びます。</p>
         </div>
+      </Card>
+
+      <Card title="これまで記帳した経費を、このイベントに入れる">
+        {movable.length === 0 ? (
+          <p className="text-sm text-stone-400">最近120日で、付け替えられる経費はありません。</p>
+        ) : (
+          <>
+            <p className="text-xs text-stone-500 mb-1">イベント用の仕入れなどに印を付けると、上で選んだイベントの経費になります（金額・日付はそのまま。区分だけ変わります）。</p>
+            <ul className="divide-y divide-stone-100">
+              {movable.map((e) => (
+                <li key={e.id}>
+                  <label className="flex items-center gap-2 py-2 text-sm">
+                    <input type="checkbox" checked={picked.has(e.id)} onChange={() => togglePick(e.id)} className="w-5 h-5 shrink-0" />
+                    <span className="flex-1 min-w-0 truncate text-stone-800">
+                      {e.description || e.journal_lines.find((l) => l.side === 'debit')?.accounts.name || ''}
+                      <span className="text-xs text-stone-400"> {e.entry_date.slice(5).replace('-', '/')}・{e.segments.name}</span>
+                    </span>
+                    <span className="font-semibold shrink-0">{yen(expenseTotal(e))}</span>
+                  </label>
+                </li>
+              ))}
+            </ul>
+            <button
+              onClick={() => void moveSelected()}
+              disabled={picked.size === 0 || !seg || moving}
+              className="w-full mt-2 bg-stone-700 text-white py-2.5 rounded-xl font-bold text-sm disabled:opacity-30"
+            >
+              {moving ? '付け替え中...' : picked.size > 0 ? `${picked.size}件（${yen(pickedTotal)}）をこのイベントに入れる` : '印を付けてください'}
+            </button>
+          </>
+        )}
       </Card>
 
       <Card>

@@ -18,6 +18,7 @@ import {
   itemKey,
   pendingQty,
   stickerCount,
+  handedAtRegister,
   kitchenQueue,
   mergeItems,
   pendingBiryaniDishes,
@@ -303,7 +304,7 @@ export default function KitchenPage() {
                 ))}
               </ul>
               {stickerCount(t.items) > 0 && (
-                <p className="mt-2 rounded-lg bg-pink-100 text-pink-900 text-base font-bold px-3 py-1.5">ステッカー ×{stickerCount(t.items)}（会計のときにレジで渡す）</p>
+                <p className="mt-2 rounded-lg bg-pink-100 text-pink-900 text-base font-bold px-3 py-1.5">{t.items.filter((i) => handedAtRegister(i.name)).map((i) => `${i.name}×${i.qty}`).join('、')}（会計のときにレジで渡す）</p>
               )}
               <button
                 onClick={() => void markServed(t)}

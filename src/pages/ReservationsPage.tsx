@@ -322,7 +322,7 @@ export default function ReservationsPage() {
                   ))}
               </select>
               <div className="pt-1 space-y-1.5">
-                <p className="font-semibold text-stone-700">ビリヤニの皿に付ける品（トッピング・アチャール・ソーダなど）</p>
+                <p className="font-semibold text-stone-700">ビリヤニの皿に付ける品（トッピング・アチャールなど）</p>
                 <div className="flex flex-wrap gap-1.5">
                   {(menus.data ?? [])
                     .filter((m) => portionOf(m.name) === 0)
@@ -908,7 +908,7 @@ function ReservationRow({
     }
     return [...m.values()]
   })()
-  const sharedKinds = (it: ShortItem) => lines.length > 1 && ['パク', '赤玉', 'ライタ', 'アチャ', 'ソーダ'].includes(it.kind)
+  const sharedKinds = (it: ShortItem) => lines.length > 1 && ['パク', '赤玉', 'ライタ', 'アチャ'].includes(it.kind)
   const done = r.status === 'picked_up'
   const off = r.status === 'cancelled' || r.status === 'no_show'
   // 来店前 → 来店済み。来店済み・キャンセル・来なかった → 来店前（押し間違いは、もう一度押せば戻る）

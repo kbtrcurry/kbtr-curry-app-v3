@@ -28,7 +28,7 @@ import { useGuests } from '../lib/guests'
 import { GuestChip } from '../components/GuestChip'
 import { DishList } from '../components/DishList'
 import { useAttachableIds } from '../lib/settings'
-import { hasPending, stickerCount, ticketCount, ticketTotal, useDayTickets, useTicketActions, useTickets, type Ticket } from '../lib/tickets'
+import { handedAtRegister, hasPending, stickerCount, ticketCount, ticketTotal, useDayTickets, useTicketActions, useTickets, type Ticket } from '../lib/tickets'
 import { isEventCode } from '../lib/events'
 import {
   normHandle,
@@ -702,7 +702,7 @@ export default function PosPage() {
             ))}
           </div>
           {loadedTicket && stickerCount(loadedTicket.items) > 0 && (
-            <p className="rounded-lg bg-pink-100 text-pink-900 text-base font-bold px-3 py-2">ステッカー ×{stickerCount(loadedTicket.items)} を渡してください</p>
+            <p className="rounded-lg bg-pink-100 text-pink-900 text-base font-bold px-3 py-2">{loadedTicket.items.filter((i) => handedAtRegister(i.name)).map((i) => `${i.name}×${i.qty}`).join('、')} を渡してください</p>
           )}
           {loadedTicket && <DishList items={loadedTicket.items} />}
           {loadedTicket && (

@@ -86,19 +86,19 @@ export const fmtPortions = (n: number): string => (Number.isInteger(n) ? String(
 
 // ---------- ビリヤニ1皿ずつへの、トッピング・アチャールの振り分け ----------
 
-/** 皿に付けられる品の設定(メニューID)。null は、名前で判断する(パクチー・赤玉・ライタ・アチャール・ソーダ・増量)。画面側で設定から入れる */
+/** 皿に付けられる品の設定(メニューID)。null は、名前で判断する(パクチー・赤玉・ライタ・アチャール・増量)。画面側で設定から入れる */
 let extraIds: Set<string> | null = null
 export function setExtraConfig(ids: string[] | null): void {
   extraIds = ids ? new Set(ids) : null
 }
-/** 1皿ずつに付けられる品(トッピング増量・アチャール・ソーダなど)か */
+/** 1皿ずつに付けられる品(トッピング増量・アチャールなど。ソーダ・サワーなどの飲み物は、初期設定では含めない)か */
 export function isExtraItem(i: { menu_id: string | null; name: string }): boolean {
   if (portionOf(i.name) > 0) return false
   if (extraIds) return !!i.menu_id && extraIds.has(i.menu_id)
   return isExtraName(i.name)
 }
 /** 名前だけでの判断(設定がないときの初期の決め方) */
-export const isExtraName = (name: string): boolean => portionOf(name) === 0 && /パクチ|赤玉|ライタ|アチャール|増量|トッピング|ソーダ/.test(name) && !/サワー|容器/.test(name)
+export const isExtraName = (name: string): boolean => portionOf(name) === 0 && /パクチ|赤玉|ライタ|アチャール|増量|トッピング/.test(name) && !/ソーダ|サワー|容器/.test(name)
 
 /** 取り置き・伝票の品目で、振り分けを持てる形(menu_id・name・qty・attach) */
 export type DishLike = { menu_id: string | null; name: string; qty: number; attach?: string[][] }

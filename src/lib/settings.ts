@@ -1,6 +1,7 @@
 import { defineSetting } from './sharedSettings'
 import { setExtraConfig } from './reservations'
 import { sanitizeLayout as sanitizePosLayout } from './posLayout'
+import { sanitizeSnaps, type ReplySnap } from './replySnapshot'
 import { EMPTY_LEARNED, sanitizeLearned, type DmLearned } from './dmLearning'
 import { defaultLayout, sanitize as sanitizeLayout, type Spot } from './floorPlan'
 
@@ -17,6 +18,10 @@ export const usePosLayout = posLayout.use
 const dmLearned = defineSetting<DmLearned>('kbtr_v3_dm_learned', EMPTY_LEARNED, sanitizeLearned)
 export const useDmLearned = dmLearned.use
 export const getDmLearned = dmLearned.get
+
+/** 取り置きを登録した(=返信した)時点の内容の控え。あとで変わったら、再返信が必要と知らせる */
+const replySnaps = defineSetting<ReplySnap>('kbtr_v3_reply_snaps', {}, sanitizeSnaps)
+export const useReplySnaps = replySnaps.use
 
 /** 今日つくるビリヤニの食数 */
 const cap = defineSetting<number>('kbtr_v3_reserve_cap', 36, (r) => (Number.isFinite(Number(r)) && Number(r) >= 0 ? Number(r) : 36))

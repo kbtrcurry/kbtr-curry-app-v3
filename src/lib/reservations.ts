@@ -570,10 +570,13 @@ export async function saveReservationItems(id: string, items: ResItem[]): Promis
   if (error) throw error
 }
 
-export async function saveReservation(r: ReservationInput): Promise<void> {
-  const row = { ...r, handle: normHandle(r.handle) }
+/** 保存して、取り置きのIDを返す(新しい取り置きは、ここでIDを決める) */
+export async function saveReservation(r: ReservationInput): Promise<string> {
+  const id = r.id ?? crypto.randomUUID()
+  const row = { ...r, id, handle: normHandle(r.handle) }
   const { error } = r.id ? await supabase.from('reservations').update(row).eq('id', r.id) : await supabase.from('reservations').insert(row)
   if (error) throw error
+  return id
 }
 
 /** 過去の台帳をまとめて入れる（取り込み用） */

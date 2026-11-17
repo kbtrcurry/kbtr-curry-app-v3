@@ -2,7 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { isMissingTable, itemsFromReservation, useDayTickets, useTicketActions, useTickets, voidDayTickets, walkinBiryaniPortions, type Ticket } from '../lib/tickets'
 import { learnFromCorrection } from '../lib/dmLearning'
-import { useDmLearned } from '../lib/settings'
+import { useDmLearned, useReplySnaps } from '../lib/settings'
+import { needsReply, snapshotOf, withSnap } from '../lib/replySnapshot'
 import { limitedRows, remaining, reservedPortions, useLimitedIds } from '../lib/walkinStock'
 import { RemainingTiles } from '../components/RemainingTiles'
 import { TablePicker } from '../components/TablePicker'
@@ -648,6 +649,7 @@ function ReservationForm({
   const [uzura, setUzura] = useState(editing?.uzura ?? uzuraEligible(date, new Date()))
   const [paste, setPaste] = useState('')
   const [learned, setLearned] = useDmLearned()
+  const [snaps, setSnaps] = useReplySnaps()
   // 読み取った結果(あとで直した内容と比べて、違いを覚える)
   const parsedRef = useRef<{ text: string; name: string; items: { menu_id: string | null; qty: number; takeout?: boolean }[] } | null>(null)
   const [pasteMsg, setPasteMsg] = useState<string | null>(null)
@@ -757,7 +759,9 @@ function ReservationForm({
     setBusy(true)
     setError(null)
     try {
-      await saveReservation({ id: editing?.id, service_date: svcDate, platform, handle, name: name.trim(), items: withFee, note, status: editing?.status, visit_time: time, uzura, is_new: editing ? editing.is_new : !stat })
+      const savedId = await saveReservation({ id: editing?.id, service_date: svcDate, platform, handle, name: name.trim(), items: withFee, note, status: editing?.status, visit_time: time, uzura, is_new: editing ? editing.is_new : !stat })
+      // 新しい取り置きは、登録した時点の内容で返信している前提。その内容を控える(あとで変わったら、再返信が必要と知らせる)
+      if (!editing) setSnaps(withSnap(snaps, savedId, snapshotOf({ name: name.trim(), service_date: svcDate, visit_time: time, items })))
       // DMを貼って読み取ったあとに直した内容は、次から読み取りに使う
       const base = parsedRef.current
       if (base) {
@@ -1018,6 +1022,7 @@ function ReservationRow({
   onItems: (items: ResItem[]) => Promise<void>
   onStatus: (s: ResStatus) => Promise<void>
 }) {
+  const [rowSnaps] = useReplySnaps()
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const sizeRank = (k: string) => (k === '並' ? 0 : 1)
@@ -1095,6 +1100,11 @@ function ReservationRow({
               {/* チップが多いときは、はみ出さず、この中で折り返す */}
               <span className="flex flex-wrap items-center gap-x-1 gap-y-[3px] min-w-0 flex-1 py-[3px]">
                 {/* 備考は取り置き1件ぜんたいのもの(メニューごとではない)ので、いちばん最初の行の先頭に出す */}
+                {idx === 0 && needsReply(r, rowSnaps) && (
+                  <span className="inline-flex items-center rounded px-1.5 py-[1px] text-[12px] font-bold leading-[18px]" style={{ background: '#b91c1c', color: '#fff' }}>
+                    再返信
+                  </span>
+                )}
                 {idx === 0 && r.note && <span title="備考あり" aria-label="備考あり" className="inline-flex items-center justify-center w-[18px] h-[18px] rounded-full text-[12px] font-extrabold leading-none" style={{ background: "#b91c1c", color: "#fff" }}>!</span>}
                 {ln && <ItemChip it={ln.it} />}
                 {/* うずらは、1食ごとの行すべてに付ける。ビリヤニの次に出す */}
@@ -1169,6 +1179,7 @@ function ReservationCard({
   onItems: (items: ResItem[]) => Promise<void>
   onStatus: (s: ResStatus) => Promise<void>
 }) {
+  const [cardSnaps, setCardSnaps] = useReplySnaps()
   const [copied, setCopied] = useState(false)
   const url = profileUrl(r.platform, r.handle)
   // この取り置きに「◯回目」が書かれていれば、それを表示。なければ、登録の履歴から数える
@@ -1205,6 +1216,14 @@ function ReservationCard({
             {r.visit_time && <span>来店 {r.visit_time}頃</span>}
             <span>{r.uzura ? '早期取り置き特典付き' : '早期取り置き特典なし'}</span>
           </p>
+          {needsReply(r, cardSnaps) && (
+            <div className="mt-1 rounded-lg px-3 py-2 flex items-center gap-2" style={{ background: '#b91c1c', color: '#fff' }}>
+              <p className="flex-1 text-sm font-bold">登録のあとで内容が変わりました。お客さんに再返信してください</p>
+              <button onClick={() => setCardSnaps(withSnap(cardSnaps, r.id, snapshotOf(r)))} className="shrink-0 h-10 px-3 rounded-lg bg-white text-stone-900 text-sm font-bold active:scale-95">
+                再返信した
+              </button>
+            </div>
+          )}
           {r.note && (
             <p className="mt-0.5 flex items-start gap-1.5 text-sm font-semibold text-stone-800">
               <span aria-label="メモ" className="mt-[1px] inline-flex shrink-0 items-center justify-center w-[18px] h-[18px] rounded-full text-[12px] font-extrabold leading-none" style={{ background: '#b91c1c', color: '#fff' }}>!</span>

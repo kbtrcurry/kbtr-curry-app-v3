@@ -976,7 +976,7 @@ function ReservationRow({
               {/* チップが多いときは、はみ出さず、この中で折り返す */}
               <span className="flex flex-wrap items-center gap-x-1 gap-y-[3px] min-w-0 flex-1 py-[3px]">
                 {/* 備考は取り置き1件ぜんたいのもの(メニューごとではない)ので、いちばん最初の行の先頭に出す */}
-                {idx === 0 && r.note && <Chip kind="備考あり">備考あり</Chip>}
+                {idx === 0 && r.note && <span title="備考あり" aria-label="備考あり" className="inline-flex items-center justify-center w-[18px] h-[18px] rounded-full text-[12px] font-extrabold leading-none" style={{ background: "#b91c1c", color: "#fff" }}>!</span>}
                 {ln && <ItemChip it={ln.it} />}
                 {/* うずらは、1食ごとの行すべてに付ける。ビリヤニの次に出す */}
                 {ln && r.uzura && <Chip kind="うずら">特典</Chip>}

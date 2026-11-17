@@ -433,13 +433,15 @@ export default function OrdersPage() {
         })}
       </div>
 
+      <div className="h-28" aria-hidden />
+      {/* 注文の確定ボタンは、スクロールしても画面の右下に出しっぱなしにする */}
       <button
         onClick={() => void confirmOrder()}
         disabled={confirming}
-        className={`w-full h-36 rounded-2xl text-2xl font-bold active:scale-[0.98] transition-transform disabled:opacity-60 ${held ? 'bg-green-600 text-white ring-4 ring-red-500' : 'bg-stone-300 text-stone-700'}`}
+        className={`fixed right-3 bottom-20 md:bottom-4 z-40 max-w-[16rem] min-h-16 px-5 py-2.5 rounded-2xl text-lg font-bold shadow-xl active:scale-95 transition-transform disabled:opacity-60 ${held ? 'bg-green-600 text-white ring-4 ring-red-500' : 'bg-stone-300 text-stone-700'}`}
       >
-        {confirming ? '送信中…' : held ? '注文を確定して調理場へ送る' : items.length > 0 ? '送信済み（席の一覧に戻る）' : '席の一覧に戻る'}
-        {!confirming && items.length > 0 && <span className="block text-sm font-normal mt-1">テーブル{cardNo}・{ticketCount(items)}点 {yen(ticketTotal(items))}</span>}
+        {confirming ? '送信中…' : held ? '注文を確定して調理場へ' : items.length > 0 ? '送信済み（一覧に戻る）' : '席の一覧に戻る'}
+        {!confirming && items.length > 0 && <span className="block text-xs font-normal mt-0.5">テーブル{cardNo}・{ticketCount(items)}点 {yen(ticketTotal(items))}</span>}
       </button>
 
       {current && (

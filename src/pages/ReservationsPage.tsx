@@ -1086,7 +1086,12 @@ function ReservationCard({
             {r.visit_time && <span>来店 {r.visit_time}頃</span>}
             <span>{r.uzura ? '早期取り置き特典付き' : '早期取り置き特典なし'}</span>
           </p>
-          {r.note && <p className="text-xs text-stone-500 mt-0.5">メモ: {r.note}</p>}
+          {r.note && (
+            <p className="mt-0.5 flex items-start gap-1.5 text-sm font-semibold text-stone-800">
+              <span aria-label="メモ" className="mt-[1px] inline-flex shrink-0 items-center justify-center w-[18px] h-[18px] rounded-full text-[12px] font-extrabold leading-none" style={{ background: '#b91c1c', color: '#fff' }}>!</span>
+              <span className="whitespace-pre-wrap">{r.note}</span>
+            </p>
+          )}
         </div>
         <span className={`shrink-0 text-xs font-bold rounded-full px-2 py-1 ${r.status === 'picked_up' ? 'bg-green-100 text-green-700' : r.status === 'reserved' ? 'bg-amber-100 text-amber-800' : 'bg-stone-200 text-stone-600'}`}>
           {STATUS_LABEL[r.status]}

@@ -461,7 +461,6 @@ export default function OrdersPage() {
         })}
       </div>
 
-      <div className="h-28" aria-hidden />
       {/* 注文の確定ボタンは、スクロールしても画面の右下に出しっぱなしにする */}
       <div
         className="fixed left-0 right-0 z-[45] px-4 pointer-events-none bottom-[calc(4.75rem+env(safe-area-inset-bottom,0px))] md:bottom-4 md:left-52 lg:left-60"

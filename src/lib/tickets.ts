@@ -3,7 +3,7 @@ import { useEffect } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from './supabase'
 import { attachedTotals, isExtraItem, portionOf } from './reservations'
-import { enqueue, getEntries, completeEntry, dropEntry, releaseHold, type OutboxEntry } from './ticketOutbox'
+import { enqueue, getEntries, completeEntry, dropEntry, releaseHold, setOutboxError, type OutboxEntry } from './ticketOutbox'
 
 export type TicketItem = {
   menu_id: string | null
@@ -503,7 +503,16 @@ export async function flushOutbox(): Promise<boolean> {
     // 注文画面で入力途中のもの(まだ確定していない)は、送らない
     for (const e of getEntries().filter((x) => !x.hold)) {
       try {
-        await sendEntry(e)
+        try {
+          await sendEntry(e)
+        } catch (err) {
+          // データベースに特記事項の列(note)がまだ無いときは、特記事項だけ外して注文を送る(注文を失わない)
+          if (!('note' in e.data) || !/note/i.test(errText(err)) || !/column|schema cache/i.test(errText(err))) throw err
+          const { note, ...rest } = e.data
+          void note
+          await sendEntry({ ...e, data: rest })
+          setOutboxError("注文は送りましたが、特記事項は保存できていません。SQL Editorで次を実行してください: alter table tickets add column if not exists note text not null default '';")
+        }
         completeEntry(e.id, e.v)
         progressed = true
       } catch (err) {

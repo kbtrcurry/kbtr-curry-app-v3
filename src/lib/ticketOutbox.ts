@@ -79,6 +79,13 @@ export function dropEntry(id: string, message: string): void {
   commit(entries.filter((e) => e.id !== id))
 }
 
+/** 注文は送れたが、知らせたいこと(特記事項の列が無い、など)を画面に出す */
+export function setOutboxError(message: string): void {
+  lastError = message
+  stamp += 1
+  listeners.forEach((l) => l())
+}
+
 export function clearOutboxError(): void {
   lastError = null
   stamp += 1

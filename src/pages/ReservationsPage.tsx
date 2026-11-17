@@ -43,7 +43,8 @@ import {
   saveReservation,
   saveReservationItems,
   sanitizeAttach,
-  toggleAttach,
+  addAttach,
+  removeAttach,
   dishCount,
   extraTotals,
   attachedTotals,
@@ -1139,7 +1140,8 @@ function ReservationCard({
   )
 }
 
-// ビリヤニ1皿ずつに、トッピング増量・アチャールを付ける。付けたいボタンを押すと、その皿に付く(もう一度押すと外れる)
+// ビリヤニ1皿ずつに、トッピング増量・アチャールを付ける(オーダー画面と同じ)。押すと1つ付き、「−」で1つ外れる。同じ品を何個でも付けられる。
+// 皿ごとの特記事項(「パクチー抜き」など)も入れられる。席に案内すると、そのまま伝票に入る。シェアする分は、どの皿にも付けずに残す。
 function DishPicker({ r, onItems }: { r: Reservation; onItems: (items: ResItem[]) => Promise<void> }) {
   const [busy, setBusy] = useState(false)
   const totals = extraTotals(r.items)
@@ -1147,11 +1149,9 @@ function DishPicker({ r, onItems }: { r: Reservation; onItems: (items: ResItem[]
   // 付けられる品(同じメニューは1つにまとめる)
   const extras = [...new Map(r.items.filter((i) => i.menu_id && isExtraItem(i)).map((i) => [i.menu_id as string, i.name])).entries()]
   const dishes = r.items.flatMap((i, idx) => Array.from({ length: dishCount(i) }, (_, d) => ({ i, idx, d })))
-  if (extras.length === 0 || dishes.length === 0 || r.status === 'cancelled') return null
-  const toggle = async (idx: number, d: number, id: string) => {
-    if (busy) return
-    const next = toggleAttach(r.items, idx, d, id)
-    if (next === r.items) return
+  if (dishes.length === 0 || r.status === 'cancelled') return null
+  const save = async (next: ResItem[]) => {
+    if (busy || next === r.items) return
     setBusy(true)
     try {
       await onItems(next)
@@ -1159,40 +1159,70 @@ function DishPicker({ r, onItems }: { r: Reservation; onItems: (items: ResItem[]
       setBusy(false)
     }
   }
+  const change = (idx: number, d: number, id: string, delta: 1 | -1) => void save((delta > 0 ? addAttach : removeAttach)(r.items, idx, d, id))
+  const setNote = (idx: number, d: number, text: string) => {
+    const it = r.items[idx]
+    const notes = Array.from({ length: dishCount(it) }, (_, k) => it.dish_notes?.[k] ?? '')
+    notes[d] = text
+    const { dish_notes: _old, ...rest } = it
+    void _old
+    void save(r.items.map((x, k) => (k === idx ? (notes.some((n) => n.trim()) ? { ...rest, dish_notes: notes } : rest) : x)))
+  }
   const loose = extras.filter(([id]) => (totals[id] ?? 0) > (used[id] ?? 0))
   return (
-    <div className="rounded-xl bg-stone-50 border border-stone-200 p-2 space-y-1.5">
-      <p className="text-xs font-bold text-stone-600">1皿ずつに付ける（押すと付く・もう一度で外れる。シェアする分は、どの皿にも押さずに残す）</p>
+    <div className="rounded-xl bg-stone-50 border border-stone-200 p-2 space-y-2">
+      <p className="text-xs font-bold text-stone-600">1皿ずつに付ける（押すと1つ付く・「−」で1つ外す。シェアする分は、どの皿にも付けずに残す）</p>
       {dishes.map(({ i, idx, d }, n) => {
         const mine = i.attach?.[d] ?? []
         return (
-          <div key={`${idx}-${d}`} className="flex flex-wrap items-center gap-1.5">
-            <span className="w-[7.2em] shrink-0 text-sm font-bold text-stone-800">
+          <div key={`${idx}-${d}`} className="rounded-lg border border-stone-200 bg-white p-2 space-y-1.5">
+            <p className="text-sm font-bold text-stone-800">
               {n + 1}皿目 <span className="text-xs font-normal text-stone-500">{shortName(i.name).label}{i.takeout ? '・TO' : ''}</span>
-            </span>
-            {extras.map(([id, name]) => {
-              const on = mine.includes(id)
-              const full = !on && (used[id] ?? 0) >= (totals[id] ?? 0)
-              const sh = shortName(name)
-              const c = CHIP[sh.kind] ?? CHIP['他']
-              return (
-                <button
-                  key={id}
-                  onClick={() => void toggle(idx, d, id)}
-                  disabled={busy || full}
-                  aria-pressed={on}
-                  className={`h-11 min-w-[3.6rem] px-2.5 rounded-lg text-sm font-bold active:scale-95 transition-transform ${full ? 'opacity-30' : ''}`}
-                  style={on ? { background: c.bg, color: c.fg, boxShadow: `inset 0 0 0 3px ${c.border ?? c.bg}` } : { background: '#d6d3d1', color: '#78716c' }}
-                >
-                  {on ? '✓ ' : ''}
-                  {sh.label}
-                </button>
-              )
-            })}
+            </p>
+            <input
+              defaultValue={i.dish_notes?.[d] ?? ''}
+              onBlur={(e) => {
+                if (e.target.value.trim() !== (i.dish_notes?.[d] ?? '').trim()) setNote(idx, d, e.target.value.trim())
+              }}
+              placeholder="この皿の特記事項（例: パクチー抜き）"
+              className="w-full h-9 rounded-lg border border-stone-300 bg-white px-2.5 text-sm"
+            />
+            <div className="flex flex-wrap items-center gap-1.5">
+              {extras.map(([id, name]) => {
+                const cnt = mine.filter((x) => x === id).length
+                const on = cnt > 0
+                const full = (used[id] ?? 0) >= (totals[id] ?? 0)
+                const sh = shortName(name)
+                const c = CHIP[sh.kind] ?? CHIP['他']
+                return (
+                  <span key={id} className="inline-flex items-stretch gap-0.5">
+                    {on && (
+                      <button
+                        onClick={() => change(idx, d, id, -1)}
+                        disabled={busy}
+                        className="h-11 w-9 rounded-lg border border-stone-300 bg-white text-lg font-bold text-stone-600 active:scale-95"
+                        aria-label={`${name}を1つ外す`}
+                      >
+                        −
+                      </button>
+                    )}
+                    <button
+                      onClick={() => change(idx, d, id, 1)}
+                      disabled={busy || (full && !on)}
+                      aria-pressed={on}
+                      className={`h-11 min-w-[3.6rem] px-2.5 rounded-lg text-sm font-bold active:scale-95 transition-transform ${full && !on ? 'opacity-30' : ''}`}
+                      style={on ? { background: c.bg, color: c.fg, boxShadow: `inset 0 0 0 3px ${c.border ?? c.bg}` } : { background: '#d6d3d1', color: '#78716c' }}
+                    >
+                      {on ? `✓ ${sh.label}${cnt > 1 ? `×${cnt}` : ''}` : sh.label}
+                    </button>
+                  </span>
+                )
+              })}
+            </div>
           </div>
         )
       })}
-      {loose.length > 0 && <p className="text-xs text-stone-500">どちらにも付けない分（シェア）: {loose.map(([id, name]) => `${shortName(name).label}${fmtPortions((totals[id] ?? 0) - (used[id] ?? 0))}`).join('・')}（一覧では、1行目にまとめて出ます）</p>}
+      {loose.length > 0 && <p className="text-xs text-stone-500">どの皿にも付けない分（シェア）: {loose.map(([id, name]) => `${shortName(name).label}${fmtPortions((totals[id] ?? 0) - (used[id] ?? 0))}`).join('・')}</p>}
     </div>
   )
 }

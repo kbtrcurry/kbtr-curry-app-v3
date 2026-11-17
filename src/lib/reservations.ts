@@ -11,6 +11,8 @@ export type ResItem = {
   takeout?: boolean
   /** ビリヤニの品目だけ: 1皿ずつ(配列の順)に付ける、トッピング・アチャールのメニューID。付け先を決めていなければなし */
   attach?: string[][]
+  /** ビリヤニの品目だけ: 1皿ずつ(attach と同じ順)の特記事項(「パクチー抜き」など)。席に案内すると、伝票の皿ごとの特記事項になる */
+  dish_notes?: string[]
 }
 export type Reservation = {
   id: string

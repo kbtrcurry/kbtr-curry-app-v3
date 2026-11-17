@@ -70,3 +70,10 @@ describe('1皿に同じ付け合わせを複数', () => {
     expect(items[0].attach?.[0]).toEqual(['e'])
   })
 })
+
+describe('取り置きの皿ごとの特記事項', () => {
+  it('席に案内すると、伝票の皿ごとの特記事項になる', () => {
+    const items = itemsFromReservation([{ menu_id: 'b', name: 'ビリヤニ', qty: 2, dish_notes: ['', 'パクチー抜き'] }], [{ id: 'b', price: 1500 }])
+    expect(items[0].dish_notes).toEqual(['', 'パクチー抜き'])
+  })
+})

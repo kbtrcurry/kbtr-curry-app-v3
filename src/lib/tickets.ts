@@ -260,7 +260,7 @@ export function freeCards(tickets: Ticket[], max = CARD_COUNT): number[] {
 
 /** 取り置きの内容を、伝票の品目にする(取り置き分として、当日分の残りからは引かない) */
 export function itemsFromReservation(
-  resItems: { menu_id: string | null; name: string; qty: number; attach?: string[][]; takeout?: boolean }[],
+  resItems: { menu_id: string | null; name: string; qty: number; attach?: string[][]; takeout?: boolean; dish_notes?: string[] }[],
   menus: { id: string; price: number; name?: string }[],
 ): TicketItem[] {
   // テイクアウトのビリヤニ1皿につき、容器代を1つ。取り置きに入っていなければ足す
@@ -270,7 +270,7 @@ export function itemsFromReservation(
   const withFee = need > have ? [...resItems, { menu_id: cm?.id ?? null, name: cm?.name ?? '容器代', qty: need - have }] : resItems
   return withFee
     .filter((i) => i.qty > 0)
-    .map((i) => ({ menu_id: i.menu_id, name: i.name, price: menus.find((m) => m.id === i.menu_id)?.price ?? (isContainerName(i.name) ? CONTAINER_FEE : 0), qty: i.qty, from_res: true, ...(i.attach ? { attach: i.attach } : {}), ...(i.takeout && portionOf(i.name) > 0 ? { dish_to: Array.from({ length: dishCount(i) }, () => true) } : {}) }))
+    .map((i) => ({ menu_id: i.menu_id, name: i.name, price: menus.find((m) => m.id === i.menu_id)?.price ?? (isContainerName(i.name) ? CONTAINER_FEE : 0), qty: i.qty, from_res: true, ...(i.attach ? { attach: i.attach } : {}), ...(i.dish_notes?.some((n) => n.trim()) ? { dish_notes: i.dish_notes } : {}), ...(i.takeout && portionOf(i.name) > 0 ? { dish_to: Array.from({ length: dishCount(i) }, () => true) } : {}) }))
 }
 
 export const FREE_PREFIX = 'フリー'

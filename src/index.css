@@ -135,3 +135,18 @@ body {
 #root {
   min-height: 100svh;
 }
+
+/* 画面の下に固定する帯が、左のナビの幅を避ける。ナビを隠したときは、Layout が幅を 0 にして、帯が左端まで広がる */
+.nav-offset {
+  left: 0;
+}
+@media (min-width: 768px) {
+  .nav-offset {
+    left: var(--nav-w-md, 13rem);
+  }
+}
+@media (min-width: 1024px) {
+  .nav-offset {
+    left: var(--nav-w-lg, 15rem);
+  }
+}

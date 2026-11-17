@@ -187,6 +187,18 @@ function Layout({ children }: { children: ReactNode }) {
   const [posNavHidden, setPosNavHidden] = useStoredState('kbtr_v3_pos_nav_hidden', false)
   const isRegister = pathname === '/' || pathname === '/pos'
   const posHide = isRegister && posNavHidden
+  // 下に固定する帯(レジの会計バーなど)が、ナビを隠したときに左端まで広がるよう、ナビの幅を共有する
+  const navGone = hideNav || posHide
+  useEffect(() => {
+    const st = document.documentElement.style
+    if (navGone) {
+      st.setProperty('--nav-w-md', '0px')
+      st.setProperty('--nav-w-lg', '0px')
+    } else {
+      st.removeProperty('--nav-w-md')
+      st.removeProperty('--nav-w-lg')
+    }
+  }, [navGone])
   return (
     <div className="min-h-svh md:flex">
       <header className={`${hideNav ? 'hidden' : 'flex'} md:hidden items-center gap-2 px-4 py-3 border-b border-stone-200 bg-[var(--page-bg)]`}>

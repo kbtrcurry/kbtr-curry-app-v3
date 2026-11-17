@@ -451,18 +451,37 @@ export default function OrdersPage() {
       <div className="grid grid-cols-2 gap-2">
         {menus.map((m) => {
           const left = leftOf(m)
+          // この席の注文リストに入っている数(取り置き分も含む)。下のボタンでも数え、＋−で増減できる
+          const rows = items.filter((i) => i.menu_id === m.id && i.name === m.name)
+          const count = rows.reduce((a, i) => a + i.qty, 0)
+          const addQty = rows.filter((i) => !i.from_res).reduce((a, i) => a + i.qty, 0)
           return (
-            <button
+            <div
               key={m.id}
-              onClick={() => void tap(m, 1)}
-              className={`min-h-[4.25rem] rounded-2xl bg-white border-2 px-2.5 py-2 text-left active:scale-95 active:bg-amber-50 transition ${left?.out ? 'border-red-400' : 'border-stone-300'}`}
+              className={`rounded-2xl border-2 flex flex-col overflow-hidden ${count > 0 ? 'border-amber-500 bg-amber-50' : left?.out ? 'border-red-400 bg-white' : 'border-stone-300 bg-white'}`}
             >
-              <span className="block text-base font-semibold text-stone-800 leading-tight">{m.name}</span>
-              <span className="flex items-baseline justify-between mt-0.5">
-                <span className="text-sm text-amber-700">{yen(m.price)}</span>
-                {left && <span className={`text-sm font-bold ${left.out ? 'text-red-600' : 'text-stone-600'}`}>{left.text}</span>}
-              </span>
-            </button>
+              <button onClick={() => void tap(m, 1)} className="min-h-[3.75rem] px-2.5 py-2 text-left flex-1 active:brightness-95 transition">
+                <span className="flex items-start justify-between gap-1">
+                  <span className="block text-base font-semibold text-stone-800 leading-tight">{m.name}</span>
+                  {count > 0 && <span className="shrink-0 min-w-6 h-6 px-1.5 rounded-full bg-amber-700 text-[#faf9f5] text-sm font-bold flex items-center justify-center">{count}</span>}
+                </span>
+                <span className="flex items-baseline justify-between mt-0.5">
+                  <span className="text-sm text-amber-700">{yen(m.price)}</span>
+                  {left && <span className={`text-sm font-bold ${left.out ? 'text-red-600' : 'text-stone-600'}`}>{left.text}</span>}
+                </span>
+              </button>
+              {count > 0 && (
+                <div className="flex border-t-2 border-amber-200">
+                  <button onClick={() => void tap(m, -1, addQty === 0)} className="flex-1 h-10 text-2xl font-bold text-stone-600 active:bg-amber-100" aria-label={`${m.name}を1つ減らす`}>
+                    −
+                  </button>
+                  <span className="flex-1 h-10 flex items-center justify-center text-lg font-bold text-amber-700">{count}</span>
+                  <button onClick={() => void tap(m, 1)} className="flex-1 h-10 text-2xl font-bold text-stone-600 active:bg-amber-100" aria-label={`${m.name}を1つ増やす`}>
+                    ＋
+                  </button>
+                </div>
+              )}
+            </div>
           )
         })}
         <button

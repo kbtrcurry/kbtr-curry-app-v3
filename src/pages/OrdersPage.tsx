@@ -373,7 +373,7 @@ export default function OrdersPage() {
             </div>
           )
         })}
-        {looseItems(items).filter((it) => !(cardNo != null && isTakeoutCard(cardNo) && isContainerName(it.name))).map((it) => (
+        {looseItems(items).filter((it) => !isContainerName(it.name)).map((it) => (
           <div key={it.key} className="flex items-center gap-2 text-sm">
             <span className="flex-1 text-stone-800">
               {it.name}
@@ -428,7 +428,7 @@ export default function OrdersPage() {
       )}
 
       <div className="grid grid-cols-2 gap-2">
-        {menus.map((m) => {
+        {menus.filter((m) => !isContainerName(m.name)).map((m) => {
           const left = leftOf(m)
           return (
             <button

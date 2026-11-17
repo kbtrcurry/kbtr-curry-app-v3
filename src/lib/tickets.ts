@@ -2,7 +2,7 @@
 import { useEffect } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from './supabase'
-import { attachedTotals, isExtraItem, portionOf } from './reservations'
+import { attachedTotals, dishCount, isExtraItem, portionOf } from './reservations'
 import { enqueue, getEntries, completeEntry, dropEntry, releaseHold, setOutboxError, type OutboxEntry } from './ticketOutbox'
 
 export type TicketItem = {
@@ -268,7 +268,7 @@ export function itemsFromReservation(
   const withFee = need > have ? [...resItems, { menu_id: cm?.id ?? null, name: cm?.name ?? '容器代', qty: need - have }] : resItems
   return withFee
     .filter((i) => i.qty > 0)
-    .map((i) => ({ menu_id: i.menu_id, name: i.name, price: menus.find((m) => m.id === i.menu_id)?.price ?? (isContainerName(i.name) ? CONTAINER_FEE : 0), qty: i.qty, from_res: true, ...(i.attach ? { attach: i.attach } : {}) }))
+    .map((i) => ({ menu_id: i.menu_id, name: i.name, price: menus.find((m) => m.id === i.menu_id)?.price ?? (isContainerName(i.name) ? CONTAINER_FEE : 0), qty: i.qty, from_res: true, ...(i.attach ? { attach: i.attach } : {}), ...(i.takeout && portionOf(i.name) > 0 ? { dish_to: Array.from({ length: dishCount(i) }, () => true) } : {}) }))
 }
 
 export const FREE_PREFIX = 'フリー'

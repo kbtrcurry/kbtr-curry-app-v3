@@ -30,3 +30,19 @@ describe('皿ごとの持ち帰り', () => {
     expect(withContainerFee(base, menu).find((i) => i.name === '容器代')?.qty).toBe(2)
   })
 })
+
+import { itemsFromReservation } from './tickets'
+
+describe('取り置きのテイクアウト', () => {
+  it('テイクアウトのビリヤニは、皿ごとに持ち帰りになる', () => {
+    const items = itemsFromReservation(
+      [
+        { menu_id: 'b', name: 'ビリヤニ', qty: 1, takeout: false },
+        { menu_id: 'b', name: 'ビリヤニ', qty: 2, takeout: true },
+      ],
+      [{ id: 'b', price: 1500 }],
+    )
+    expect(items[0].dish_to).toBeUndefined()
+    expect(items[1].dish_to).toEqual([true, true])
+  })
+})

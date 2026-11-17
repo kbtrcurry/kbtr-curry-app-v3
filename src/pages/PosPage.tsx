@@ -777,7 +777,7 @@ export default function PosPage() {
                   {ticketCount(t.items)}点 {ticketTotal(t.items).toLocaleString()}円
                 </span>
                 {stickerCount(t.items) > 0 && <span className="mt-0.5 inline-block rounded bg-pink-200 border border-pink-500 text-pink-950 text-[11px] font-bold px-1.5">ステッカー×{stickerCount(t.items)}</span>}
-                {(t.note || guestOf(t)?.memo) && <span className="mt-1 block rounded text-sm font-bold px-1.5 py-0.5 whitespace-pre-wrap break-all" style={{ background: '#b91c1c', color: '#fff' }}>※ {[t.note, guestOf(t)?.memo].filter(Boolean).join(' / ')}</span>}
+                {(t.note?.trim() || guestOf(t)?.memo) && <span className="mt-1 block rounded text-sm font-bold px-1.5 py-0.5 whitespace-pre-wrap break-all" style={{ background: '#b91c1c', color: '#fff' }}>※ {[t.note?.trim(), guestOf(t)?.memo && !t.note?.includes(guestOf(t)!.memo) ? guestOf(t)?.memo : ''].filter(Boolean).join(' / ')}</span>}
               </button>
             ))}
           </div>

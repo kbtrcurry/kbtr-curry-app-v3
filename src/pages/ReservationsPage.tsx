@@ -634,6 +634,11 @@ function ReservationForm({
     return o
   })
   const [mode, setMode] = useState<'eat' | 'to'>('eat')
+  // 1皿ずつの付け合わせ・特記事項。メニュー×店内/TO ごとに持つ(数を変えて品目が組み直されても、引き継ぐ)
+  const dishKey = (i: { menu_id: string | null; takeout?: boolean }) => `${i.menu_id ?? ''}|${i.takeout ? 'T' : 'E'}`
+  const [dishData, setDishData] = useState<Record<string, { attach?: string[][]; dish_notes?: string[] }>>(() =>
+    Object.fromEntries((editing?.items ?? []).map((i) => [dishKey(i), { attach: i.attach, dish_notes: i.dish_notes }])),
+  )
   const [svcDate, setSvcDate] = useState(editing?.service_date ?? date)
   const [note, setNote] = useState(editing?.note ?? '')
   const [time, setTime] = useState(editing?.visit_time ?? '')
@@ -658,8 +663,8 @@ function ReservationForm({
   // 直すとき: 1皿ずつの振り分けは、同じメニュー・同じ店内/TOの品目に引き継ぐ(数や品が変わって合わなくなった分は外す)
   const itemsKept: ResItem[] = sanitizeAttach(
     items.map((i) => {
-      const old = editing?.items.find((o) => o.menu_id === i.menu_id && !!o.takeout === !!i.takeout && o.attach)
-      return old?.attach ? { ...i, attach: old.attach } : i
+      const d = dishData[dishKey(i)]
+      return { ...i, ...(d?.attach ? { attach: d.attach } : {}), ...(d?.dish_notes ? { dish_notes: d.dish_notes } : {}) }
     }),
   )
   // テイクアウトのビリヤニ(並でも大でも)1皿につき、容器代を1つ。すでに入れた容器代が足りなければ、足りない分を足す
@@ -813,6 +818,12 @@ function ReservationForm({
           )
         })}
       </div>
+
+      {/* 1皿ずつに、トッピング・アチャールを付ける。皿ごとの特記事項も入れられる(席に案内すると、そのまま伝票に入る) */}
+      <DishPicker
+        r={{ items: itemsKept, status: 'reserved' }}
+        onItems={async (next) => setDishData(Object.fromEntries(next.map((i) => [dishKey(i), { attach: i.attach, dish_notes: i.dish_notes }])))}
+      />
 
       <div className="flex flex-wrap items-center gap-2">
         <TimeSelect value={time} onChange={setTime} />
@@ -1142,7 +1153,7 @@ function ReservationCard({
 
 // ビリヤニ1皿ずつに、トッピング増量・アチャールを付ける(オーダー画面と同じ)。押すと1つ付き、「−」で1つ外れる。同じ品を何個でも付けられる。
 // 皿ごとの特記事項(「パクチー抜き」など)も入れられる。席に案内すると、そのまま伝票に入る。シェアする分は、どの皿にも付けずに残す。
-function DishPicker({ r, onItems }: { r: Reservation; onItems: (items: ResItem[]) => Promise<void> }) {
+function DishPicker({ r, onItems }: { r: { items: ResItem[]; status: ResStatus }; onItems: (items: ResItem[]) => Promise<void> }) {
   const [busy, setBusy] = useState(false)
   const totals = extraTotals(r.items)
   const used = attachedTotals(r.items)

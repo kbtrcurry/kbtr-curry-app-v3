@@ -14,7 +14,7 @@ import { addItem, CARD_COUNT, flushOutbox, freeCards, isMissingTable, isTakeoutC
 import { yen } from '../lib/format'
 import { useAttachableIds } from '../lib/settings'
 import { isExtraItem, sanitizeAttach } from '../lib/reservations'
-import { dishesOf, looseItems, removeDish, toggleDishExtra, withContainerFee } from '../lib/dishOrder'
+import { dishesOf, looseItems, removeDish, setDishNote, toggleDishExtra, withContainerFee } from '../lib/dishOrder'
 import { CHIP, shortName } from '../lib/chips'
 import { TablePicker } from '../components/TablePicker'
 import { FloorPlan } from '../components/FloorPlan'
@@ -153,6 +153,15 @@ export default function OrdersPage() {
     try {
       const before = current.items
       await actions.setItems(current.id, toggleDishExtra(before, row, dish, extra), { hold: true })
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '保存できませんでした')
+    }
+  }
+  const editDishNote = async (row: number, dish: number, text: string) => {
+    if (!current) return
+    setError(null)
+    try {
+      await actions.setItems(current.id, setDishNote(current.items, row, dish, text), { hold: held })
     } catch (e) {
       setError(e instanceof Error ? e.message : '保存できませんでした')
     }
@@ -308,6 +317,23 @@ export default function OrdersPage() {
                 <button onClick={() => void dropDish(d.row, d.dish)} className="w-11 h-11 rounded-lg bg-white border border-stone-300 text-lg text-stone-600 font-bold active:scale-95" aria-label={`${d.n}皿目を消す`}>
                   −
                 </button>
+              </div>
+              <input
+                value={d.note}
+                onChange={(e) => void editDishNote(d.row, d.dish, e.target.value)}
+                placeholder="この皿の特記事項（例: パクチー抜き）"
+                className="w-full h-11 rounded-lg border-2 border-stone-300 bg-white px-3 text-base"
+              />
+              <div className="flex flex-wrap gap-1.5">
+                {NOTE_PRESETS.map((p) => (
+                  <button
+                    key={p}
+                    onClick={() => void editDishNote(d.row, d.dish, d.note.includes(p) ? d.note : d.note ? `${d.note}、${p}` : p)}
+                    className="h-9 px-2.5 rounded-full bg-white border border-stone-300 text-sm text-stone-700 active:scale-95"
+                  >
+                    ＋{p}
+                  </button>
+                ))}
               </div>
               {extraMenus.length > 0 && (
                 <div className="flex flex-wrap gap-1.5">

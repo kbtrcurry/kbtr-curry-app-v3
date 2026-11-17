@@ -19,7 +19,7 @@ export function ExtraChip({ name, big }: { name: string; big?: boolean }) {
 // ビリヤニ1皿ずつの付け合わせの一覧(レジなど)。付け合わせを決めた皿がなければ、何も出さない
 export function DishList({ items }: { items: TicketItem[] }) {
   const dishes = dishesOf(items)
-  if (!dishes.some((d) => d.extras.length > 0)) return null
+  if (!dishes.some((d) => d.extras.length > 0 || d.note.trim())) return null
   return (
     <ul className="space-y-0.5">
       {dishes.map((d) => (
@@ -27,6 +27,7 @@ export function DishList({ items }: { items: TicketItem[] }) {
           <span className="font-semibold">{d.n}皿目</span>
           <span className="text-stone-500">{shortName(d.item.name).label === '大' ? '大盛り' : d.item.name}</span>
           {d.extras.length === 0 ? <span className="text-xs text-stone-400">付け合わせなし</span> : extraNames(items, d.extras).map((n, k) => <ExtraChip key={k} name={n} />)}
+          {d.note.trim() && <span className="rounded px-1.5 text-sm font-bold" style={{ background: '#b91c1c', color: '#fff' }}>※ {d.note.trim()}</span>}
         </li>
       ))}
     </ul>

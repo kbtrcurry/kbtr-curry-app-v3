@@ -20,6 +20,8 @@ export type TicketItem = {
   added_at?: string
   /** ビリヤニの品目だけ: 1皿ずつ(配列の順)に付ける、トッピング・アチャールなどのメニューID */
   attach?: string[][]
+  /** ビリヤニの品目だけ: 1皿ずつ(attach と同じ順)の特記事項(「パクチー抜き」など)。空文字は、なし */
+  dish_notes?: string[]
 }
 export type TicketStatus = 'open' | 'served' | 'paid' | 'void'
 export type Ticket = {

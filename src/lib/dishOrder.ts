@@ -2,13 +2,13 @@
 import { addItem, CONTAINER_FEE, isContainerName, mergeItems, type MergedItem, type TicketItem } from './tickets'
 import { attachedTotals, dishCount, isExtraItem, sanitizeAttach, toggleAttach } from './reservations'
 
-export type Dish = { /** items の何番目の品目か */ row: number; /** その品目の何皿目か(0から) */ dish: number; /** 全体の通し番号(1から) */ n: number; item: TicketItem; extras: string[] }
+export type Dish = { /** items の何番目の品目か */ row: number; /** その品目の何皿目か(0から) */ dish: number; /** 全体の通し番号(1から) */ n: number; item: TicketItem; extras: string[]; /** この皿の特記事項 */ note: string }
 
 /** 注文の中のビリヤニを、1皿ずつに分ける(並べ方は、品目の順) */
 export function dishesOf(items: TicketItem[]): Dish[] {
   const out: Dish[] = []
   items.forEach((item, row) => {
-    for (let d = 0; d < dishCount(item); d++) out.push({ row, dish: d, n: out.length + 1, item, extras: item.attach?.[d] ?? [] })
+    for (let d = 0; d < dishCount(item); d++) out.push({ row, dish: d, n: out.length + 1, item, extras: item.attach?.[d] ?? [], note: item.dish_notes?.[d] ?? '' })
   })
   return out
 }
@@ -36,13 +36,26 @@ export function toggleDishExtra(items: TicketItem[], row: number, dish: number, 
   return toggleAttach(base, row, dish, extra.id)
 }
 
+/** 皿の特記事項を直す(空にすれば消す) */
+export function setDishNote(items: TicketItem[], row: number, dish: number, note: string): TicketItem[] {
+  const it = items[row]
+  if (!it || dish < 0 || dish >= dishCount(it)) return items
+  const notes = Array.from({ length: dishCount(it) }, (_, d) => it.dish_notes?.[d] ?? '')
+  notes[dish] = note
+  const { dish_notes: _old, ...rest } = it
+  void _old
+  const next: TicketItem = notes.some((n) => n.trim()) ? { ...rest, dish_notes: notes } : rest
+  return items.map((x, k) => (k === row ? next : x))
+}
+
 /** 皿を1つ消す。その皿に付けていた品のうち、追加で足した分は、注文からも減らす */
 export function removeDish(items: TicketItem[], row: number, dish: number): TicketItem[] {
   const it = items[row]
   if (!it || dish < 0 || dish >= dishCount(it)) return items
   const mine = it.attach?.[dish] ?? []
   const attach = (it.attach ?? []).filter((_, d) => d !== dish)
-  let next = items.map((x, k) => (k === row ? { ...x, qty: x.qty - 1, attach } : x))
+  const dish_notes = it.dish_notes?.filter((_, d) => d !== dish)
+  let next = items.map((x, k) => (k === row ? { ...x, qty: x.qty - 1, attach, ...(dish_notes ? { dish_notes } : {}) } : x))
   next = next.filter((x) => x.qty > 0)
   for (const id of mine) {
     const ex = next.find((i) => i.menu_id === id && !i.from_res)

@@ -159,7 +159,7 @@ export default function KitchenPage() {
   }
   // カードに出す行: まだ出していないメニュー + チェックを入れたメニュー(取り消し線)
   const linesOf = (t: Ticket) => {
-    const out: { key: string; name: string; pend: number; doneQty: number; fresh: boolean; dishes: { extras: string[]; note: string }[] }[] = []
+    const out: { key: string; name: string; pend: number; doneQty: number; fresh: boolean; dishes: { extras: string[]; note: string; to: boolean }[] }[] = []
     // 皿に付けた品は、ビリヤニの下に出すので、単品の行からは外す
     for (const it of withoutAttached(t.items)) {
       const key = itemKey(it)
@@ -169,7 +169,7 @@ export default function KitchenPage() {
       const doneQty = pend > 0 ? 0 : Math.max(0, it.qty - (it.served_prev ?? 0))
       if (pend <= 0 && doneQty <= 0) continue
       // ビリヤニは、まだ出していない皿ごとの付け合わせ(出し終えた皿は、数えない)
-      const dishes = pend > 0 && dishCount(it) > 0 ? Array.from({ length: pend }, (_, k) => ({ extras: extraNames(t.items, it.attach?.[(it.served_qty ?? 0) + k] ?? []), note: (it.dish_notes?.[(it.served_qty ?? 0) + k] ?? '').trim() })) : []
+      const dishes = pend > 0 && dishCount(it) > 0 ? Array.from({ length: pend }, (_, k) => ({ extras: extraNames(t.items, it.attach?.[(it.served_qty ?? 0) + k] ?? []), note: (it.dish_notes?.[(it.served_qty ?? 0) + k] ?? '').trim(), to: !!it.dish_to?.[(it.served_qty ?? 0) + k] && !isTakeoutCard(t.card_no) })) : []
       // 出し終えた席に、あとから足された注文(追加)
       const fresh = pend > 0 && !!it.added_at
       const ex = out.find((x) => x.key === key)
@@ -303,11 +303,12 @@ export default function KitchenPage() {
                         {ln.fresh && <span className="ml-2 align-middle text-xs font-bold text-sky-950 bg-sky-200 border border-sky-500 rounded px-1.5 py-0.5">追加</span>}
                       </span>
                     </button>
-                    {ln.dishes.some((d) => d.extras.length > 0 || d.note) && (
+                    {ln.dishes.some((d) => d.extras.length > 0 || d.note || d.to) && (
                       <ul className="ml-12 mb-1 space-y-0.5">
                         {ln.dishes.map((d, k) => (
                           <li key={k} className="flex flex-wrap items-center gap-1.5 text-base text-amber-950">
                             <span className="text-amber-950">{k + 1}皿目</span>
+                            {d.to && <span className="rounded px-2 py-0.5 text-base font-bold" style={{ background: '#1d4ed8', color: '#fff' }}>持ち帰り</span>}
                             {d.extras.length === 0 ? <span className="text-sm text-amber-950">なし</span> : d.extras.map((n, j) => <ExtraChip key={j} name={n} big />)}
                             {d.note && <span className="rounded px-2 py-0.5 text-base font-bold" style={{ background: '#b91c1c', color: '#fff' }}>※ {d.note}</span>}
                           </li>

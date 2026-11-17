@@ -14,7 +14,7 @@ import { addItem, CARD_COUNT, isContainerName, flushOutbox, freeCards, isMissing
 import { yen } from '../lib/format'
 import { useAttachableIds } from '../lib/settings'
 import { isExtraItem, sanitizeAttach } from '../lib/reservations'
-import { dishesOf, looseItems, removeDish, setDishNote, toggleDishExtra, withContainerFee } from '../lib/dishOrder'
+import { dishesOf, looseItems, removeDish, setDishNote, setDishTo, toggleDishExtra, withContainerFee } from '../lib/dishOrder'
 import { CHIP, shortName } from '../lib/chips'
 import { TablePicker } from '../components/TablePicker'
 import { FloorPlan } from '../components/FloorPlan'
@@ -120,7 +120,7 @@ export default function OrdersPage() {
 
   // テイクアウトの席(9〜12)は、ビリヤニ1皿につき容器代を自動で合わせる
   const containerMenu = menus.find((m) => /容器/.test(m.name)) ?? null
-  const feeFor = (n: number | null, list: TicketItem[]): TicketItem[] => (n != null && isTakeoutCard(n) ? withContainerFee(list, containerMenu) : list)
+  const feeFor = (n: number | null, list: TicketItem[]): TicketItem[] => (n != null ? withContainerFee(list, containerMenu, !isTakeoutCard(n)) : list)
   // 1回押すごとに保存して調理場へ送る
   const tap = async (menu: { id: string; name: string; price: number }, delta: number, fromRes = false) => {
     if (cardNo == null) return
@@ -161,6 +161,15 @@ export default function OrdersPage() {
     setError(null)
     try {
       await actions.setItems(current.id, setDishNote(current.items, row, dish, text), { hold: held })
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '保存できませんでした')
+    }
+  }
+  const toggleDishTo = async (row: number, dish: number, to: boolean) => {
+    if (!current) return
+    setError(null)
+    try {
+      await actions.setItems(current.id, feeFor(cardNo, setDishTo(current.items, row, dish, to)), { hold: true })
     } catch (e) {
       setError(e instanceof Error ? e.message : '保存できませんでした')
     }
@@ -317,8 +326,19 @@ export default function OrdersPage() {
                 <span className="flex-1 min-w-0 text-sm font-semibold text-stone-900">
                   {d.item.name} <span className="text-xs font-normal text-stone-500">{d.n}皿目</span>
                   {d.item.from_res && <span className="ml-1 text-xs text-sky-700">取り置き</span>}
-                  {cardNo != null && isTakeoutCard(cardNo) && <span className="ml-1.5 rounded px-1.5 py-0.5 text-xs font-bold" style={{ background: '#1d4ed8', color: '#fff' }}>TO・容器代 ¥100</span>}
                 </span>
+                {cardNo != null && isTakeoutCard(cardNo) ? (
+                  <span className="shrink-0 rounded-lg px-2 py-1.5 text-xs font-bold" style={{ background: '#1d4ed8', color: '#fff' }}>持ち帰り ¥100</span>
+                ) : (
+                  <button
+                    onClick={() => void toggleDishTo(d.row, d.dish, !d.to)}
+                    aria-pressed={d.to}
+                    className="shrink-0 h-9 px-2.5 rounded-lg text-xs font-bold active:scale-95"
+                    style={d.to ? { background: '#1d4ed8', color: '#fff' } : { background: '#e7e5e4', color: '#57534e' }}
+                  >
+                    {d.to ? '持ち帰り ¥100' : 'イートイン'}
+                  </button>
+                )}
                 <button onClick={() => void dropDish(d.row, d.dish)} className="w-9 h-9 rounded-lg bg-white border border-stone-300 text-lg text-stone-600 font-bold active:scale-95" aria-label={`${d.n}皿目を1皿減らす`}>
                   −
                 </button>

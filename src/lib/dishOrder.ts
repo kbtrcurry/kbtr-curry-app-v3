@@ -2,13 +2,13 @@
 import { addItem, CONTAINER_FEE, isContainerName, mergeItems, type MergedItem, type TicketItem } from './tickets'
 import { attachedTotals, dishCount, isExtraItem, sanitizeAttach, toggleAttach } from './reservations'
 
-export type Dish = { /** items の何番目の品目か */ row: number; /** その品目の何皿目か(0から) */ dish: number; /** 全体の通し番号(1から) */ n: number; item: TicketItem; extras: string[]; /** この皿の特記事項 */ note: string }
+export type Dish = { /** items の何番目の品目か */ row: number; /** その品目の何皿目か(0から) */ dish: number; /** 全体の通し番号(1から) */ n: number; item: TicketItem; extras: string[]; /** この皿の特記事項 */ note: string; /** この皿だけ持ち帰り */ to: boolean }
 
 /** 注文の中のビリヤニを、1皿ずつに分ける(並べ方は、品目の順) */
 export function dishesOf(items: TicketItem[]): Dish[] {
   const out: Dish[] = []
   items.forEach((item, row) => {
-    for (let d = 0; d < dishCount(item); d++) out.push({ row, dish: d, n: out.length + 1, item, extras: item.attach?.[d] ?? [], note: item.dish_notes?.[d] ?? '' })
+    for (let d = 0; d < dishCount(item); d++) out.push({ row, dish: d, n: out.length + 1, item, extras: item.attach?.[d] ?? [], note: item.dish_notes?.[d] ?? '', to: !!item.dish_to?.[d] })
   })
   return out
 }
@@ -48,6 +48,18 @@ export function setDishNote(items: TicketItem[], row: number, dish: number, note
   return items.map((x, k) => (k === row ? next : x))
 }
 
+/** 皿を持ち帰り(または、イートイン)にする */
+export function setDishTo(items: TicketItem[], row: number, dish: number, to: boolean): TicketItem[] {
+  const it = items[row]
+  if (!it || dish < 0 || dish >= dishCount(it)) return items
+  const flags = Array.from({ length: dishCount(it) }, (_, d) => !!it.dish_to?.[d])
+  flags[dish] = to
+  const { dish_to: _old, ...rest } = it
+  void _old
+  const next: TicketItem = flags.some(Boolean) ? { ...rest, dish_to: flags } : rest
+  return items.map((x, k) => (k === row ? next : x))
+}
+
 /** 皿を1つ消す。その皿に付けていた品のうち、追加で足した分は、注文からも減らす */
 export function removeDish(items: TicketItem[], row: number, dish: number): TicketItem[] {
   const it = items[row]
@@ -55,7 +67,8 @@ export function removeDish(items: TicketItem[], row: number, dish: number): Tick
   const mine = it.attach?.[dish] ?? []
   const attach = (it.attach ?? []).filter((_, d) => d !== dish)
   const dish_notes = it.dish_notes?.filter((_, d) => d !== dish)
-  let next = items.map((x, k) => (k === row ? { ...x, qty: x.qty - 1, attach, ...(dish_notes ? { dish_notes } : {}) } : x))
+  const dish_to = it.dish_to?.filter((_, d) => d !== dish)
+  let next = items.map((x, k) => (k === row ? { ...x, qty: x.qty - 1, attach, ...(dish_notes ? { dish_notes } : {}), ...(dish_to ? { dish_to } : {}) } : x))
   next = next.filter((x) => x.qty > 0)
   for (const id of mine) {
     const ex = next.find((i) => i.menu_id === id && !i.from_res)
@@ -87,8 +100,9 @@ export function extraNames(items: TicketItem[], ids: string[]): string[] {
  * テイクアウトの席: ビリヤニ(並でも大でも)1皿につき、容器代を1つ。
  * 取り置きで入っている容器代は、そのまま使い、足りない分だけ、追加の容器代として自動で合わせる(皿を減らせば、容器代も減る)。
  */
-export function withContainerFee(items: TicketItem[], menu: { id: string | null; name: string; price: number } | null): TicketItem[] {
-  const dishes = items.reduce((a, i) => a + dishCount(i), 0)
+export function withContainerFee(items: TicketItem[], menu: { id: string | null; name: string; price: number } | null, onlyTo = false): TicketItem[] {
+  // onlyTo: イートインの席。持ち帰りにした皿だけ数える(テイクアウトの席は、全部の皿)
+  const dishes = items.reduce((a, i) => a + (onlyTo ? (i.dish_to ?? []).slice(0, dishCount(i)).filter(Boolean).length : dishCount(i)), 0)
   const haveRes = items.filter((i) => isContainerName(i.name) && i.from_res).reduce((a, i) => a + i.qty, 0)
   const want = Math.max(0, dishes - haveRes)
   const idx = items.findIndex((i) => isContainerName(i.name) && !i.from_res)

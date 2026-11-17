@@ -13,3 +13,20 @@ describe('皿ごとの特記事項', () => {
     expect(items[0].dish_notes).toBeUndefined()
   })
 })
+
+import { setDishTo, withContainerFee } from './dishOrder'
+
+describe('皿ごとの持ち帰り', () => {
+  const menu = { id: 'c', name: '容器代', price: 100 }
+  const base = [{ menu_id: 'b', name: 'ビリヤニ', price: 1500, qty: 2 }]
+  it('イートインの席は、持ち帰りにした皿の分だけ容器代', () => {
+    let items = withContainerFee(setDishTo(base, 0, 1, true), menu, true)
+    expect(items.find((i) => i.name === '容器代')?.qty).toBe(1)
+    items = withContainerFee(setDishTo(items, 0, 1, false), menu, true)
+    expect(items.some((i) => i.name === '容器代')).toBe(false)
+    expect(items[0].dish_to).toBeUndefined()
+  })
+  it('テイクアウトの席は、全部の皿', () => {
+    expect(withContainerFee(base, menu).find((i) => i.name === '容器代')?.qty).toBe(2)
+  })
+})

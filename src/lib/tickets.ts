@@ -22,6 +22,8 @@ export type TicketItem = {
   attach?: string[][]
   /** ビリヤニの品目だけ: 1皿ずつ(attach と同じ順)の特記事項(「パクチー抜き」など)。空文字は、なし */
   dish_notes?: string[]
+  /** ビリヤニの品目だけ: 1皿ずつ(attach と同じ順)の持ち帰り。イートインの席で、1皿だけ持ち帰り、ができる */
+  dish_to?: boolean[]
 }
 export type TicketStatus = 'open' | 'served' | 'paid' | 'void'
 export type Ticket = {

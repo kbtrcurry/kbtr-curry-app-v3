@@ -25,7 +25,7 @@ const SQL_HINT = 'データベースに「tickets」テーブルがまだあり�
 
 /** /orders?table=5 のように、開くテーブルを指定できる(席に案内した直後に、そのまま注文を取るため) */
 /** 特記事項のよく使う言葉(押すと入力欄に足される) */
-const NOTE_PRESETS = ['パクチー抜き', '辛さ控えめ', '玉ねぎ抜き', '取り分け用の皿']
+const NOTE_PRESETS = ['パクチー抜き', '玉ねぎ抜き', '取り分け用の皿']
 
 const tableFromSearch = (search: string): number | null => {
   const n = Number(new URLSearchParams(search).get('table'))

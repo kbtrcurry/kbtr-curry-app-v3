@@ -292,7 +292,7 @@ export default function OrdersPage() {
         </div>
       </div>
       {error && <p className="text-sm text-red-600">{error}</p>}
-      {held && <p className="rounded-xl bg-[#b91c1c] text-white text-base font-bold px-3 py-2.5 text-center">まだ調理場に送っていません（未確定）。下の「注文を確定して調理場へ送る」を押してください</p>}
+      {held && <p className="sticky top-2 z-30 shadow-lg rounded-xl bg-[#b91c1c] text-white text-base font-bold px-3 py-2.5 text-center">まだ調理場に送っていません（未確定）。下の「注文を確定して調理場へ送る」を押してください</p>}
 
       <div className="bg-stone-50 rounded-xl p-3 space-y-1.5">
         {items.length === 0 && ghosts.length === 0 && <p className="text-base text-stone-500">まだ注文がありません。下のメニューを押してください</p>}
@@ -437,14 +437,20 @@ export default function OrdersPage() {
 
       <div className="h-28" aria-hidden />
       {/* 注文の確定ボタンは、スクロールしても画面の右下に出しっぱなしにする */}
-      <button
-        onClick={() => void confirmOrder()}
-        disabled={confirming}
-        className={`fixed right-3 bottom-20 md:bottom-4 z-40 max-w-[16rem] min-h-16 px-5 py-2.5 rounded-2xl text-lg font-bold shadow-xl active:scale-95 transition-transform disabled:opacity-60 ${held ? 'bg-green-600 text-white ring-4 ring-red-500' : 'bg-stone-300 text-stone-700'}`}
+      <div
+        className="fixed left-0 right-0 z-[45] px-4 pointer-events-none bottom-[calc(4.75rem+env(safe-area-inset-bottom,0px))] md:bottom-4 md:left-52 lg:left-60"
       >
-        {confirming ? '送信中…' : held ? '注文を確定して調理場へ' : items.length > 0 ? '送信済み（一覧に戻る）' : '席の一覧に戻る'}
-        {!confirming && items.length > 0 && <span className="block text-xs font-normal mt-0.5">テーブル{cardNo}・{ticketCount(items)}点 {yen(ticketTotal(items))}</span>}
-      </button>
+        <div className="max-w-md mx-auto flex justify-end">
+          <button
+            onClick={() => void confirmOrder()}
+            disabled={confirming}
+            className={`pointer-events-auto w-[calc(50%-0.25rem)] min-h-16 px-3 py-2.5 rounded-2xl text-lg font-bold leading-tight shadow-xl active:scale-95 transition-transform disabled:opacity-60 ${held ? 'bg-green-600 text-white ring-4 ring-red-500' : 'bg-stone-300 text-stone-700'}`}
+          >
+            {confirming ? '送信中…' : held ? '注文を確定して調理場へ' : items.length > 0 ? '送信済み（一覧に戻る）' : '席の一覧に戻る'}
+            {!confirming && items.length > 0 && <span className="block text-xs font-normal mt-0.5">テーブル{cardNo}・{ticketCount(items)}点 {yen(ticketTotal(items))}</span>}
+          </button>
+        </div>
+      </div>
 
       {current && (
         <button onClick={() => setMoving(true)} className="w-full h-12 rounded-xl border-2 border-stone-300 bg-white text-stone-700 font-semibold active:scale-95">

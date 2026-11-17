@@ -1,6 +1,6 @@
 // 注文画面・調理場・レジで、ビリヤニ1皿ずつに付けた品(トッピング・アチャール・ソーダなど)を扱う。純粋な計算だけ(テスト付き)。
 import { addItem, CONTAINER_FEE, isContainerName, mergeItems, type MergedItem, type TicketItem } from './tickets'
-import { attachedTotals, dishCount, isExtraItem, sanitizeAttach, toggleAttach } from './reservations'
+import { addAttach, attachedTotals, dishCount, isExtraItem, removeAttach, sanitizeAttach, toggleAttach } from './reservations'
 
 export type Dish = { /** items の何番目の品目か */ row: number; /** その品目の何皿目か(0から) */ dish: number; /** 全体の通し番号(1から) */ n: number; item: TicketItem; extras: string[]; /** この皿の特記事項 */ note: string; /** この皿だけ持ち帰り */ to: boolean }
 
@@ -14,6 +14,26 @@ export function dishesOf(items: TicketItem[]): Dish[] {
 }
 
 type Menu = { id: string | null; name: string; price: number }
+
+/** 皿に品を1つ足す(同じ品を、1皿に何個でも付けられる)。足りなければ、追加の注文として1つ足す */
+export function addDishExtra(items: TicketItem[], row: number, dish: number, extra: Menu): TicketItem[] {
+  const it = items[row]
+  if (!it || !extra.id || dish < 0 || dish >= dishCount(it)) return items
+  const total = items.filter((i) => i.menu_id === extra.id).reduce((a, i) => a + i.qty, 0)
+  const used = attachedTotals(items)[extra.id] ?? 0
+  const base = used < total ? items : addItem(items, extra, 1, false)
+  return addAttach(base, row, dish, extra.id)
+}
+
+/** 皿から品を1つ外す。追加で足していた分(取り置きではない分)があれば、注文からも1つ減らす */
+export function removeDishExtra(items: TicketItem[], row: number, dish: number, extra: Menu): TicketItem[] {
+  const it = items[row]
+  if (!it || !extra.id || dish < 0 || dish >= dishCount(it)) return items
+  if (!(it.attach?.[dish] ?? []).includes(extra.id)) return items
+  const detached = removeAttach(items, row, dish, extra.id)
+  const added = detached.find((i) => i.menu_id === extra.id && i.name === extra.name && !i.from_res)
+  return sanitizeAttach(added ? addItem(detached, extra, -1, false) : detached)
+}
 
 /**
  * 皿に品を付ける/外す。

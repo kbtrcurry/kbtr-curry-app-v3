@@ -130,7 +130,8 @@ export function sanitizeAttach<T extends DishLike>(items: T[]): T[] {
     const att: string[][] = []
     for (let d = 0; d < n; d++) {
       const keep: string[] = []
-      for (const id of new Set(i.attach[d] ?? [])) {
+      // 同じ品を1皿に複数つけられる(川海老アチャールを2つ、など)。数は、入っている分まで
+      for (const id of i.attach[d] ?? []) {
         if ((left[id] ?? 0) >= 1) {
           left[id] -= 1
           keep.push(id)
@@ -145,6 +146,26 @@ export function sanitizeAttach<T extends DishLike>(items: T[]): T[] {
     }
     return { ...i, attach: att }
   })
+}
+/** items[itemIdx] の dish 皿目に、extraId を1つ足す(同じ品を何個でも付けられる)。付けられる数が残っていなければ変えない */
+export function addAttach<T extends DishLike>(items: T[], itemIdx: number, dish: number, extraId: string): T[] {
+  const it = items[itemIdx]
+  if (!it || dish < 0 || dish >= dishCount(it)) return items
+  const used = attachedTotals(items)[extraId] ?? 0
+  if (used >= (extraTotals(items)[extraId] ?? 0)) return items
+  const cur: string[][] = Array.from({ length: dishCount(it) }, (_, d) => [...(it.attach?.[d] ?? [])])
+  cur[dish].push(extraId)
+  return sanitizeAttach(items.map((x, k) => (k === itemIdx ? { ...x, attach: cur } : x)))
+}
+/** items[itemIdx] の dish 皿目から、extraId を1つ外す */
+export function removeAttach<T extends DishLike>(items: T[], itemIdx: number, dish: number, extraId: string): T[] {
+  const it = items[itemIdx]
+  if (!it || dish < 0 || dish >= dishCount(it)) return items
+  const cur: string[][] = Array.from({ length: dishCount(it) }, (_, d) => [...(it.attach?.[d] ?? [])])
+  const at = cur[dish].indexOf(extraId)
+  if (at < 0) return items
+  cur[dish].splice(at, 1)
+  return sanitizeAttach(items.map((x, k) => (k === itemIdx ? { ...x, attach: cur } : x)))
 }
 /** items[itemIdx] の dish 皿目に、extraId を付ける/外す。付けられる数が残っていなければ変えない */
 export function toggleAttach<T extends DishLike>(items: T[], itemIdx: number, dish: number, extraId: string): T[] {

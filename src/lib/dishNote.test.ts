@@ -52,3 +52,21 @@ describe('取り置きのテイクアウト', () => {
     expect(items[1].dish_to).toEqual([true, true])
   })
 })
+
+import { addDishExtra, removeDishExtra } from './dishOrder'
+import { attachedTotals } from './reservations'
+
+describe('1皿に同じ付け合わせを複数', () => {
+  const ebi = { id: 'e', name: '川海老アチャール', price: 300 }
+  const base = [{ menu_id: 'b', name: 'ビリヤニ', price: 1500, qty: 1 }]
+  it('2つ付けると注文も2つになり、1つ外すと1つに戻る', () => {
+    let items = addDishExtra(base, 0, 0, ebi)
+    items = addDishExtra(items, 0, 0, ebi)
+    expect(items.find((i) => i.menu_id === 'e')?.qty).toBe(2)
+    expect(items[0].attach?.[0]).toEqual(['e', 'e'])
+    expect(attachedTotals(items).e).toBe(2)
+    items = removeDishExtra(items, 0, 0, ebi)
+    expect(items.find((i) => i.menu_id === 'e')?.qty).toBe(1)
+    expect(items[0].attach?.[0]).toEqual(['e'])
+  })
+})

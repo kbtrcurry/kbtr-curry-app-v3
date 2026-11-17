@@ -15,7 +15,7 @@ import { addItem, CARD_COUNT, flushOutbox, freeCards, isMissingTable, isTakeoutC
 import { yen } from '../lib/format'
 import { useAttachableIds } from '../lib/settings'
 import { isExtraItem, sanitizeAttach } from '../lib/reservations'
-import { dishesOf, looseItems, removeDish, setDishNote, setDishTo, toggleDishExtra, withContainerFee } from '../lib/dishOrder'
+import { dishesOf, looseItems, removeDish, setDishNote, setDishTo, addDishExtra, removeDishExtra, withContainerFee } from '../lib/dishOrder'
 import { CHIP, shortName } from '../lib/chips'
 import { TablePicker } from '../components/TablePicker'
 import { FloorPlan } from '../components/FloorPlan'
@@ -149,12 +149,12 @@ export default function OrdersPage() {
   }
 
   // 皿ごとの付け合わせ: 皿の行のボタンで付ける/外す。皿を消す
-  const toggleExtra = async (row: number, dish: number, extra: { id: string; name: string; price: number }) => {
+  const changeExtra = async (row: number, dish: number, extra: { id: string; name: string; price: number }, delta: 1 | -1) => {
     if (!current) return
     setError(null)
     try {
       const before = current.items
-      await actions.setItems(current.id, toggleDishExtra(before, row, dish, extra), { hold: true })
+      await actions.setItems(current.id, (delta > 0 ? addDishExtra : removeDishExtra)(before, row, dish, extra), { hold: true })
     } catch (e) {
       setError(e instanceof Error ? e.message : '保存できませんでした')
     }
@@ -382,20 +382,31 @@ export default function OrdersPage() {
               {extraMenus.length > 0 && (
                 <div className="flex flex-wrap gap-1">
                   {extraMenus.map((m) => {
-                    const on = mine.includes(m.id)
+                    // 同じ品を1皿に何個でも付けられる(川海老アチャールを2つ、など)。押すと1つ増え、「−」で1つ減る
+                    const n = mine.filter((x) => x === m.id).length
+                    const on = n > 0
                     const sh = shortName(m.name)
                     const c = CHIP[sh.kind] ?? CHIP['他']
                     return (
-                      <button
-                        key={m.id}
-                        onClick={() => void toggleExtra(d.row, d.dish, m)}
-                        aria-pressed={on}
-                        className="h-9 min-w-[3rem] px-2 rounded-lg text-xs font-bold active:scale-95 transition-transform"
-                        style={on ? { background: c.bg, color: c.fg, boxShadow: `inset 0 0 0 2px ${c.border ?? c.bg}` } : { background: '#d6d3d1', color: '#78716c' }}
-                      >
-                        {on ? '✓ ' : ''}
-                        {sh.label}
-                      </button>
+                      <span key={m.id} className="inline-flex items-stretch gap-0.5">
+                        {on && (
+                          <button
+                            onClick={() => void changeExtra(d.row, d.dish, m, -1)}
+                            className="h-9 w-8 rounded-lg border border-stone-300 bg-white text-base font-bold text-stone-600 active:scale-95"
+                            aria-label={`${m.name}を1つ減らす`}
+                          >
+                            −
+                          </button>
+                        )}
+                        <button
+                          onClick={() => void changeExtra(d.row, d.dish, m, 1)}
+                          aria-pressed={on}
+                          className="h-9 min-w-[3rem] px-2 rounded-lg text-xs font-bold active:scale-95 transition-transform"
+                          style={on ? { background: c.bg, color: c.fg, boxShadow: `inset 0 0 0 2px ${c.border ?? c.bg}` } : { background: '#d6d3d1', color: '#78716c' }}
+                        >
+                          {on ? `✓ ${sh.label}${n > 1 ? `×${n}` : ''}` : sh.label}
+                        </button>
+                      </span>
                     )
                   })}
                 </div>

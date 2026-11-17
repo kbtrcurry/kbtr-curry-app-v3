@@ -89,7 +89,9 @@ export const stickerCount = (items: { name: string; qty: number }[]): number => 
 /** 容器代(テイクアウトのビリヤニ1皿につき加算)。調理場で出すものではないので、「提供前」には数えない */
 export const CONTAINER_FEE = 100
 export const isContainerName = (name: string): boolean => /容器/.test(name)
-export const pendingQty = (i: TicketItem): number => (handedAtRegister(i.name) || isContainerName(i.name) ? 0 : Math.max(0, i.qty - (i.served_qty ?? 0)))
+/** レジの「金額入力」から入れた、メニューにない金額(調理場には出さない) */
+export const isManualAmountName = (name: string): boolean => /^金額入力/.test(name)
+export const pendingQty = (i: TicketItem): number => (handedAtRegister(i.name) || isContainerName(i.name) || isManualAmountName(i.name) ? 0 : Math.max(0, i.qty - (i.served_qty ?? 0)))
 /**
  * 皿に付けた品(川海老のアチャール・パクチーなど)は、その皿(ビリヤニ)と一緒に出すので、単品としては数えない。
  * 皿に付けていない分だけを、単品として残す。調理場・提供前の判定に使う。

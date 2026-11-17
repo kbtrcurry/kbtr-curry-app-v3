@@ -5,12 +5,13 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useHeldIds } from '../lib/ticketOutbox'
 import { useGuests } from '../lib/guests'
 import { Modal } from '../components/Modal'
+import { Numpad } from '../components/Numpad'
 import { useAuth } from '../lib/auth'
 import { Spinner } from '../components/Spinner'
 import { ConfirmModal } from '../components/ConfirmModal'
 import { useActiveMenus } from '../lib/pos'
 import { todayStr } from '../lib/accounting'
-import { addItem, CARD_COUNT, isContainerName, flushOutbox, freeCards, isMissingTable, isTakeoutCard, nextFreeLabel, ticketCount, ticketTotal, useTicketActions, useTickets, type Ticket, type TicketItem } from '../lib/tickets'
+import { addItem, CARD_COUNT, flushOutbox, freeCards, isMissingTable, isTakeoutCard, nextFreeLabel, ticketCount, ticketTotal, useTicketActions, useTickets, type Ticket, type TicketItem } from '../lib/tickets'
 import { yen } from '../lib/format'
 import { useAttachableIds } from '../lib/settings'
 import { isExtraItem, sanitizeAttach } from '../lib/reservations'
@@ -52,6 +53,8 @@ export default function OrdersPage() {
   const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [moving, setMoving] = useState(false)
+  const [manualOpen, setManualOpen] = useState(false)
+  const [manualVal, setManualVal] = useState('')
   const [confirmVoid, setConfirmVoid] = useState(false)
   const rem = useWalkinRemaining(date)
   // 下のメニューの「オーダー」を押したら、いつでもテーブルの一覧に戻る(同じ画面を押し直したときも、場所の識別子が変わる)
@@ -130,11 +133,11 @@ export default function OrdersPage() {
         if (delta <= 0) return
         flashUndo({ ticketId: null, cardNo, before: [], text: `${menu.name} を入れました`, menu })
         // 空いているテーブルに最初の注文を入れたら、フリー1・フリー2…と名前がつく
-        await actions.create({ cardNo, items: feeFor(cardNo, addItem([], menu, 1)), label: nextFreeLabel(date) }, { hold: true })
+        await actions.create({ cardNo, items: feeFor(cardNo, addItem([], { ...menu, id: menu.id || null }, 1)), label: nextFreeLabel(date) }, { hold: true })
         return
       }
       const before = current.items
-      const next = feeFor(cardNo, sanitizeAttach(addItem(before, menu, delta, fromRes)))
+      const next = feeFor(cardNo, sanitizeAttach(addItem(before, { ...menu, id: menu.id || null }, delta, fromRes)))
       if (delta < 0 && !next.some((i) => i.menu_id === menu.id && i.name === menu.name)) {
         setGhosts((g) => (g.some((x) => x.menu_id === menu.id && x.name === menu.name) ? g : [...g, { menu_id: menu.id, name: menu.name, price: menu.price }]))
       }
@@ -161,6 +164,24 @@ export default function OrdersPage() {
     setError(null)
     try {
       await actions.setItems(current.id, setDishNote(current.items, row, dish, text), { hold: held })
+    } catch (e) {
+      setError(e instanceof Error ? e.message : '保存できませんでした')
+    }
+  }
+  // 金額入力: メニューにない金額を、この席の注文に足す(レジの「金額入力」と同じ。会計のとき、そのまま金額入力として出る)
+  const addManual = async () => {
+    const price = Number(manualVal) || 0
+    if (price <= 0 || cardNo == null) return
+    setManualOpen(false)
+    setManualVal('')
+    setError(null)
+    try {
+      const menu = { id: null, name: `金額入力 ¥${price.toLocaleString()}`, price }
+      if (!current) {
+        await actions.create({ cardNo, items: feeFor(cardNo, addItem([], menu, 1)), label: nextFreeLabel(date) }, { hold: true })
+        return
+      }
+      await actions.setItems(current.id, feeFor(cardNo, addItem(current.items, menu, 1)), { hold: true })
     } catch (e) {
       setError(e instanceof Error ? e.message : '保存できませんでした')
     }
@@ -373,7 +394,7 @@ export default function OrdersPage() {
             </div>
           )
         })}
-        {looseItems(items).filter((it) => !isContainerName(it.name)).map((it) => (
+        {looseItems(items).map((it) => (
           <div key={it.key} className="flex items-center gap-2 text-sm">
             <span className="flex-1 text-stone-800">
               {it.name}
@@ -428,7 +449,7 @@ export default function OrdersPage() {
       )}
 
       <div className="grid grid-cols-2 gap-2">
-        {menus.filter((m) => !isContainerName(m.name)).map((m) => {
+        {menus.map((m) => {
           const left = leftOf(m)
           return (
             <button
@@ -444,7 +465,40 @@ export default function OrdersPage() {
             </button>
           )
         })}
+        <button
+          onClick={() => {
+            setManualOpen(true)
+            setManualVal('')
+          }}
+          className="min-h-[4.25rem] rounded-2xl border-2 border-dashed border-amber-400 px-2.5 py-2 text-amber-700 font-bold active:scale-95 transition flex items-center justify-center gap-1"
+        >
+          <span className="text-2xl leading-none">＋</span> 金額入力
+        </button>
       </div>
+
+      {manualOpen && (
+        <Modal onClose={() => setManualOpen(false)}>
+          <div className="bg-white w-full max-w-sm rounded-2xl p-5">
+            <h2 className="text-lg font-bold text-stone-900 mb-2">金額を入力（テーブル{cardNo}）</h2>
+            <div className="rounded-xl border-2 border-amber-400 p-4 mb-3 text-right">
+              <span className="text-4xl font-bold text-stone-900">¥{(Number(manualVal) || 0).toLocaleString()}</span>
+            </div>
+            <Numpad onKey={(k) => setManualVal((v) => (k === '⌫' ? v.slice(0, -1) : v + k))} />
+            <div className="flex gap-3 mt-4">
+              <button onClick={() => setManualOpen(false)} className="flex-1 py-3 rounded-xl border border-stone-300 text-stone-600 font-semibold">
+                キャンセル
+              </button>
+              <button
+                onClick={() => void addManual()}
+                disabled={!(Number(manualVal) > 0)}
+                className="flex-1 py-3 rounded-xl bg-amber-700 text-[#faf9f5] font-bold disabled:opacity-40"
+              >
+                追加
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
 
       {/* 注文の確定ボタンは、スクロールしても画面の右下に出しっぱなしにする */}
       <div

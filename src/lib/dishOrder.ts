@@ -56,7 +56,8 @@ export function setDishTo(items: TicketItem[], row: number, dish: number, to: bo
   flags[dish] = to
   const { dish_to: _old, ...rest } = it
   void _old
-  const next: TicketItem = flags.some(Boolean) ? { ...rest, dish_to: flags } : rest
+  // 全部イートインに戻しても、印(全部 false)は残す。印があれば、容器代を皿ごとの持ち帰りに合わせて自動で外せる
+  const next: TicketItem = { ...rest, dish_to: flags }
   return items.map((x, k) => (k === row ? next : x))
 }
 
@@ -97,21 +98,18 @@ export function extraNames(items: TicketItem[], ids: string[]): string[] {
 }
 
 /**
- * テイクアウトの席: ビリヤニ(並でも大でも)1皿につき、容器代を1つ。
- * 取り置きで入っている容器代は、そのまま使い、足りない分だけ、追加の容器代として自動で合わせる(皿を減らせば、容器代も減る)。
+ * 容器代: 持ち帰りのビリヤニ(並でも大でも)1皿につき1つ。持ち帰りの数に合わせて自動で増減する(取り置きで入っていた分も含めて、ひとつにまとめて合わせる)。
+ * テイクアウトの席は全部の皿、イートインの席は「持ち帰り」にした皿だけ。皿ごとの持ち帰りをまだ一度も使っていない席(onlyTo)は、手で入れた容器代をそのままにする。
  */
 export function withContainerFee(items: TicketItem[], menu: { id: string | null; name: string; price: number } | null, onlyTo = false): TicketItem[] {
-  // onlyTo: イートインの席。持ち帰りにした皿だけ数える(テイクアウトの席は、全部の皿)
+  if (onlyTo && !items.some((i) => i.dish_to)) return items
   const dishes = items.reduce((a, i) => a + (onlyTo ? (i.dish_to ?? []).slice(0, dishCount(i)).filter(Boolean).length : dishCount(i)), 0)
-  const haveRes = items.filter((i) => isContainerName(i.name) && i.from_res).reduce((a, i) => a + i.qty, 0)
-  const want = Math.max(0, dishes - haveRes)
-  const idx = items.findIndex((i) => isContainerName(i.name) && !i.from_res)
-  if (idx >= 0) {
-    if (want === 0) return items.filter((_, k) => k !== idx)
-    if (items[idx].qty === want) return items
-    return items.map((x, k) => (k === idx ? { ...x, qty: want } : x))
-  }
-  if (want === 0) return items
-  const m = menu ?? { id: null, name: '容器代', price: CONTAINER_FEE }
-  return [...items, { menu_id: m.id, name: m.name, price: m.price, qty: want, from_res: false }]
+  const rows = items.filter((i) => isContainerName(i.name))
+  const have = rows.reduce((a, i) => a + i.qty, 0)
+  if (have === dishes) return items
+  const rest = items.filter((i) => !isContainerName(i.name))
+  if (dishes === 0) return rest
+  const proto = rows[0]
+  const m = proto ? { menu_id: proto.menu_id, name: proto.name, price: proto.price } : menu ? { menu_id: menu.id, name: menu.name, price: menu.price } : { menu_id: null, name: '容器代', price: CONTAINER_FEE }
+  return [...rest, { ...m, qty: dishes, from_res: false }]
 }

@@ -24,7 +24,13 @@ describe('皿ごとの持ち帰り', () => {
     expect(items.find((i) => i.name === '容器代')?.qty).toBe(1)
     items = withContainerFee(setDishTo(items, 0, 1, false), menu, true)
     expect(items.some((i) => i.name === '容器代')).toBe(false)
-    expect(items[0].dish_to).toBeUndefined()
+    expect(items[0].dish_to).toEqual([false, false])
+  })
+  it('取り置きの容器代も、イートインに戻せば外れる', () => {
+    const res = [{ menu_id: 'b', name: 'ビリヤニ', price: 1500, qty: 1, from_res: true, dish_to: [true] }, { menu_id: 'c', name: '容器代', price: 100, qty: 1, from_res: true }]
+    const eat = withContainerFee(setDishTo(res, 0, 0, false), menu, true)
+    expect(eat.some((i) => i.name === '容器代')).toBe(false)
+    expect(withContainerFee(setDishTo(eat, 0, 0, true), menu, true).find((i) => i.name === '容器代')?.qty).toBe(1)
   })
   it('テイクアウトの席は、全部の皿', () => {
     expect(withContainerFee(base, menu).find((i) => i.name === '容器代')?.qty).toBe(2)

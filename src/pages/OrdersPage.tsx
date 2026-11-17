@@ -24,6 +24,9 @@ import { useWalkinRemaining } from '../lib/walkinStock'
 const SQL_HINT = 'データベースに「tickets」テーブルがまだありません。supabase/migrations の 20261108000017_tickets.sql を SQL Editor で実行してください。'
 
 /** /orders?table=5 のように、開くテーブルを指定できる(席に案内した直後に、そのまま注文を取るため) */
+/** 特記事項のよく使う言葉(押すと入力欄に足される) */
+const NOTE_PRESETS = ['パクチー抜き', '辛さ控えめ', '玉ねぎ抜き', '取り分け用の皿']
+
 const tableFromSearch = (search: string): number | null => {
   const n = Number(new URLSearchParams(search).get('table'))
   return Number.isInteger(n) && n >= 1 && n <= CARD_COUNT ? n : null
@@ -66,6 +69,14 @@ export default function OrdersPage() {
   const current: Ticket | undefined = cardNo != null ? byCard.get(cardNo) : undefined
   // 入力途中で、まだ「注文を確定」を押していない(調理場には届いていない)
   const held = !!current && heldIds.includes(current.id)
+  // 特記事項: 入力中の文字(別のテーブルを開いたら入れ替わる)。欄から出たとき・確定のときに保存する
+  const [noteDraft, setNoteDraft] = useState<{ id: string; text: string } | null>(null)
+  const noteText = current && noteDraft?.id === current.id ? noteDraft.text : (current?.note ?? '')
+  const saveNote = async () => {
+    if (!current || noteDraft?.id !== current.id) return
+    if (noteDraft.text.trim() === (current.note ?? '')) return
+    await actions.setNote(current.id, noteDraft.text)
+  }
   // 席に案内したけれど、まだ注文を聞いていないテーブル(案内した順)
   const waitingOrder = useMemo(() => tickets.filter((t) => t.items.length === 0).sort((a, b) => a.created_at.localeCompare(b.created_at)), [tickets])
 
@@ -194,6 +205,7 @@ export default function OrdersPage() {
     setConfirming(true)
     setLeaving(false)
     try {
+      await saveNote()
       if (current) actions.confirm(current.id)
       if (await flushOutbox()) void qc.invalidateQueries({ queryKey: ['tickets'] })
     } finally {
@@ -366,6 +378,37 @@ export default function OrdersPage() {
           </p>
         )}
       </div>
+
+      {current && (
+        <div className="bg-stone-50 rounded-xl p-3 space-y-2">
+          <label className="block text-sm font-semibold text-stone-700" htmlFor="ticket-note">
+            特記事項（調理場のカードに出ます）
+          </label>
+          <input
+            id="ticket-note"
+            value={noteText}
+            onChange={(e) => setNoteDraft({ id: current.id, text: e.target.value })}
+            onBlur={() => void saveNote()}
+            placeholder="例: パクチー抜き"
+            className="w-full h-12 rounded-xl border-2 border-stone-300 bg-white px-3 text-lg"
+          />
+          <div className="flex flex-wrap gap-1.5">
+            {NOTE_PRESETS.map((p) => (
+              <button
+                key={p}
+                onClick={() => {
+                  const text = noteText.includes(p) ? noteText : noteText ? `${noteText}、${p}` : p
+                  setNoteDraft({ id: current.id, text })
+                  void actions.setNote(current.id, text)
+                }}
+                className="h-10 px-3 rounded-full bg-white border border-stone-300 text-base text-stone-700 active:scale-95"
+              >
+                ＋{p}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       <div className="grid grid-cols-2 gap-2">
         {menus.map((m) => {

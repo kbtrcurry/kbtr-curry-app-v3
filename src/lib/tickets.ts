@@ -27,6 +27,8 @@ export type Ticket = {
   service_date: string
   card_no: number
   label: string
+  /** 特記事項(「パクチー抜き」など)。調理場のカードに出す。列(note)が無い環境でも動くよう、入力があるときだけ送る */
+  note?: string
   items: TicketItem[]
   status: TicketStatus
   reservation_id: string | null
@@ -557,6 +559,11 @@ export function useTicketActions(date: string) {
         else if (cur.status === 'open' && !pending && next.some((i) => (i.served_qty ?? 0) > 0)) status = 'served'
       }
       stage(id, { items: next, ...(status ? { status } : {}) }, false, opts?.hold === true)
+      return Promise.resolve()
+    },
+    /** 特記事項を直す。入力途中(未確定)ならそのまま途中のまま、確定後ならすぐ調理場へ送る */
+    setNote(id: string, note: string): Promise<void> {
+      stage(id, { note: note.trim() }, false, 'keep')
       return Promise.resolve()
     },
     /** 注文画面の「注文を確定」: 入力途中の分を、調理場へ送る */

@@ -286,6 +286,7 @@ export default function KitchenPage() {
               <p className="text-xs text-amber-950 mt-0.5">
                 {idx + 1}番目{biryaniDishes(pend) > 0 ? `　ビリヤニ ${biryaniDishes(pend)}皿` : ''}
               </p>
+              {t.note && <p className="mt-2 rounded-lg bg-white border-2 border-red-500 text-red-800 text-lg font-bold px-3 py-1.5 whitespace-pre-wrap">※ {t.note}</p>}
               <ul className="mt-2 space-y-1">
                 {linesOf(t).map((ln) => (
                   <li key={ln.key}>
@@ -344,6 +345,7 @@ export default function KitchenPage() {
                     <GuestChip g={guestOf(t)} />
                     <span className="ml-auto text-xs text-stone-300">{t.served_at ? `${elapsedMinutes(t.served_at, now)}分前に提供` : ''}</span>
                   </div>
+                  {t.note && <p className="text-sm font-bold text-amber-300 mt-1 whitespace-pre-wrap">※ {t.note}</p>}
                   <p className="text-sm text-stone-200 mt-1">{mergeItems(t.items).map((it) => `${it.name}×${it.qty}`).join('　')}</p>
                   <button onClick={() => { quietUntil.current = Date.now() + 5000; void actions.unserve(t.id) }} className="w-full mt-2 h-11 rounded-lg border-2 border-amber-400 text-amber-300 font-bold active:scale-95 transition">
                     未提供に戻す

@@ -24,7 +24,8 @@ import {
 import { supabase, isSupabaseConfigured } from '../lib/supabase'
 import { useAuth } from '../lib/auth'
 import { readTheme, saveTheme, type ThemeChoice } from '../lib/theme'
-import { usePersistedState } from '../lib/persistState'
+import { usePersistedState, useStoredState } from '../lib/persistState'
+import { isWindowsTouch, START_KEY, type StartChoice } from '../lib/startScreen'
 import {
   useRecipes,
   useAllRecipeIngredients,
@@ -86,6 +87,7 @@ export default function MorePage() {
   const { session, loading, loginWithGoogle, logout } = useAuth()
   const [checks, setChecks] = useState<CheckState[]>([])
   const [theme, setThemeState] = useState<ThemeChoice>(readTheme)
+  const [start, setStart] = useStoredState<StartChoice>(START_KEY, 'auto')
   const setTheme = (t: ThemeChoice) => {
     saveTheme(t)
     setThemeState(t)
@@ -162,6 +164,30 @@ export default function MorePage() {
               key={k}
               onClick={() => setTheme(k)}
               className={`flex-1 py-2.5 text-sm font-semibold ${theme === k ? 'bg-amber-700 text-[#faf9f5]' : 'bg-white text-stone-600'}`}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </section>
+
+      <section className="bg-white rounded-xl p-4 space-y-2">
+        <h2 className="font-semibold text-stone-800">起動したときの画面</h2>
+        <p className="text-xs text-stone-500">
+          調理場のSurfaceは「自動」のままで、起動すると調理場の画面を開きます（Windowsのタッチ端末だけ）。この端末は{isWindowsTouch() ? 'Windowsのタッチ端末なので、自動だと調理場から始まります' : 'Windowsのタッチ端末ではないので、自動だといつもの画面から始まります'}。
+        </p>
+        <div className="flex rounded-lg border border-stone-300 overflow-hidden">
+          {(
+            [
+              ['auto', '自動'],
+              ['kitchen', '調理場'],
+              ['default', 'いつもの画面'],
+            ] as [StartChoice, string][]
+          ).map(([k, label]) => (
+            <button
+              key={k}
+              onClick={() => setStart(k)}
+              className={`flex-1 py-2.5 text-sm font-semibold ${start === k ? 'bg-amber-700 text-[#faf9f5]' : 'bg-white text-stone-600'}`}
             >
               {label}
             </button>

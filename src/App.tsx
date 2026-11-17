@@ -4,6 +4,7 @@ import { BrowserRouter, Navigate, NavLink, Route, Routes, useLocation } from 're
 import { QueryClient, useQueryClient } from '@tanstack/react-query'
 import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client'
 import { CACHE_MAX_AGE, queryPersister, shouldPersist } from './lib/queryPersist'
+import { shouldStartInKitchen, START_KEY, type StartChoice } from './lib/startScreen'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import { useRegisterSW } from 'virtual:pwa-register/react'
 import {
@@ -98,8 +99,12 @@ function useIsWide(): boolean {
 
 // 起動画面: iPad はレジ、iPhone は「やること」
 function StartPage() {
+  const [start] = useStoredState<StartChoice>(START_KEY, 'auto')
+  const [toKitchen] = useState(() => shouldStartInKitchen(start))
+  const wide = useIsWide()
+  if (toKitchen) return <Navigate to="/kitchen" replace />
   // iPhone は営業で使う「取り置き」から始める(ホームの「やること」は、その他の中にある)
-  return useIsWide() ? <PosPage /> : <Navigate to="/reserve" replace />
+  return wide ? <PosPage /> : <Navigate to="/reserve" replace />
 }
 
 // 入金予定日が来た「入金予定」を、アプリを開いたとき（と、日付が変わって戻ってきたとき）に自動で入金へ反映する

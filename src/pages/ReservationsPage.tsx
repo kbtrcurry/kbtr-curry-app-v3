@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { isMissingTable, itemsFromReservation, useDayTickets, useTicketActions, useTickets, voidDayTickets, walkinBiryaniPortions, type Ticket } from '../lib/tickets'
+import { learnFromCorrection } from '../lib/dmLearning'
+import { useDmLearned } from '../lib/settings'
 import { limitedRows, remaining, reservedPortions, useLimitedIds } from '../lib/walkinStock'
 import { RemainingTiles } from '../components/RemainingTiles'
 import { TablePicker } from '../components/TablePicker'
@@ -645,6 +647,9 @@ function ReservationForm({
   // 木曜24時までに受けたものには、早期取り置き特典が付く
   const [uzura, setUzura] = useState(editing?.uzura ?? uzuraEligible(date, new Date()))
   const [paste, setPaste] = useState('')
+  const [learned, setLearned] = useDmLearned()
+  // 読み取った結果(あとで直した内容と比べて、違いを覚える)
+  const parsedRef = useRef<{ text: string; name: string; items: { menu_id: string | null; qty: number; takeout?: boolean }[] } | null>(null)
   const [pasteMsg, setPasteMsg] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -725,7 +730,8 @@ function ReservationForm({
         return
       }
     }
-    const r = parseReservationText(text, menus)
+    const r = parseReservationText(text, menus, learned)
+    parsedRef.current = { text, name: r.name, items: r.items.map((i) => ({ menu_id: i.menu_id, qty: i.qty, takeout: !!i.takeout })) }
     if (r.handle) setHandle(r.handle)
     if (r.name && !name) setName(r.name)
     if (r.time && !time) setTime(r.time)
@@ -752,6 +758,15 @@ function ReservationForm({
     setError(null)
     try {
       await saveReservation({ id: editing?.id, service_date: svcDate, platform, handle, name: name.trim(), items: withFee, note, status: editing?.status, visit_time: time, uzura, is_new: editing ? editing.is_new : !stat })
+      // DMを貼って読み取ったあとに直した内容は、次から読み取りに使う
+      const base = parsedRef.current
+      if (base) {
+        const res = learnFromCorrection(base.text, menus, base, { name: name.trim(), items: items.map((i) => ({ menu_id: i.menu_id, qty: i.qty, takeout: !!i.takeout })) }, learned)
+        if (res.notes.length > 0) {
+          setLearned(res.learned)
+          window.alert(['読み取りの直しを覚えました。', ...res.notes].join('\n'))
+        }
+      }
       onSaved()
     } catch (e) {
       setError(e instanceof Error ? e.message : '保存できませんでした')
@@ -776,6 +791,30 @@ function ReservationForm({
           <ClipboardPaste className="w-4 h-4" /> 貼り付けた文面を読み取る
         </button>
         {pasteMsg && <p className="text-xs text-stone-600">{pasteMsg}</p>}
+        <p className="text-xs text-stone-500">読み取りが違ったら、下の内容を直して保存してください。直した内容を覚えて、次から読み取りに使います。</p>
+        {(learned.aliases.length > 0 || learned.names.length > 0) && (
+          <details className="text-xs text-stone-600">
+            <summary className="cursor-pointer font-semibold">覚えた読み方（{learned.aliases.length + learned.names.length}件）</summary>
+            <ul className="mt-1 space-y-1">
+              {learned.aliases.map((a, k) => (
+                <li key={`a${k}`} className="flex items-center gap-2">
+                  <span className="flex-1">「{a.word}」→ {a.menu_name}</span>
+                  <button onClick={() => setLearned({ ...learned, aliases: learned.aliases.filter((_, x) => x !== k) })} className="px-2 py-1 rounded border border-stone-300" aria-label="忘れる">
+                    ✕
+                  </button>
+                </li>
+              ))}
+              {learned.names.map((n, k) => (
+                <li key={`n${k}`} className="flex items-center gap-2">
+                  <span className="flex-1">名前: 「{n.l}」のあと{n.r ? `、「${n.r}」の前` : ''}</span>
+                  <button onClick={() => setLearned({ ...learned, names: learned.names.filter((_, x) => x !== k) })} className="px-2 py-1 rounded border border-stone-300" aria-label="忘れる">
+                    ✕
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </details>
+        )}
       </div>
 
       <label className="flex items-center gap-2 text-sm text-stone-600">

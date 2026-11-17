@@ -1,4 +1,5 @@
 // 取り置きリスト・お客さん台帳・売り切れ管理（用意数）の計算とデータ取得。計算部分は純粋関数（テスト付き）。
+import { learnedItems, learnedName, type DmLearned } from './dmLearning'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { supabase } from './supabase'
 
@@ -317,6 +318,7 @@ function qtyAfter(text: string, from: number): number {
 export function parseReservationText(
   text: string,
   menus: { id: string; name: string }[],
+  learned?: DmLearned,
 ): { items: ResItem[]; handle: string; name: string; time: string; takeout: boolean } {
   // 「エビ」「えび」は「海老」にそろえて探す(メニューは「川海老…」でも、DMは「エビ…」と書かれる)
   const ebi = (x: string) => x.normalize('NFKC').replace(/エビ|えび/g, '海老')
@@ -368,12 +370,19 @@ export function parseReservationText(
       break
     }
   }
+  // 4) 直した内容から覚えた言い方
+  if (learned) {
+    for (const li of learnedItems(text, learned, menus, done, qtyAfter)) {
+      found.push(li)
+      done.add(li.menu_id as string)
+    }
+  }
   const orig = text.normalize('NFKC')
   addBiryaniFromWords(orig, menus, found)
   // 画面で見る順（メニューの並び順）にそろえる
   found.sort((a, b) => menus.findIndex((m) => m.id === a.menu_id) - menus.findIndex((m) => m.id === b.menu_id))
   const handle = orig.match(/@([A-Za-z0-9_.]{2,30})/)?.[1] ?? ''
-  const name = extractName(text)
+  const name = (learned ? learnedName(text, learned) : '') || extractName(text)
   // 時間（12:00・12時）と、テイクアウトの希望も拾う
   const tm = orig.match(/(\d{1,2})\s*[:：]\s*(\d{2})/) ?? orig.match(/(\d{1,2})\s*時(半)?/)
   const time = tm ? `${String(Number(tm[1])).padStart(2, '0')}:${tm[2] === '半' || tm[0].endsWith('半') ? '30' : (tm[2] ?? '00').padStart(2, '0')}` : ''

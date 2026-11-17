@@ -776,9 +776,13 @@ export default function PosPage() {
                   {ticketCount(t.items)}点 {ticketTotal(t.items).toLocaleString()}円
                 </span>
                 {stickerCount(t.items) > 0 && <span className="mt-0.5 inline-block rounded bg-pink-200 border border-pink-500 text-pink-950 text-[11px] font-bold px-1.5">ステッカー×{stickerCount(t.items)}</span>}
+                {t.note && <span className="mt-0.5 block max-w-[6.5rem] truncate rounded bg-[#b91c1c] text-white text-[11px] font-bold px-1.5">※ {t.note}</span>}
               </button>
             ))}
           </div>
+          {loadedTicket?.note && (
+            <p className="rounded-lg bg-[#b91c1c] text-white text-lg font-bold px-3 py-2 whitespace-pre-wrap">※ {loadedTicket.note}</p>
+          )}
           {loadedTicket && stickerCount(loadedTicket.items) > 0 && (
             <p className="rounded-lg bg-pink-100 text-pink-900 text-base font-bold px-3 py-2">{loadedTicket.items.filter((i) => handedAtRegister(i.name)).map((i) => `${i.name}×${i.qty}`).join('、')} を渡してください</p>
           )}

@@ -286,7 +286,7 @@ export default function KitchenPage() {
               <p className="text-xs text-amber-950 mt-0.5">
                 {idx + 1}番目{biryaniDishes(pend) > 0 ? `　ビリヤニ ${biryaniDishes(pend)}皿` : ''}
               </p>
-              {t.note && <p className="mt-2 rounded-lg bg-white border-2 border-red-500 text-red-800 text-lg font-bold px-3 py-1.5 whitespace-pre-wrap">※ {t.note}</p>}
+              {t.note && <p className="mt-2 rounded-lg bg-[#b91c1c] text-white text-lg font-bold px-3 py-1.5 whitespace-pre-wrap">※ {t.note}</p>}
               <ul className="mt-2 space-y-1">
                 {linesOf(t).map((ln) => (
                   <li key={ln.key}>

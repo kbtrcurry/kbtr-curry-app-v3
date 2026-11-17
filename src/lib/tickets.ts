@@ -540,7 +540,7 @@ export function useTicketActions(date: string) {
 
   return {
     refresh,
-    create(p: { cardNo: number; items: TicketItem[]; reservationId?: string | null; label?: string }, opts?: { hold?: boolean }): Promise<Ticket> {
+    create(p: { cardNo: number; items: TicketItem[]; reservationId?: string | null; label?: string; note?: string }, opts?: { hold?: boolean }): Promise<Ticket> {
       const cache = qc.getQueryData<Ticket[]>(['tickets', date]) ?? []
       const ex = cache.find((t) => t.card_no === p.cardNo && (t.status === 'open' || t.status === 'served'))
       if (ex) {
@@ -550,10 +550,11 @@ export function useTicketActions(date: string) {
         const data: Partial<Ticket> = { items, status: hasPending(items) ? 'open' : ex.status }
         if (!ex.label && p.label) data.label = p.label
         if (!ex.reservation_id && p.reservationId) data.reservation_id = p.reservationId
+        if (!ex.note && p.note?.trim()) data.note = p.note.trim()
         stage(ex.id, data, false, opts?.hold === true ? true : false)
         return Promise.resolve({ ...ex, ...data })
       }
-      const t = fullTicket({ id: newId(), service_date: date, card_no: p.cardNo, label: p.label ?? '', items: p.items, reservation_id: p.reservationId ?? null })
+      const t = fullTicket({ id: newId(), service_date: date, card_no: p.cardNo, label: p.label ?? '', items: p.items, reservation_id: p.reservationId ?? null, ...(p.note?.trim() ? { note: p.note.trim() } : {}) })
       stage(t.id, t, true, opts?.hold === true)
       return Promise.resolve(t)
     },

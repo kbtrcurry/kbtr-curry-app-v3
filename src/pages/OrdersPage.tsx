@@ -4,7 +4,6 @@ import { useLocation } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import { useHeldIds } from '../lib/ticketOutbox'
 import { useGuests } from '../lib/guests'
-import { NoteBanner } from '../components/NoteBanner'
 import { Modal } from '../components/Modal'
 import { useAuth } from '../lib/auth'
 import { Spinner } from '../components/Spinner'
@@ -74,11 +73,13 @@ export default function OrdersPage() {
   const held = !!current && heldIds.includes(current.id)
   // 特記事項: 入力中の文字(別のテーブルを開いたら入れ替わる)。欄から出たとき・確定のときに保存する
   const [noteDraft, setNoteDraft] = useState<{ id: string; text: string } | null>(null)
-  const noteText = current && noteDraft?.id === current.id ? noteDraft.text : (current?.note ?? '')
+  // 取り置きで入れたメモは、この欄に最初から入れておく(まだ席に入っていない古い伝票でも、開けばここに出る)
+  const resMemo = current ? (guestOf(current)?.memo ?? '') : ''
+  const noteText = current && noteDraft?.id === current.id ? noteDraft.text : (current?.note || resMemo)
   const saveNote = async () => {
-    if (!current || noteDraft?.id !== current.id) return
-    if (noteDraft.text.trim() === (current.note ?? '')) return
-    await actions.setNote(current.id, noteDraft.text)
+    if (!current) return
+    if (noteText.trim() === (current.note ?? '')) return
+    await actions.setNote(current.id, noteText)
   }
   // 席に案内したけれど、まだ注文を聞いていないテーブル(案内した順)
   const waitingOrder = useMemo(() => tickets.filter((t) => t.items.length === 0).sort((a, b) => a.created_at.localeCompare(b.created_at)), [tickets])
@@ -289,7 +290,6 @@ export default function OrdersPage() {
         </div>
       </div>
       {error && <p className="text-sm text-red-600">{error}</p>}
-      {current && guestOf(current)?.memo && <NoteBanner memo={guestOf(current)?.memo} size="base" />}
       {held && <p className="rounded-xl bg-[#b91c1c] text-white text-base font-bold px-3 py-2.5 text-center">まだ調理場に送っていません（未確定）。下の「注文を確定して調理場へ送る」を押してください</p>}
 
       <div className="bg-stone-50 rounded-xl p-3 space-y-1.5">

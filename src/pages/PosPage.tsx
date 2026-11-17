@@ -29,7 +29,7 @@ import { PENDING_TONE, SERVED_TONE } from '../lib/ticketTone'
 import { GuestChip } from '../components/GuestChip'
 import { Numpad } from '../components/Numpad'
 import { usePosLayout } from '../lib/settings'
-import { cellsFromLayout, isBlankCell, layoutFromCells, newBlank } from '../lib/posLayout'
+import { cellsFromLayout, isBlankCell, layoutFromCells, MANUAL_CELL, newBlank } from '../lib/posLayout'
 import { NoteBanner } from '../components/NoteBanner'
 import { DishList } from '../components/DishList'
 import { useAttachableIds } from '../lib/settings'
@@ -227,14 +227,14 @@ export default function PosPage() {
 
   // メニューボタンの並び替え。ホーム画面のアプリのように、ボタンをドラッグして入れ替える。
   // 離したら、全部の順番を 0,1,2… と振り直して保存する（順番の数字が重なっていても、確実に入れ替わる）
-  const cells = reordering && order ? order : cellsFromLayout(menus.map((m) => m.id), posLayout)
+  const cells = reordering && order ? order : cellsFromLayout([...menus.map((m) => m.id), MANUAL_CELL], posLayout)
   useEffect(() => {
     commitRef.current = () => {
       if (!order) return
       // 置き場所(空白つき)は共有の設定に、メニューの順番は、これまでどおりメニューに保存する
       const layout = layoutFromCells(order)
       if (JSON.stringify(layout) !== JSON.stringify(posLayout)) setPosLayout(layout)
-      const next = order.filter((id) => !isBlankCell(id)).map((id, idx) => ({ ...(menus.find((m) => m.id === id) as Menu), sort_order: idx }))
+      const next = order.filter((id) => !isBlankCell(id) && id !== MANUAL_CELL).map((id, idx) => ({ ...(menus.find((m) => m.id === id) as Menu), sort_order: idx }))
       const changed = next.filter((m) => menus.find((x) => x.id === m.id)?.sort_order !== m.sort_order)
       if (changed.length === 0) return
       queryClient.setQueryData<Menu[]>(['menus', 'active'], next)
@@ -603,7 +603,7 @@ export default function PosPage() {
           )}
           <button
             onClick={() => {
-              if (!reordering) setOrder(cellsFromLayout(menus.map((m) => m.id), posLayout))
+              if (!reordering) setOrder(cellsFromLayout([...menus.map((m) => m.id), MANUAL_CELL], posLayout))
               else setOrder(null)
               setReordering((v) => !v)
             }}
@@ -892,6 +892,15 @@ export default function PosPage() {
               空白
             </div>
           )
+        if (drag.id === MANUAL_CELL)
+          return (
+            <div
+              className="fixed z-[80] pointer-events-none rounded-2xl border-2 border-dashed border-amber-500 bg-amber-100 shadow-2xl flex items-center justify-center text-amber-800 font-bold"
+              style={{ left: drag.x - drag.dx, top: drag.y - drag.dy, width: drag.w, height: drag.h, transform: 'scale(1.06)' }}
+            >
+              ＋ 金額入力
+            </div>
+          )
         const gm = menus.find((m) => m.id === drag.id)
         return gm ? (
           <div
@@ -926,6 +935,38 @@ export default function PosPage() {
                   消す
                 </button>
               </div>
+            )
+          }
+          if (cell === MANUAL_CELL) {
+            if (reordering) {
+              return (
+                <div
+                  key={cell}
+                  data-menu-id={cell}
+                  onPointerDown={(e) => {
+                    const r = e.currentTarget.getBoundingClientRect()
+                    setDrag({ id: cell, x: e.clientX, y: e.clientY, w: r.width, h: r.height, dx: e.clientX - r.left, dy: e.clientY - r.top })
+                  }}
+                  style={{ touchAction: 'none', WebkitUserSelect: 'none', userSelect: 'none' }}
+                  className={`rounded-2xl border-2 border-dashed border-amber-400 bg-amber-50/40 min-h-24 p-3 flex flex-col items-center justify-center cursor-grab select-none ${drag?.id === cell ? 'opacity-25' : ''}`}
+                >
+                  <p className="font-bold text-amber-700">＋ 金額入力</p>
+                  <p className="text-stone-400 text-xs mt-1">⠿ つかんでドラッグ</p>
+                </div>
+              )
+            }
+            return (
+              <button
+                key={cell}
+                onClick={() => {
+                  setManualOpen(true)
+                  setManualVal('')
+                }}
+                className="rounded-2xl p-4 min-h-28 flex flex-col items-center justify-center border-2 border-dashed border-amber-400 text-amber-700 font-bold active:scale-95 transition-transform"
+              >
+                <span className="text-3xl">＋</span>
+                金額入力
+              </button>
             )
           }
           const m = menus.find((x) => x.id === cell)
@@ -984,18 +1025,6 @@ export default function PosPage() {
           )
         })}
 
-        {!reordering && (
-          <button
-            onClick={() => {
-              setManualOpen(true)
-              setManualVal('')
-            }}
-            className="rounded-2xl p-4 min-h-28 flex flex-col items-center justify-center border-2 border-dashed border-amber-400 text-amber-700 font-bold active:scale-95 transition-transform"
-          >
-            <span className="text-3xl">＋</span>
-            金額入力
-          </button>
-        )}
       </div>
 
       {manualItems.length > 0 && (

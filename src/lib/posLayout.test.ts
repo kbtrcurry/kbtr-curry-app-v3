@@ -15,3 +15,11 @@ describe('レジのボタン配置', () => {
     expect(newBlank(['a', '__blank:0', '__blank:1'])).toBe('__blank:2')
   })
 })
+
+import { MANUAL_CELL } from './posLayout'
+describe('金額入力ボタンの配置', () => {
+  it('保存がなければ最後、保存があればその場所', () => {
+    expect(cellsFromLayout(['a', MANUAL_CELL], null)).toEqual(['a', MANUAL_CELL])
+    expect(cellsFromLayout(['a', 'b', MANUAL_CELL], [MANUAL_CELL, 'a'])).toEqual([MANUAL_CELL, 'a', 'b'])
+  })
+})

@@ -1,6 +1,8 @@
 // レジのメニューボタンの置き場所。好きな場所に置けて、空白(何も置かない場所)も作れる。
 // 保存する形: メニューIDの並び。null は空白。端末をまたいで共有する(settings.ts)。
 export const BLANK = '__blank:'
+/** 「金額入力」ボタンも、メニューと同じように好きな場所に置ける */
+export const MANUAL_CELL = '__manual'
 export const isBlankCell = (cell: string): boolean => cell.startsWith(BLANK)
 
 /** 保存した配置を、いまのメニューに合わせて「マス」の並びにする。消えたメニューは外し、新しいメニューは最後に足す。空白は __blank:番号 */

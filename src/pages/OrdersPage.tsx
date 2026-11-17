@@ -348,28 +348,37 @@ export default function OrdersPage() {
                   {d.item.name} <span className="text-xs font-normal text-stone-500">{d.n}皿目</span>
                   {d.item.from_res && <span className="ml-1 text-xs text-sky-700">取り置き</span>}
                 </span>
+                <button onClick={() => void dropDish(d.row, d.dish)} className="w-10 h-10 rounded-lg bg-white border border-stone-300 text-lg text-stone-600 font-bold active:scale-95" aria-label={`${d.n}皿目を1皿減らす`}>
+                  −
+                </button>
+                <button
+                  onClick={() => void tap({ id: d.item.menu_id ?? '', name: d.item.name, price: d.item.price }, 1)}
+                  className="w-10 h-10 rounded-lg bg-stone-800 text-white text-lg font-bold active:scale-95"
+                  aria-label={`${d.item.name}を1皿増やす`}
+                >
+                  ＋
+                </button>
+              </div>
+              <div className="flex items-center gap-2">
                 {cardNo != null && isTakeoutCard(cardNo) ? (
                   <span className="shrink-0 rounded-lg px-2 py-1.5 text-xs font-bold" style={{ background: '#1d4ed8', color: '#fff' }}>持ち帰り ¥100</span>
                 ) : (
                   <button
                     onClick={() => void toggleDishTo(d.row, d.dish, !d.to)}
                     aria-pressed={d.to}
-                    className="shrink-0 h-9 px-2.5 rounded-lg text-xs font-bold active:scale-95"
+                    className="shrink-0 h-9 px-3 rounded-lg text-xs font-bold active:scale-95"
                     style={d.to ? { background: '#1d4ed8', color: '#fff' } : { background: '#e7e5e4', color: '#57534e' }}
                   >
                     {d.to ? '持ち帰り ¥100' : 'イートイン'}
                   </button>
                 )}
-                <button onClick={() => void dropDish(d.row, d.dish)} className="w-9 h-9 rounded-lg bg-white border border-stone-300 text-lg text-stone-600 font-bold active:scale-95" aria-label={`${d.n}皿目を1皿減らす`}>
-                  −
-                </button>
+                <input
+                  value={d.note}
+                  onChange={(e) => void editDishNote(d.row, d.dish, e.target.value)}
+                  placeholder="この皿の特記事項（例: パクチー抜き）"
+                  className="min-w-0 flex-1 h-9 rounded-lg border border-stone-300 bg-white px-2.5 text-sm"
+                />
               </div>
-              <input
-                value={d.note}
-                onChange={(e) => void editDishNote(d.row, d.dish, e.target.value)}
-                placeholder="この皿の特記事項（例: パクチー抜き）"
-                className="w-full h-9 rounded-lg border border-stone-300 bg-white px-2.5 text-sm"
-              />
               {extraMenus.length > 0 && (
                 <div className="flex flex-wrap gap-1">
                   {extraMenus.map((m) => {
@@ -412,6 +421,13 @@ export default function OrdersPage() {
               −
             </button>
             <span className="w-7 text-center text-base font-bold">{it.qty}</span>
+            <button
+              onClick={() => void tap({ id: it.menu_id ?? '', name: it.name, price: it.price }, 1)}
+              className="w-9 h-9 rounded-lg bg-stone-800 text-white text-lg font-bold active:scale-95"
+              aria-label={`${it.name}を1つ増やす`}
+            >
+              ＋
+            </button>
           </div>
         ))}
         {ghosts
@@ -423,6 +439,13 @@ export default function OrdersPage() {
                 −
               </button>
               <span className="w-7 text-center text-lg font-bold">0</span>
+              <button
+                onClick={() => void tap({ id: g.menu_id ?? '', name: g.name, price: g.price }, 1)}
+                className="w-9 h-9 rounded-lg bg-stone-800 text-white text-lg font-bold active:scale-95"
+                aria-label={`${g.name}を1つ増やす`}
+              >
+                ＋
+              </button>
             </div>
           ))}
         {items.length > 0 && (

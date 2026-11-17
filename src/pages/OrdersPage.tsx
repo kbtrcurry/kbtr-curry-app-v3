@@ -10,7 +10,7 @@ import { Spinner } from '../components/Spinner'
 import { ConfirmModal } from '../components/ConfirmModal'
 import { useActiveMenus } from '../lib/pos'
 import { todayStr } from '../lib/accounting'
-import { addItem, CARD_COUNT, flushOutbox, freeCards, isMissingTable, isTakeoutCard, nextFreeLabel, ticketCount, ticketTotal, useTicketActions, useTickets, type Ticket, type TicketItem } from '../lib/tickets'
+import { addItem, CARD_COUNT, isContainerName, flushOutbox, freeCards, isMissingTable, isTakeoutCard, nextFreeLabel, ticketCount, ticketTotal, useTicketActions, useTickets, type Ticket, type TicketItem } from '../lib/tickets'
 import { yen } from '../lib/format'
 import { useAttachableIds } from '../lib/settings'
 import { isExtraItem, sanitizeAttach } from '../lib/reservations'
@@ -26,7 +26,6 @@ const SQL_HINT = 'データベースに「tickets」テーブルがまだあり�
 
 /** /orders?table=5 のように、開くテーブルを指定できる(席に案内した直後に、そのまま注文を取るため) */
 /** 特記事項のよく使う言葉(押すと入力欄に足される) */
-const NOTE_PRESETS = ['パクチー抜き', '玉ねぎ抜き', '取り分け用の皿']
 
 const tableFromSearch = (search: string): number | null => {
   const n = Number(new URLSearchParams(search).get('table'))
@@ -297,7 +296,12 @@ export default function OrdersPage() {
         </button>
         <div className="ml-auto text-right">
           <p className="text-sm text-stone-600">{current?.label}</p>
-          <p className="text-2xl font-bold text-amber-800 leading-none">テーブル {cardNo}</p>
+          <p className="text-2xl font-bold text-amber-800 leading-none">
+            {cardNo != null && isTakeoutCard(cardNo) && (
+              <span className="mr-2 align-middle rounded-lg px-2.5 py-1 text-xl font-extrabold" style={{ background: '#1d4ed8', color: '#fff' }}>持ち帰り TO</span>
+            )}
+            テーブル {cardNo}
+          </p>
         </div>
       </div>
       {error && <p className="text-sm text-red-600">{error}</p>}
@@ -308,13 +312,14 @@ export default function OrdersPage() {
         {dishesOf(items).map((d) => {
           const mine = d.extras
           return (
-            <div key={`${d.row}-${d.dish}`} className="rounded-xl border-2 border-stone-200 bg-white p-2 space-y-1.5">
+            <div key={`${d.row}-${d.dish}`} className="rounded-lg border border-stone-200 bg-white px-2 py-1.5 space-y-1">
               <div className="flex items-center gap-2">
-                <span className="flex-1 min-w-0 text-base font-semibold text-stone-900">
-                  {d.item.name} <span className="text-sm font-normal text-stone-500">{d.n}皿目</span>
-                  {d.item.from_res && <span className="ml-1 text-sm text-sky-700">取り置き</span>}
+                <span className="flex-1 min-w-0 text-sm font-semibold text-stone-900">
+                  {d.item.name} <span className="text-xs font-normal text-stone-500">{d.n}皿目</span>
+                  {d.item.from_res && <span className="ml-1 text-xs text-sky-700">取り置き</span>}
+                  {cardNo != null && isTakeoutCard(cardNo) && <span className="ml-1.5 rounded px-1.5 py-0.5 text-xs font-bold" style={{ background: '#1d4ed8', color: '#fff' }}>TO・容器代 ¥100</span>}
                 </span>
-                <button onClick={() => void dropDish(d.row, d.dish)} className="w-11 h-11 rounded-lg bg-white border border-stone-300 text-lg text-stone-600 font-bold active:scale-95" aria-label={`${d.n}皿目を消す`}>
+                <button onClick={() => void dropDish(d.row, d.dish)} className="w-9 h-9 rounded-lg bg-white border border-stone-300 text-lg text-stone-600 font-bold active:scale-95" aria-label={`${d.n}皿目を1皿減らす`}>
                   −
                 </button>
               </div>
@@ -322,21 +327,10 @@ export default function OrdersPage() {
                 value={d.note}
                 onChange={(e) => void editDishNote(d.row, d.dish, e.target.value)}
                 placeholder="この皿の特記事項（例: パクチー抜き）"
-                className="w-full h-11 rounded-lg border-2 border-stone-300 bg-white px-3 text-base"
+                className="w-full h-9 rounded-lg border border-stone-300 bg-white px-2.5 text-sm"
               />
-              <div className="flex flex-wrap gap-1.5">
-                {NOTE_PRESETS.map((p) => (
-                  <button
-                    key={p}
-                    onClick={() => void editDishNote(d.row, d.dish, d.note.includes(p) ? d.note : d.note ? `${d.note}、${p}` : p)}
-                    className="h-9 px-2.5 rounded-full bg-white border border-stone-300 text-sm text-stone-700 active:scale-95"
-                  >
-                    ＋{p}
-                  </button>
-                ))}
-              </div>
               {extraMenus.length > 0 && (
-                <div className="flex flex-wrap gap-1.5">
+                <div className="flex flex-wrap gap-1">
                   {extraMenus.map((m) => {
                     const on = mine.includes(m.id)
                     const sh = shortName(m.name)
@@ -346,8 +340,8 @@ export default function OrdersPage() {
                         key={m.id}
                         onClick={() => void toggleExtra(d.row, d.dish, m)}
                         aria-pressed={on}
-                        className="h-11 min-w-[3.6rem] px-2.5 rounded-lg text-sm font-bold active:scale-95 transition-transform"
-                        style={on ? { background: c.bg, color: c.fg, boxShadow: `inset 0 0 0 3px ${c.border ?? c.bg}` } : { background: '#d6d3d1', color: '#78716c' }}
+                        className="h-9 min-w-[3rem] px-2 rounded-lg text-xs font-bold active:scale-95 transition-transform"
+                        style={on ? { background: c.bg, color: c.fg, boxShadow: `inset 0 0 0 2px ${c.border ?? c.bg}` } : { background: '#d6d3d1', color: '#78716c' }}
                       >
                         {on ? '✓ ' : ''}
                         {sh.label}
@@ -359,8 +353,8 @@ export default function OrdersPage() {
             </div>
           )
         })}
-        {looseItems(items).map((it) => (
-          <div key={it.key} className="flex items-center gap-2 text-base">
+        {looseItems(items).filter((it) => !(cardNo != null && isTakeoutCard(cardNo) && isContainerName(it.name))).map((it) => (
+          <div key={it.key} className="flex items-center gap-2 text-sm">
             <span className="flex-1 text-stone-800">
               {it.name}
               {it.resQty > 0 && (
@@ -371,19 +365,12 @@ export default function OrdersPage() {
             </span>
             <button
               onClick={() => void tap({ id: it.menu_id ?? '', name: it.name, price: it.price }, -1, it.addQty === 0)}
-              className="w-11 h-11 rounded-lg bg-white border border-stone-300 text-lg text-stone-600 font-bold active:scale-95"
+              className="w-9 h-9 rounded-lg bg-white border border-stone-300 text-lg text-stone-600 font-bold active:scale-95"
               aria-label={`${it.name}を1つ減らす`}
             >
               −
             </button>
-            <span className="w-7 text-center text-lg font-bold">{it.qty}</span>
-            <button
-              onClick={() => void tap({ id: it.menu_id ?? '', name: it.name, price: it.price }, 1)}
-              className="w-11 h-11 rounded-lg bg-stone-800 text-white text-lg font-bold active:scale-95"
-              aria-label={`${it.name}を1つ増やす`}
-            >
-              ＋
-            </button>
+            <span className="w-7 text-center text-base font-bold">{it.qty}</span>
           </div>
         ))}
         {ghosts
@@ -391,17 +378,10 @@ export default function OrdersPage() {
           .map((g) => (
             <div key={`${g.menu_id ?? ''}|${g.name}`} className="flex items-center gap-2 text-base opacity-60">
               <span className="flex-1 text-stone-500 line-through">{g.name}</span>
-              <button disabled className="w-11 h-11 rounded-lg bg-white border border-stone-300 text-lg text-stone-600 font-bold opacity-40" aria-label={`${g.name}は0です`}>
+              <button disabled className="w-9 h-9 rounded-lg bg-white border border-stone-300 text-lg text-stone-600 font-bold opacity-40" aria-label={`${g.name}は0です`}>
                 −
               </button>
               <span className="w-7 text-center text-lg font-bold">0</span>
-              <button
-                onClick={() => void tap({ id: g.menu_id ?? '', name: g.name, price: g.price }, 1)}
-                className="w-11 h-11 rounded-lg bg-stone-800 text-white text-lg font-bold active:scale-95"
-                aria-label={`${g.name}を1つ増やす`}
-              >
-                ＋
-              </button>
             </div>
           ))}
         {items.length > 0 && (
@@ -424,21 +404,6 @@ export default function OrdersPage() {
             placeholder="例: パクチー抜き"
             className="w-full h-12 rounded-xl border-2 border-stone-300 bg-white px-3 text-lg"
           />
-          <div className="flex flex-wrap gap-1.5">
-            {NOTE_PRESETS.map((p) => (
-              <button
-                key={p}
-                onClick={() => {
-                  const text = noteText.includes(p) ? noteText : noteText ? `${noteText}、${p}` : p
-                  setNoteDraft({ id: current.id, text })
-                  void actions.setNote(current.id, text)
-                }}
-                className="h-10 px-3 rounded-full bg-white border border-stone-300 text-base text-stone-700 active:scale-95"
-              >
-                ＋{p}
-              </button>
-            ))}
-          </div>
         </div>
       )}
 

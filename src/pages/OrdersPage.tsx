@@ -11,7 +11,7 @@ import { Spinner } from '../components/Spinner'
 import { ConfirmModal } from '../components/ConfirmModal'
 import { useActiveMenus } from '../lib/pos'
 import { todayStr } from '../lib/accounting'
-import { addItem, CARD_COUNT, flushOutbox, freeCards, isMissingTable, isTakeoutCard, nextFreeLabel, ticketCount, ticketTotal, useTicketActions, useTickets, type Ticket, type TicketItem } from '../lib/tickets'
+import { addItem, CARD_COUNT, flushOutbox, freeCards, isMissingTable, isTakeoutCard, ticketCount, ticketTotal, useTicketActions, useTickets, type Ticket, type TicketItem } from '../lib/tickets'
 import { yen } from '../lib/format'
 import { useAttachableIds } from '../lib/settings'
 import { isExtraItem, sanitizeAttach } from '../lib/reservations'
@@ -138,7 +138,7 @@ export default function OrdersPage() {
         if (delta <= 0) return
         flashUndo({ ticketId: null, cardNo, before: [], text: `${menu.name} を入れました`, menu })
         // 空いているテーブルに最初の注文を入れたら、フリー1・フリー2…と名前がつく
-        await actions.create({ cardNo, items: feeFor(cardNo, addItem([], { ...menu, id: menu.id || null }, 1)), label: nextFreeLabel(date) }, { hold: true })
+        await actions.create({ cardNo, items: feeFor(cardNo, addItem([], { ...menu, id: menu.id || null }, 1)), label: actions.nextFree() }, { hold: true })
         return
       }
       const before = current.items
@@ -183,7 +183,7 @@ export default function OrdersPage() {
     try {
       const menu = { id: null, name: `金額入力 ¥${price.toLocaleString()}`, price }
       if (!current) {
-        await actions.create({ cardNo, items: feeFor(cardNo, addItem([], menu, 1)), label: nextFreeLabel(date) }, { hold: true })
+        await actions.create({ cardNo, items: feeFor(cardNo, addItem([], menu, 1)), label: actions.nextFree() }, { hold: true })
         return
       }
       await actions.setItems(current.id, feeFor(cardNo, addItem(current.items, menu, 1)), { hold: true })

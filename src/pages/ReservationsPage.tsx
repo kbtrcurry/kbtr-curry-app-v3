@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { isMissingTable, itemsFromReservation, nextFreeLabel, useDayTickets, useTicketActions, useTickets, voidDayTickets, walkinBiryaniPortions, type Ticket } from '../lib/tickets'
+import { isMissingTable, itemsFromReservation, useDayTickets, useTicketActions, useTickets, voidDayTickets, walkinBiryaniPortions, type Ticket } from '../lib/tickets'
 import { limitedRows, remaining, reservedPortions, useLimitedIds } from '../lib/walkinStock'
 import { RemainingTiles } from '../components/RemainingTiles'
 import { TablePicker } from '../components/TablePicker'
@@ -168,7 +168,7 @@ export default function ReservationsPage() {
     setSeatBusy(true)
     setSeatError(null)
     try {
-      const label = nextFreeLabel(today)
+      const label = todayActions.nextFree()
       await todayActions.create({ cardNo: n, items: [], label })
       setSeatFree(false)
       flashSeated(n, label)

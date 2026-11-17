@@ -546,6 +546,22 @@ export function useTicketActions(date: string) {
 
   return {
     refresh,
+    /** 次のフリーの呼び名。いま残っている(取り消していない)伝票の最大の番号 + 1。テストの注文を消せば、番号も戻る */
+    nextFree(): string {
+      const day = qc.getQueryData<Ticket[]>(['tickets', 'day', date])
+      // その日の伝票を読めていないときは、端末の数え方に頼る(通信がなくても重ならない)
+      if (!day) return nextFreeLabel(date)
+      const open = qc.getQueryData<Ticket[]>(['tickets', date]) ?? []
+      const ids = new Set<string>()
+      let max = 0
+      for (const t of [...day, ...open]) {
+        if (t.status === 'void' || ids.has(t.id)) continue
+        ids.add(t.id)
+        const m = /^フリー(\d+)$/.exec(t.label.trim())
+        if (m) max = Math.max(max, Number(m[1]))
+      }
+      return `${FREE_PREFIX}${max + 1}`
+    },
     create(p: { cardNo: number; items: TicketItem[]; reservationId?: string | null; label?: string; note?: string }, opts?: { hold?: boolean }): Promise<Ticket> {
       const cache = qc.getQueryData<Ticket[]>(['tickets', date]) ?? []
       const ex = cache.find((t) => t.card_no === p.cardNo && (t.status === 'open' || t.status === 'served'))

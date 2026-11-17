@@ -676,6 +676,23 @@ function ReservationForm({
   // 受付の枠に数える食数（ビリヤニ通常=1、大盛り=1.5、ソーダなどは0）
   const slots = items.reduce((a, i) => a + i.qty * portionOf(i.name), 0)
 
+  // 皿そのものを増やす/減らす(減らすと、その皿の付け合わせ・特記事項も消え、後ろの皿が詰まる)
+  const changeDish = (idx: number, dish: number, delta: 1 | -1) => {
+    const it = itemsKept[idx]
+    if (!it?.menu_id) return
+    const id = it.menu_id
+    const set = it.takeout ? setTo : setEat
+    set((q) => ({ ...q, [id]: Math.max(0, (q[id] ?? 0) + delta) }))
+    if (delta < 0) {
+      setDishData((d) => {
+        const k = dishKey(it)
+        const cur = d[k]
+        if (!cur) return d
+        return { ...d, [k]: { attach: cur.attach?.filter((_, x) => x !== dish), dish_notes: cur.dish_notes?.filter((_, x) => x !== dish) } }
+      })
+    }
+  }
+
   const readPaste = async () => {
     // クリップボードから読めるときは貼り付け欄が空でも使えるようにする
     let text = paste
@@ -769,6 +786,36 @@ function ReservationForm({
         </p>
       )}
 
+      {/* 選んだ内容の一覧(オーダー画面と同じ)。タイルを押すと、ここに入る。皿ごとに、特記事項・付け合わせを付けられる */}
+      <div className="rounded-xl bg-stone-50 border border-stone-200 p-2 space-y-2">
+        <p className="text-xs font-bold text-stone-600">いまの内容{total > 0 ? `（${total}点）` : ''}</p>
+        {total === 0 && <p className="text-sm text-stone-500">まだ入っていません。下のメニューを押してください</p>}
+        <DishPicker
+          r={{ items: itemsKept, status: 'reserved' }}
+          onItems={async (next) => setDishData(Object.fromEntries(next.map((i) => [dishKey(i), { attach: i.attach, dish_notes: i.dish_notes }])))}
+          onDish={changeDish}
+        />
+        {itemsKept
+          .filter((i) => dishCount(i) === 0 && !/容器/.test(i.name))
+          .map((i) => {
+            const set = i.takeout ? setTo : setEat
+            return (
+              <div key={dishKey(i)} className="flex items-center gap-2 text-sm">
+                <span className="flex-1 min-w-0 text-stone-800">
+                  {i.name} <span className="text-xs text-stone-500">{i.takeout ? 'TO' : '店内'}</span>
+                </span>
+                <button onClick={() => set((q) => ({ ...q, [i.menu_id as string]: Math.max(0, (q[i.menu_id as string] ?? 0) - 1) }))} className="w-10 h-10 rounded-lg bg-white border border-stone-300 text-lg font-bold text-stone-600 active:scale-95" aria-label={`${i.name}を1つ減らす`}>
+                  −
+                </button>
+                <span className="w-7 text-center text-base font-bold">{i.qty}</span>
+                <button onClick={() => set((q) => ({ ...q, [i.menu_id as string]: (q[i.menu_id as string] ?? 0) + 1 }))} className="w-10 h-10 rounded-lg bg-stone-800 text-white text-lg font-bold active:scale-95" aria-label={`${i.name}を1つ増やす`}>
+                  ＋
+                </button>
+              </div>
+            )
+          })}
+      </div>
+
       {/* レジと同じ。先に「店内」か「TO」を選び、メニューのタイルを押すと1つ増える */}
       <div className="flex rounded-xl border-2 border-stone-300 overflow-hidden">
         {(
@@ -818,12 +865,6 @@ function ReservationForm({
           )
         })}
       </div>
-
-      {/* 1皿ずつに、トッピング・アチャールを付ける。皿ごとの特記事項も入れられる(席に案内すると、そのまま伝票に入る) */}
-      <DishPicker
-        r={{ items: itemsKept, status: 'reserved' }}
-        onItems={async (next) => setDishData(Object.fromEntries(next.map((i) => [dishKey(i), { attach: i.attach, dish_notes: i.dish_notes }])))}
-      />
 
       <div className="flex flex-wrap items-center gap-2">
         <TimeSelect value={time} onChange={setTime} />
@@ -1153,7 +1194,7 @@ function ReservationCard({
 
 // ビリヤニ1皿ずつに、トッピング増量・アチャールを付ける(オーダー画面と同じ)。押すと1つ付き、「−」で1つ外れる。同じ品を何個でも付けられる。
 // 皿ごとの特記事項(「パクチー抜き」など)も入れられる。席に案内すると、そのまま伝票に入る。シェアする分は、どの皿にも付けずに残す。
-function DishPicker({ r, onItems }: { r: { items: ResItem[]; status: ResStatus }; onItems: (items: ResItem[]) => Promise<void> }) {
+function DishPicker({ r, onItems, onDish }: { r: { items: ResItem[]; status: ResStatus }; onItems: (items: ResItem[]) => Promise<void>; /** 追加の画面で、皿そのものを増減する(オーダー画面の「−」「＋」と同じ) */ onDish?: (idx: number, dish: number, delta: 1 | -1) => void }) {
   const [busy, setBusy] = useState(false)
   const totals = extraTotals(r.items)
   const used = attachedTotals(r.items)
@@ -1187,9 +1228,21 @@ function DishPicker({ r, onItems }: { r: { items: ResItem[]; status: ResStatus }
         const mine = i.attach?.[d] ?? []
         return (
           <div key={`${idx}-${d}`} className="rounded-lg border border-stone-200 bg-white p-2 space-y-1.5">
-            <p className="text-sm font-bold text-stone-800">
-              {n + 1}皿目 <span className="text-xs font-normal text-stone-500">{shortName(i.name).label}{i.takeout ? '・TO' : ''}</span>
-            </p>
+            <div className="flex items-center gap-2">
+              <p className="flex-1 min-w-0 text-sm font-bold text-stone-800">
+                {i.name} <span className="text-xs font-normal text-stone-500">{n + 1}皿目{i.takeout ? '・TO' : '・店内'}</span>
+              </p>
+              {onDish && (
+                <>
+                  <button onClick={() => onDish(idx, d, -1)} className="w-10 h-10 rounded-lg bg-white border border-stone-300 text-lg font-bold text-stone-600 active:scale-95" aria-label={`${n + 1}皿目を1皿減らす`}>
+                    −
+                  </button>
+                  <button onClick={() => onDish(idx, d, 1)} className="w-10 h-10 rounded-lg bg-stone-800 text-white text-lg font-bold active:scale-95" aria-label={`${i.name}を1皿増やす`}>
+                    ＋
+                  </button>
+                </>
+              )}
+            </div>
             <input
               defaultValue={i.dish_notes?.[d] ?? ''}
               onBlur={(e) => {

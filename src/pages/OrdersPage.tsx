@@ -450,14 +450,14 @@ export default function OrdersPage() {
       <div
         className="fixed left-0 right-0 z-[45] px-4 pointer-events-none bottom-[calc(4.75rem+env(safe-area-inset-bottom,0px))] md:bottom-4 md:left-52 lg:left-60"
       >
-        <div className="max-w-md mx-auto flex justify-end">
+        <div className="max-w-md mx-auto">
           <button
             onClick={() => void confirmOrder()}
             disabled={confirming}
-            className={`pointer-events-auto w-[calc(50%-0.25rem)] min-h-16 px-3 py-2.5 rounded-2xl text-lg font-bold leading-tight shadow-xl active:scale-95 transition-transform disabled:opacity-60 ${held ? 'bg-green-600 text-white ring-4 ring-red-500' : 'bg-stone-300 text-stone-700'}`}
+            className={`pointer-events-auto w-full h-10 px-3 rounded-xl text-base font-bold leading-none shadow-xl active:scale-[0.98] transition-transform disabled:opacity-60 ${held ? 'bg-green-600 text-white ring-4 ring-red-500' : 'bg-stone-300 text-stone-700'}`}
           >
-            {confirming ? '送信中…' : held ? '注文を確定して調理場へ' : items.length > 0 ? '送信済み（一覧に戻る）' : '席の一覧に戻る'}
-            {!confirming && items.length > 0 && <span className="block text-xs font-normal mt-0.5">テーブル{cardNo}・{ticketCount(items)}点 {yen(ticketTotal(items))}</span>}
+            {confirming ? '送信中…' : held ? '注文を確定して調理場へ送る' : items.length > 0 ? '送信済み（席の一覧に戻る）' : '席の一覧に戻る'}
+            {!confirming && items.length > 0 && <span className="ml-2 text-xs font-normal">テーブル{cardNo}・{ticketCount(items)}点 {yen(ticketTotal(items))}</span>}
           </button>
         </div>
       </div>

@@ -25,15 +25,17 @@ import { useMetaAds } from '../lib/ads'
 import { OTHER_BUSINESS_CODES } from '../lib/events'
 import PnlTab from './analysis/PnlTab'
 import OverviewTab from './analysis/OverviewTab'
+import RunsTab from './analysis/RunsTab'
 import MenusTab from './analysis/MenusTab'
 import AdsTab from './analysis/AdsTab'
 import SessionsTab from './analysis/SessionsTab'
 
-type AnalysisTab = 'overview' | 'pnl' | 'sessions' | 'menus' | 'ads'
+type AnalysisTab = 'runs' | 'overview' | 'pnl' | 'sessions' | 'menus' | 'ads'
 const TABS: { key: AnalysisTab; label: string }[] = [
+  { key: 'runs', label: '営業ごと' },
   { key: 'overview', label: '概要' },
   { key: 'pnl', label: '損益' },
-  { key: 'sessions', label: '営業' },
+  { key: 'sessions', label: '月の営業' },
   { key: 'menus', label: 'メニュー' },
   { key: 'ads', label: '広告' },
 ]
@@ -44,9 +46,9 @@ export default function AnalysisPage() {
   const thisMonth = currentYearMonth()
   const [month, setMonth] = useStoredState('kbtr_v3_analysis_month', thisMonth)
   const [choice, setChoice] = useStoredState<FoodChoice>('kbtr_v3_food_basis', 'auto')
-  const [tab, setTab] = usePersistedState<AnalysisTab>('kbtr_v3_analysis_tab2', 'overview')
+  const [tab, setTab] = usePersistedState<AnalysisTab>('kbtr_v3_analysis_tab3', 'runs')
   const data = useAnalysisData(month)
-  const activeTab: AnalysisTab = TABS.some((t) => t.key === tab) ? tab : 'overview'
+  const activeTab: AnalysisTab = TABS.some((t) => t.key === tab) ? tab : 'runs'
   const metaAds = useMetaAds()
   const oneOff = useOneOff()
   const [includeOneOff, setIncludeOneOff] = useStoredState('kbtr_v3_include_one_off', false)
@@ -74,6 +76,7 @@ export default function AnalysisPage() {
     const ads = metaAds.data ?? []
     const spendOf = (m: string) => ads.filter((x) => x.date.startsWith(m)).reduce((a, x) => a + x.spend, 0)
     return {
+      runs: { stats: everything, lines: data.lines },
       gap: foodGapSeries(kento, lastMonths(month, 6), data.theoreticalByMonth),
       // 概要タブは自分でイベントを分けるので、イベント込みで渡す
       overview: { stats: inMonthAll, prevStats: everything.filter((x) => x.date.startsWith(prev)) },
@@ -125,6 +128,8 @@ export default function AnalysisPage() {
 
   return (
     <div className="p-4 pb-24 max-w-2xl mx-auto space-y-3">
+      {activeTab !== 'runs' && (
+        <>
       <div className="sticky top-0 z-10 -mx-4 px-4 py-2 bg-[var(--page-bg)] flex items-center gap-2">
         <button
           onClick={() => setMonth(shiftMonth(month, -1))}
@@ -150,6 +155,9 @@ export default function AnalysisPage() {
         </button>
       )}
 
+        </>
+      )}
+
       {data.loading && <Spinner />}
       {data.error && <p className="text-sm text-red-600">読み込みに失敗しました: {data.error.message}</p>}
 
@@ -160,7 +168,7 @@ export default function AnalysisPage() {
             role="tab"
             aria-selected={activeTab === t.key}
             onClick={() => setTab(t.key)}
-            className={`flex-1 py-2 rounded-full text-sm font-semibold whitespace-nowrap ${
+            className={`flex-1 py-2 rounded-full text-xs sm:text-sm font-semibold whitespace-nowrap ${
               activeTab === t.key ? 'bg-amber-700 text-[#faf9f5]' : 'bg-stone-100 text-stone-600'
             }`}
           >
@@ -169,6 +177,7 @@ export default function AnalysisPage() {
         ))}
       </div>
 
+      {!data.loading && activeTab === 'runs' && <RunsTab stats={view.runs.stats} lines={view.runs.lines} />}
       {!data.loading && activeTab === 'overview' && (
         <OverviewTab month={month} stats={view.overview.stats} prevStats={view.overview.prevStats} menus={view.overviewMenus} oneOffTotal={view.oneOff.total} oneOffIncluded={includeOneOff} />
       )}

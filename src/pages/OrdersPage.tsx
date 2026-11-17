@@ -284,6 +284,11 @@ export default function OrdersPage() {
         {error && <p className="text-sm text-red-600">{error}</p>}
 
         {rem.ready && <RemainingTiles biryaniLeft={rem.biryaniLeft} rows={rem.rows} />}
+        {rem.ready && rem.date !== date && (
+          <p className="text-xs text-stone-500">
+            「あと」は {Number(rem.date.slice(5, 7))}/{Number(rem.date.slice(8, 10))} の取り置き・仕込み数から数えています（取り置きの画面で選んでいる日）
+          </p>
+        )}
 
         {waitingOrder.length > 0 && (
           <div className="rounded-xl bg-sky-50 border border-sky-200 p-2.5 space-y-1.5">

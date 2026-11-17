@@ -62,16 +62,39 @@ export function useLimitedIds(menus: { id: string; name: string }[]): [string[],
 }
 
 /** 注文画面など、取り置きの画面以外で「あと何食」を出すための取得 */
-export function useWalkinRemaining(date: string): { biryaniLeft: number; rows: LimitedRow[]; ready: boolean } {
+export const RES_DATE_KEY = 'kbtr_v3_res_date'
+
+/**
+ * 「あと」を数える営業日。取り置きの画面で選んでいる日(まだ来ていない日、または今日)があれば、その日の取り置き・仕込み数で数える。
+ * 取り置きの画面と、注文画面の「あと」が、同じ取り置き・同じ仕込み数から出るようにするため。選んでいる日が過ぎていれば、今日。
+ */
+export function businessDate(today: string): string {
+  try {
+    const raw = localStorage.getItem(RES_DATE_KEY)
+    const d = raw ? (JSON.parse(raw) as unknown) : null
+    if (typeof d === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(d) && d >= today) return d
+  } catch {
+    /* 読めなければ今日 */
+  }
+  return today
+}
+
+export function useWalkinRemaining(today: string): { biryaniLeft: number; rows: LimitedRow[]; ready: boolean; date: string } {
+  const date = businessDate(today)
   const res = useReservations(date)
   const menus = useActiveMenus()
   const stock = useMenuStock(date)
-  const day = useDayTickets(date)
+  const dayBiz = useDayTickets(date)
+  const dayToday = useDayTickets(today)
   const [cap] = useCap()
   const [ids] = useLimitedIds(menus.data ?? [])
   const list = res.data ?? []
-  const tickets = day.data ?? []
+  // 営業日の注文に、今日の注文も足す(営業日の前に試しに入れた注文も、「あと」に出る)。同じ伝票は1回だけ
+  const byId = new Map<string, Ticket>()
+  for (const t of [...(dayBiz.data ?? []), ...(dayToday.data ?? [])]) byId.set(t.id, t)
+  const tickets = [...byId.values()]
   return {
+    date,
     biryaniLeft: remaining({ cap, reservedPortions: reservedPortions(list), walkinOrdered: walkinBiryaniPortions(tickets) }),
     rows: limitedRows(ids, menus.data ?? [], stock.data, list, tickets),
     ready: !!res.data,

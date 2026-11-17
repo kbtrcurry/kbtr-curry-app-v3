@@ -693,6 +693,26 @@ function ReservationForm({
     }
   }
 
+  // 皿に付け合わせを1つ足す/外す。メニューにある付け合わせは、最初からボタンに出ていて、押すと取り置きにも足される(皿と同じ店内/TO)
+  const changeExtra = (idx: number, dish: number, id: string, delta: 1 | -1) => {
+    const it = itemsKept[idx]
+    if (!it) return
+    const set = it.takeout ? setTo : setEat
+    const k = dishKey(it)
+    const n = dishCount(it)
+    const attach = Array.from({ length: n }, (_, x) => [...(dishData[k]?.attach?.[x] ?? it.attach?.[x] ?? [])])
+    if (delta > 0) {
+      attach[dish].push(id)
+      set((q) => ({ ...q, [id]: (q[id] ?? 0) + 1 }))
+    } else {
+      const at = attach[dish].indexOf(id)
+      if (at < 0) return
+      attach[dish].splice(at, 1)
+      set((q) => ({ ...q, [id]: Math.max(0, (q[id] ?? 0) - 1) }))
+    }
+    setDishData((d) => ({ ...d, [k]: { ...d[k], attach } }))
+  }
+
   const readPaste = async () => {
     // クリップボードから読めるときは貼り付け欄が空でも使えるようにする
     let text = paste
@@ -794,6 +814,8 @@ function ReservationForm({
           r={{ items: itemsKept, status: 'reserved' }}
           onItems={async (next) => setDishData(Object.fromEntries(next.map((i) => [dishKey(i), { attach: i.attach, dish_notes: i.dish_notes }])))}
           onDish={changeDish}
+          extraMenus={menuRows.filter((m) => isExtraItem({ menu_id: m.id, name: m.name })).map((m) => [m.id, m.name] as [string, string])}
+          onExtra={changeExtra}
         />
         {itemsKept
           .filter((i) => dishCount(i) === 0 && !/容器/.test(i.name))
@@ -1194,12 +1216,26 @@ function ReservationCard({
 
 // ビリヤニ1皿ずつに、トッピング増量・アチャールを付ける(オーダー画面と同じ)。押すと1つ付き、「−」で1つ外れる。同じ品を何個でも付けられる。
 // 皿ごとの特記事項(「パクチー抜き」など)も入れられる。席に案内すると、そのまま伝票に入る。シェアする分は、どの皿にも付けずに残す。
-function DishPicker({ r, onItems, onDish }: { r: { items: ResItem[]; status: ResStatus }; onItems: (items: ResItem[]) => Promise<void>; /** 追加の画面で、皿そのものを増減する(オーダー画面の「−」「＋」と同じ) */ onDish?: (idx: number, dish: number, delta: 1 | -1) => void }) {
+function DishPicker({
+  r,
+  onItems,
+  onDish,
+  extraMenus,
+  onExtra,
+}: {
+  r: { items: ResItem[]; status: ResStatus }
+  onItems: (items: ResItem[]) => Promise<void>
+  /** 追加の画面で、皿そのものを増減する(オーダー画面の「−」「＋」と同じ) */
+  onDish?: (idx: number, dish: number, delta: 1 | -1) => void
+  /** 追加の画面で、付けられる品の一覧(メニューにあるものを最初から全部出す。押すと、取り置きにも足される) */
+  extraMenus?: [string, string][]
+  onExtra?: (idx: number, dish: number, id: string, delta: 1 | -1) => void
+}) {
   const [busy, setBusy] = useState(false)
   const totals = extraTotals(r.items)
   const used = attachedTotals(r.items)
   // 付けられる品(同じメニューは1つにまとめる)
-  const extras = [...new Map(r.items.filter((i) => i.menu_id && isExtraItem(i)).map((i) => [i.menu_id as string, i.name])).entries()]
+  const extras = extraMenus ?? [...new Map(r.items.filter((i) => i.menu_id && isExtraItem(i)).map((i) => [i.menu_id as string, i.name])).entries()]
   const dishes = r.items.flatMap((i, idx) => Array.from({ length: dishCount(i) }, (_, d) => ({ i, idx, d })))
   if (dishes.length === 0 || r.status === 'cancelled') return null
   const save = async (next: ResItem[]) => {
@@ -1211,7 +1247,7 @@ function DishPicker({ r, onItems, onDish }: { r: { items: ResItem[]; status: Res
       setBusy(false)
     }
   }
-  const change = (idx: number, d: number, id: string, delta: 1 | -1) => void save((delta > 0 ? addAttach : removeAttach)(r.items, idx, d, id))
+  const change = (idx: number, d: number, id: string, delta: 1 | -1) => (onExtra ? onExtra(idx, d, id, delta) : void save((delta > 0 ? addAttach : removeAttach)(r.items, idx, d, id)))
   const setNote = (idx: number, d: number, text: string) => {
     const it = r.items[idx]
     const notes = Array.from({ length: dishCount(it) }, (_, k) => it.dish_notes?.[k] ?? '')
@@ -1255,7 +1291,7 @@ function DishPicker({ r, onItems, onDish }: { r: { items: ResItem[]; status: Res
               {extras.map(([id, name]) => {
                 const cnt = mine.filter((x) => x === id).length
                 const on = cnt > 0
-                const full = (used[id] ?? 0) >= (totals[id] ?? 0)
+                const full = !onExtra && (used[id] ?? 0) >= (totals[id] ?? 0)
                 const sh = shortName(name)
                 const c = CHIP[sh.kind] ?? CHIP['他']
                 return (

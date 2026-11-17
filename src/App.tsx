@@ -1,9 +1,10 @@
 import type { ReactNode } from 'react'
-import { lazy, Suspense, useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useState } from 'react'
 import { BrowserRouter, Navigate, NavLink, Route, Routes, useLocation } from 'react-router-dom'
 import { QueryClient, useQueryClient } from '@tanstack/react-query'
 import { PersistQueryClientProvider } from '@tanstack/react-query-persist-client'
 import { CACHE_MAX_AGE, queryPersister, shouldPersist } from './lib/queryPersist'
+import { ErrorBoundary } from './components/ErrorBoundary'
 import { useRegisterSW } from 'virtual:pwa-register/react'
 import {
   ShoppingCart,
@@ -134,13 +135,11 @@ function AutoSettle() {
 }
 
 function UpdateButton() {
-  const regRef = useRef<ServiceWorkerRegistration | undefined>(undefined)
   const {
     needRefresh: [needRefresh],
     updateServiceWorker,
   } = useRegisterSW({
     onRegisteredSW(_swUrl, reg) {
-      regRef.current = reg
       // 1時間ごとに更新確認
       if (reg) setInterval(() => reg.update(), 60 * 60 * 1000)
     },
@@ -153,12 +152,8 @@ function UpdateButton() {
 
   return (
     <button
-      // 画面ごとの再読み込みはスマホで真っ白になることがあるので、最新版の確認とデータの取り直しだけにする
-      onClick={() => {
-        void regRef.current?.update().catch(() => undefined)
-        void queryClient.invalidateQueries()
-      }}
-      title={`v${__APP_VERSION__}.${__BUILD_DATE__} — タップで最新に更新`}
+      onClick={() => window.location.reload()}
+      title={`v${__APP_VERSION__}.${__BUILD_DATE__} — タップで再読み込み`}
       className="text-xl leading-none transition-transform active:scale-90"
     >
       🍛
@@ -256,8 +251,14 @@ function Layout({ children }: { children: ReactNode }) {
 
 // 調理場の画面だけ、横幅いっぱいに使う
 function Content({ children }: { children: ReactNode }) {
-  const wide = useLocation().pathname === '/kitchen'
-  return <div className={wide ? 'w-full' : 'mx-auto w-full max-w-screen-sm lg:max-w-3xl'}>{children}</div>
+  const pathname = useLocation().pathname
+  const wide = pathname === '/kitchen'
+  // 画面でエラーが出ても全体が真っ白にならないよう囲む(別の画面へ移れば、自動で元に戻る)
+  return (
+    <div className={wide ? 'w-full' : 'mx-auto w-full max-w-screen-sm lg:max-w-3xl'}>
+      <ErrorBoundary key={pathname}>{children}</ErrorBoundary>
+    </div>
+  )
 }
 
 export default function App() {

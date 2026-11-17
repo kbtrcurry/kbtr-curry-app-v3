@@ -84,6 +84,16 @@ export default function OrdersPage() {
   // 席に案内したけれど、まだ注文を聞いていないテーブル(案内した順)
   const waitingOrder = useMemo(() => tickets.filter((t) => t.items.length === 0).sort((a, b) => a.created_at.localeCompare(b.created_at)), [tickets])
 
+  // 一度リストに載ったメニューは、「−」で0にしても、このテーブルを開いている間は0のまま残す(押し間違いで、何を頼まれたか分からなくならないように)
+  // ※ フックは、ログイン待ちなどの早期 return より前に置く(後ろに置くと、ログイン状態が揺れたときに画面ごと落ちる)
+  type Ghost = { menu_id: string | null; name: string; price: number }
+  const [ghosts, setGhosts] = useState<Ghost[]>([])
+  const [ghostFor, setGhostFor] = useState(cardNo)
+  if (ghostFor !== cardNo) {
+    setGhostFor(cardNo)
+    setGhosts([])
+  }
+
   if (authLoading) return <Spinner />
   if (!session) {
     return (
@@ -109,14 +119,6 @@ export default function OrdersPage() {
     undoTimer.current = setTimeout(() => setUndo(null), 5000)
   }
 
-  // 一度リストに載ったメニューは、「−」で0にしても、このテーブルを開いている間は0のまま残す(押し間違いで、何を頼まれたか分からなくならないように)
-  type Ghost = { menu_id: string | null; name: string; price: number }
-  const [ghosts, setGhosts] = useState<Ghost[]>([])
-  const [ghostFor, setGhostFor] = useState(cardNo)
-  if (ghostFor !== cardNo) {
-    setGhostFor(cardNo)
-    setGhosts([])
-  }
   // テイクアウトの席(9〜12)は、ビリヤニ1皿につき容器代を自動で合わせる
   const containerMenu = menus.find((m) => /容器/.test(m.name)) ?? null
   const feeFor = (n: number | null, list: TicketItem[]): TicketItem[] => (n != null && isTakeoutCard(n) ? withContainerFee(list, containerMenu) : list)

@@ -975,6 +975,8 @@ function ReservationRow({
               </span>
               {/* チップが多いときは、はみ出さず、この中で折り返す */}
               <span className="flex flex-wrap items-center gap-x-1 gap-y-[3px] min-w-0 flex-1 py-[3px]">
+                {/* 備考は取り置き1件ぜんたいのもの(メニューごとではない)ので、いちばん最初の行の先頭に出す */}
+                {idx === 0 && r.note && <Chip kind="備考あり">備考あり</Chip>}
                 {ln && <ItemChip it={ln.it} />}
                 {/* うずらは、1食ごとの行すべてに付ける。ビリヤニの次に出す */}
                 {ln && r.uzura && <Chip kind="うずら">特典</Chip>}
@@ -987,7 +989,6 @@ function ReservationRow({
                       <ItemChip key={it.key} it={it} />
                     ))}
                     {r.uzura && !ln && <Chip kind="うずら">特典</Chip>}
-                    {r.note && <Chip kind="備考あり">備考あり</Chip>}
                     {r.visit_time && <span className="text-[11px] text-stone-500">{r.visit_time}</span>}
                     {off && <span className="text-[11px] font-bold text-stone-500">{STATUS_LABEL[r.status]}</span>}
                   </>

@@ -183,6 +183,10 @@ function Layout({ children }: { children: ReactNode }) {
   // 調理場のタブレットは画面いっぱいに使いたいので、ナビを隠せる(隠したままでも、右下のボタンで出せる)
   const [kitchenNav, setKitchenNav] = useStoredState('kbtr_v3_kitchen_nav', false)
   const hideNav = pathname === '/kitchen' && !kitchenNav
+  // iPad のレジも、横持ちのときは画面を広く使いたいので、左のナビを隠せる(隠したままでも、左下のボタンで出せる)。iPhone のナビは変えない
+  const [posNavHidden, setPosNavHidden] = useStoredState('kbtr_v3_pos_nav_hidden', false)
+  const isRegister = pathname === '/' || pathname === '/pos'
+  const posHide = isRegister && posNavHidden
   return (
     <div className="min-h-svh md:flex">
       <header className={`${hideNav ? 'hidden' : 'flex'} md:hidden items-center gap-2 px-4 py-3 border-b border-stone-200 bg-[var(--page-bg)]`}>
@@ -191,7 +195,7 @@ function Layout({ children }: { children: ReactNode }) {
         <span className="text-xs text-stone-400">v{__APP_VERSION__}.{__BUILD_DATE__}</span>
       </header>
 
-      <aside className={`hidden ${hideNav ? '' : 'md:flex'} md:flex-col md:w-52 lg:w-60 shrink-0 border-r border-stone-200 md:fixed md:inset-y-0 md:left-0 h-svh z-30`}>
+      <aside className={`hidden ${hideNav || posHide ? '' : 'md:flex'} md:flex-col md:w-52 lg:w-60 shrink-0 border-r border-stone-200 md:fixed md:inset-y-0 md:left-0 h-svh z-30`}>
         <div className="px-4 py-4 text-lg font-bold text-amber-800 flex items-center gap-2">
           <UpdateButton />
           コバタロカレー v3
@@ -216,14 +220,25 @@ function Layout({ children }: { children: ReactNode }) {
         </nav>
       </aside>
 
-      <main className={`flex-1 min-w-0 ${hideNav ? 'pb-4' : 'pb-[calc(5rem+env(safe-area-inset-bottom,0px))] md:pb-10 md:ml-52 lg:ml-60'}`}>{children}</main>
+      <main className={`flex-1 min-w-0 ${hideNav ? 'pb-4' : `pb-[calc(5rem+env(safe-area-inset-bottom,0px))] md:pb-10 ${posHide ? '' : 'md:ml-52 lg:ml-60'}`}`}>{children}</main>
 
       {pathname === '/kitchen' && (
         <button
           onClick={() => setKitchenNav(!kitchenNav)}
-          className="fixed bottom-3 left-3 z-50 h-10 px-3 rounded-full bg-stone-800/70 text-white text-xs font-semibold"
+          aria-label={kitchenNav ? 'ナビを隠す' : 'ナビを出す'}
+          className="fixed bottom-3 left-3 z-50 w-11 h-11 rounded-full bg-stone-800/70 text-white text-2xl font-bold leading-none"
         >
-          {kitchenNav ? 'ナビを隠す' : 'ナビ'}
+          {kitchenNav ? '−' : '＋'}
+        </button>
+      )}
+
+      {isRegister && (
+        <button
+          onClick={() => setPosNavHidden(!posNavHidden)}
+          aria-label={posNavHidden ? 'ナビを出す' : 'ナビを隠す'}
+          className="hidden md:block fixed bottom-3 left-3 z-50 w-11 h-11 rounded-full bg-stone-800/70 text-white text-2xl font-bold leading-none"
+        >
+          {posNavHidden ? '＋' : '−'}
         </button>
       )}
 

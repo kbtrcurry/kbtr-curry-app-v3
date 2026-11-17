@@ -591,7 +591,7 @@ export default function OrdersPage() {
       )}
 
       {undo && (
-        <div className="fixed left-0 right-0 bottom-20 px-4 z-40">
+        <div className="fixed left-0 right-0 bottom-[calc(7.75rem+env(safe-area-inset-bottom,0px))] md:bottom-16 px-4 z-[46]">
           <div className="max-w-md mx-auto bg-stone-800 text-white rounded-xl px-4 py-2 flex items-center gap-3 shadow-lg">
             <span className="flex-1 text-base">{undo.text}</span>
             <button onClick={() => void doUndo()} className="font-bold text-amber-300 px-3 h-11">

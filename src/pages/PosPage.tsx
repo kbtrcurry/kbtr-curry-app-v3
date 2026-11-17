@@ -27,6 +27,7 @@ import { todayStr, useSegments } from '../lib/accounting'
 import { useGuests } from '../lib/guests'
 import { PENDING_TONE, SERVED_TONE } from '../lib/ticketTone'
 import { GuestChip } from '../components/GuestChip'
+import { NoteBanner } from '../components/NoteBanner'
 import { DishList } from '../components/DishList'
 import { useAttachableIds } from '../lib/settings'
 import { handedAtRegister, hasPending, stickerCount, ticketCount, ticketTotal, useDayTickets, useTicketActions, useTickets, type Ticket } from '../lib/tickets'
@@ -753,36 +754,34 @@ export default function PosPage() {
           <p className="text-sm font-semibold text-stone-900">
             会計前の伝票 <span className="text-xs font-normal">（オレンジ=調理中 / グレー=提供済みで会計待ち）</span>
           </p>
-          <div className="flex flex-wrap gap-2">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
             {openTickets.map((t) => (
               <button
                 key={t.id}
                 onClick={() => tapTicket(t)}
                 aria-pressed={t.id === ticketId}
-                className={`min-w-16 rounded-xl border-2 px-3 py-2 text-center active:scale-95 transition ${
+                className={`min-h-28 rounded-2xl border-2 px-3 py-3 text-center active:scale-95 transition ${
                   t.items.length === 0 ? 'bg-sky-50 border-sky-400 text-sky-900' : hasPending(t.items) ? PENDING_TONE : SERVED_TONE
                 } ${t.id === ticketId ? 'ring-4 ring-sky-400 ring-offset-1' : ''}`}
               >
-                <span className="block text-xs">テーブル</span>
-                <span className="block text-2xl font-bold leading-none">{t.card_no}</span>
-                <span className="block text-[11px] font-bold mt-0.5">{t.items.length === 0 ? '注文まだ' : hasPending(t.items) ? '調理中' : '会計待ち'}</span>
-                {t.label && <span className="block text-xs font-bold mt-0.5 max-w-[6.5rem] truncate">{t.label}</span>}
+                <span className="block text-sm">テーブル</span>
+                <span className="block text-5xl font-bold leading-none">{t.card_no}</span>
+                <span className="block text-sm font-bold mt-1">{t.items.length === 0 ? '注文まだ' : hasPending(t.items) ? '調理中' : '会計待ち'}</span>
+                {t.label && <span className="block text-base font-bold mt-0.5 truncate">{t.label}</span>}
                 {guestOf(t) && (
                   <span className="block mt-0.5">
                     <GuestChip g={guestOf(t)} />
                   </span>
                 )}
-                <span className="block text-xs mt-0.5">
+                <span className="block text-base font-semibold mt-0.5">
                   {ticketCount(t.items)}点 {ticketTotal(t.items).toLocaleString()}円
                 </span>
                 {stickerCount(t.items) > 0 && <span className="mt-0.5 inline-block rounded bg-pink-200 border border-pink-500 text-pink-950 text-[11px] font-bold px-1.5">ステッカー×{stickerCount(t.items)}</span>}
-                {t.note && <span className="mt-0.5 block max-w-[6.5rem] truncate rounded bg-[#b91c1c] text-white text-[11px] font-bold px-1.5">※ {t.note}</span>}
+                {(t.note || guestOf(t)?.memo) && <span className="mt-1 block rounded text-sm font-bold px-1.5 py-0.5 whitespace-pre-wrap break-all" style={{ background: '#b91c1c', color: '#fff' }}>※ {[t.note, guestOf(t)?.memo].filter(Boolean).join(' / ')}</span>}
               </button>
             ))}
           </div>
-          {loadedTicket?.note && (
-            <p className="rounded-lg bg-[#b91c1c] text-white text-lg font-bold px-3 py-2 whitespace-pre-wrap">※ {loadedTicket.note}</p>
-          )}
+          {loadedTicket && <NoteBanner note={loadedTicket.note} memo={guestOf(loadedTicket)?.memo} />}
           {loadedTicket && stickerCount(loadedTicket.items) > 0 && (
             <p className="rounded-lg bg-pink-100 text-pink-900 text-base font-bold px-3 py-2">{loadedTicket.items.filter((i) => handedAtRegister(i.name)).map((i) => `${i.name}×${i.qty}`).join('、')} を渡してください</p>
           )}

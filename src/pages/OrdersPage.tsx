@@ -3,6 +3,8 @@ import { ClipboardList } from 'lucide-react'
 import { useLocation } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import { useHeldIds } from '../lib/ticketOutbox'
+import { useGuests } from '../lib/guests'
+import { NoteBanner } from '../components/NoteBanner'
 import { Modal } from '../components/Modal'
 import { useAuth } from '../lib/auth'
 import { Spinner } from '../components/Spinner'
@@ -46,6 +48,7 @@ export default function OrdersPage() {
   const [confirming, setConfirming] = useState(false)
   const [leaving, setLeaving] = useState(false)
   const heldIds = useHeldIds()
+  const guestOf = useGuests()
   const [cardNo, setCardNo] = useState<number | null>(() => tableFromSearch(loc.search))
   const [undo, setUndo] = useState<{ ticketId: string | null; cardNo: number; before: TicketItem[]; text: string; menu?: { id: string; name: string; price: number } } | null>(null)
   const undoTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -286,6 +289,7 @@ export default function OrdersPage() {
         </div>
       </div>
       {error && <p className="text-sm text-red-600">{error}</p>}
+      {current && guestOf(current)?.memo && <NoteBanner memo={guestOf(current)?.memo} size="base" />}
       {held && <p className="rounded-xl bg-[#b91c1c] text-white text-base font-bold px-3 py-2.5 text-center">まだ調理場に送っていません（未確定）。下の「注文を確定して調理場へ送る」を押してください</p>}
 
       <div className="bg-stone-50 rounded-xl p-3 space-y-1.5">

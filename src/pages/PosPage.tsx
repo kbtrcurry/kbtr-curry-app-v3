@@ -28,6 +28,8 @@ import { useGuests } from '../lib/guests'
 import { PENDING_TONE, SERVED_TONE } from '../lib/ticketTone'
 import { GuestChip } from '../components/GuestChip'
 import { Numpad } from '../components/Numpad'
+import { usePosLayout } from '../lib/settings'
+import { cellsFromLayout, isBlankCell, layoutFromCells, newBlank } from '../lib/posLayout'
 import { NoteBanner } from '../components/NoteBanner'
 import { DishList } from '../components/DishList'
 import { useAttachableIds } from '../lib/settings'
@@ -95,6 +97,7 @@ export default function PosPage() {
     }
   }
   const [reordering, setReordering] = useState(false)
+  const [posLayout, setPosLayout] = usePosLayout()
   // 並び替え中の並び（メニューID）と、いま指でつかんでいるボタン
   const [order, setOrder] = useState<string[] | null>(null)
   const [drag, setDrag] = useState<{ id: string; x: number; y: number; w: number; h: number; dx: number; dy: number } | null>(null)
@@ -224,11 +227,14 @@ export default function PosPage() {
 
   // メニューボタンの並び替え。ホーム画面のアプリのように、ボタンをドラッグして入れ替える。
   // 離したら、全部の順番を 0,1,2… と振り直して保存する（順番の数字が重なっていても、確実に入れ替わる）
-  const shownMenus = reordering && order ? (order.map((id) => menus.find((m) => m.id === id)).filter(Boolean) as Menu[]) : menus
+  const cells = reordering && order ? order : cellsFromLayout(menus.map((m) => m.id), posLayout)
   useEffect(() => {
     commitRef.current = () => {
       if (!order) return
-      const next = order.map((id, idx) => ({ ...(menus.find((m) => m.id === id) as Menu), sort_order: idx }))
+      // 置き場所(空白つき)は共有の設定に、メニューの順番は、これまでどおりメニューに保存する
+      const layout = layoutFromCells(order)
+      if (JSON.stringify(layout) !== JSON.stringify(posLayout)) setPosLayout(layout)
+      const next = order.filter((id) => !isBlankCell(id)).map((id, idx) => ({ ...(menus.find((m) => m.id === id) as Menu), sort_order: idx }))
       const changed = next.filter((m) => menus.find((x) => x.id === m.id)?.sort_order !== m.sort_order)
       if (changed.length === 0) return
       queryClient.setQueryData<Menu[]>(['menus', 'active'], next)
@@ -597,7 +603,7 @@ export default function PosPage() {
           )}
           <button
             onClick={() => {
-              if (!reordering) setOrder(menus.map((m) => m.id))
+              if (!reordering) setOrder(cellsFromLayout(menus.map((m) => m.id), posLayout))
               else setOrder(null)
               setReordering((v) => !v)
             }}
@@ -865,10 +871,27 @@ export default function PosPage() {
       )}
 
       {reordering && (
-        <p className="text-xs text-stone-500 mb-2">ボタンを指でつかんで、入れ替えたい場所へドラッグしてください。終わったら「完了」。</p>
+        <div className="flex items-center gap-2 mb-2">
+          <p className="flex-1 text-xs text-stone-500">ボタンを指でつかんで、置きたい場所へドラッグしてください。終わったら「完了」。</p>
+          <button
+            onClick={() => setOrder((o) => (o ? [...o, newBlank(o)] : o))}
+            className="shrink-0 text-sm font-semibold border-2 border-dashed border-stone-400 text-stone-700 rounded-lg px-3 py-2 active:scale-95"
+          >
+            ＋ 空白を足す
+          </button>
+        </div>
       )}
 
       {drag && (() => {
+        if (isBlankCell(drag.id))
+          return (
+            <div
+              className="fixed z-[80] pointer-events-none rounded-2xl border-2 border-dashed border-stone-500 bg-stone-100/80 shadow-2xl flex items-center justify-center text-stone-600 font-bold"
+              style={{ left: drag.x - drag.dx, top: drag.y - drag.dy, width: drag.w, height: drag.h, transform: 'scale(1.06)' }}
+            >
+              空白
+            </div>
+          )
         const gm = menus.find((m) => m.id === drag.id)
         return gm ? (
           <div
@@ -882,7 +905,31 @@ export default function PosPage() {
       })()}
 
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-        {shownMenus.map((m) => {
+        {cells.map((cell) => {
+          if (isBlankCell(cell)) {
+            // 空白: ふだんは何も置かない場所。並び替え中だけ、枠と「消す」ボタンを出す
+            if (!reordering) return <div key={cell} aria-hidden />
+            return (
+              <div
+                key={cell}
+                data-menu-id={cell}
+                onPointerDown={(e) => {
+                  if ((e.target as HTMLElement).closest('button')) return
+                  const r = e.currentTarget.getBoundingClientRect()
+                  setDrag({ id: cell, x: e.clientX, y: e.clientY, w: r.width, h: r.height, dx: e.clientX - r.left, dy: e.clientY - r.top })
+                }}
+                style={{ touchAction: 'none', WebkitUserSelect: 'none', userSelect: 'none' }}
+                className={`rounded-2xl border-2 border-dashed border-stone-400 min-h-24 p-2 flex flex-col items-center justify-center gap-1 cursor-grab select-none ${drag?.id === cell ? 'opacity-25' : ''}`}
+              >
+                <p className="text-stone-500 text-sm font-semibold">空白</p>
+                <button onClick={() => setOrder((o) => (o ? o.filter((x) => x !== cell) : o))} className="text-xs px-2.5 py-1.5 rounded-lg border border-stone-400 text-stone-600 active:scale-95">
+                  消す
+                </button>
+              </div>
+            )
+          }
+          const m = menus.find((x) => x.id === cell)
+          if (!m) return null
           if (reordering) {
             return (
               <div

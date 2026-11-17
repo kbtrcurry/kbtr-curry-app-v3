@@ -365,3 +365,31 @@ describe('会計の編集', () => {
     expect(e.label).toBeUndefined()
   })
 })
+
+describe('取り置きDMの読み取り(実例)', () => {
+  const ms = [
+    { id: 'b', name: '川海老ビリヤニ' },
+    { id: 'bb', name: '川海老ビリヤニ 大盛り' },
+    { id: 'a', name: '川海老アチャール' },
+    { id: 's', name: 'スパイスソーダ' },
+  ]
+  const show = (t: string) => {
+    const r = parseReservationText(t, ms)
+    return { name: r.name, items: r.items.map((i) => `${i.name}×${i.qty}${i.takeout ? '(TO)' : ''}`) }
+  }
+  it('「押尾でビリヤニ(通常)とアチャール一食」', () => {
+    expect(show('こんばんは。\n押尾でビリヤニ(通常)とアチャール一食お願いします')).toEqual({ name: '押尾', items: ['川海老ビリヤニ×1', '川海老アチャール×1'] })
+  })
+  it('「名前:押尾 ビリヤニ1 アチャール1」', () => {
+    expect(show('名前:押尾\nビリヤニ1\nアチャール1')).toEqual({ name: '押尾', items: ['川海老ビリヤニ×1', '川海老アチャール×1'] })
+  })
+  it('「食数：大盛2食」', () => {
+    expect(show('お世話になっております\n11/21の予約をお願いします\n名前：ますかわ\n食数：大盛2食\n\n以上、よろしくお願いいたします')).toEqual({ name: 'ますかわ', items: ['川海老ビリヤニ 大盛り×2'] })
+  })
+  it('「エビビリヤニ…テイクアウトを3名分、エビアチャールも3名分」', () => {
+    expect(show('片山\nこんにちは！\nエビビリヤニ、11/21にアゲインしたいです！\nテイクアウトを3名分、エビアチャールも3名分取り置きお願い致します')).toEqual({ name: '片山', items: ['川海老ビリヤニ×3(TO)', '川海老アチャール×3(TO)'] })
+  })
+  it('「ビリヤニTO×3 海老アチャールTO×3」', () => {
+    expect(show('名前:片山\nビリヤニTO×3\n海老アチャールTO×3')).toEqual({ name: '片山', items: ['川海老ビリヤニ×3(TO)', '川海老アチャール×3(TO)'] })
+  })
+})

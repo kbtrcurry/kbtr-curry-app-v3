@@ -730,9 +730,11 @@ function ReservationForm({
     if (r.name && !name) setName(r.name)
     if (r.time && !time) setTime(r.time)
     if (r.items.length) {
-      // DMに「テイクアウト」とあれば、読み取った品をテイクアウトに。なければ店内
-      const set = r.takeout ? setTo : setEat
-      set((q) => ({ ...q, ...Object.fromEntries(r.items.map((i) => [i.menu_id as string, i.qty])) }))
+      // 品ごとに、店内かテイクアウトか(DMに「テイクアウト」とあればTO)
+      const eatItems = r.items.filter((i) => !i.takeout)
+      const toItems = r.items.filter((i) => i.takeout)
+      if (eatItems.length) setEat((q) => ({ ...q, ...Object.fromEntries(eatItems.map((i) => [i.menu_id as string, i.qty])) }))
+      if (toItems.length) setTo((q) => ({ ...q, ...Object.fromEntries(toItems.map((i) => [i.menu_id as string, i.qty])) }))
     }
     setPasteMsg(!r.name ? `名前が見つかりませんでした。下の「お名前」に入れてください。${r.items.length ? `メニュー${r.items.length}品は読み取りました。` : ''}` : r.items.length ? `${r.items.length}品を読み取りました。間違いがないか確認してください` : 'メニューが見つかりませんでした。下で選んでください')
   }
@@ -989,10 +991,13 @@ function ReservationRow({
   const lines: ({ it: ShortItem; with: ShortItem[] } | null)[] = dishes.flatMap(({ i, sh }) =>
     Array.from({ length: dishCount(i) }, (_, d) => ({
       it: { key: `${sh.label}|${i.takeout ? 'T' : 'E'}`, kind: sh.kind, label: sh.label, base: sh.label, qty: 1, takeout: !!i.takeout },
-      with: (i.attach?.[d] ?? []).map((id) => {
+      // 同じ付け合わせを1皿に複数付けたときは、ラベルを1つにまとめる(川海老×2)
+      with: [...new Set(i.attach?.[d] ?? [])].map((id) => {
         const ex = r.items.find((x) => x.menu_id === id)
         const e = shortName(ex?.name ?? '')
-        return { key: id, kind: e.kind, label: e.label, base: e.label, qty: 1, takeout: false }
+        const cnt = (i.attach?.[d] ?? []).filter((x) => x === id).length
+        const label = cnt > 1 ? `${e.label}×${cnt}` : e.label
+        return { key: id, kind: e.kind, label, base: e.label, qty: 1, takeout: false }
       }),
     })),
   )

@@ -304,8 +304,9 @@ export function customerLabel(stat: CustomerStat | undefined): { text: string; t
 const KANJI_NUM: Record<string, number> = { 一: 1, 二: 2, 三: 3, 四: 4, 五: 5, ひとつ: 1, ふたつ: 2, みっつ: 3, よっつ: 4, いつつ: 5 }
 
 function qtyAfter(text: string, from: number): number {
-  const seg = text.slice(from, from + 8)
-  const d = seg.match(/^[\s\u3000×xX*＊]*([0-9０-９]+)/)
+  const seg = text.slice(from, from + 14)
+  // 品名のすぐあとの数。「TO×3」「も3名分」「 1」のように、TO・テイクアウトや助詞がはさまっていても読む
+  const d = seg.match(/^[\s\u3000×xX*＊]*(?:TO|テイクアウト|持ち帰り|持帰り)?[\s\u3000×xX*＊をも]*([0-9０-９]+)/)
   if (d) return Math.max(1, Math.min(20, Number(d[1].replace(/[０-９]/g, (c) => String(c.charCodeAt(0) - 0xfee0)))))
   const k = seg.match(/^[\s\u3000×]*(一|二|三|四|五|ひとつ|ふたつ|みっつ|よっつ|いつつ)/)
   if (k) return KANJI_NUM[k[1]]
@@ -317,9 +318,12 @@ export function parseReservationText(
   text: string,
   menus: { id: string; name: string }[],
 ): { items: ResItem[]; handle: string; name: string; time: string; takeout: boolean } {
-  let t = text.normalize('NFKC')
+  // 「エビ」「えび」は「海老」にそろえて探す(メニューは「川海老…」でも、DMは「エビ…」と書かれる)
+  const ebi = (x: string) => x.normalize('NFKC').replace(/エビ|えび/g, '海老')
+  let t = ebi(text)
   const found: ResItem[] = []
-  const norm = menus.map((m) => ({ ...m, n: m.name.normalize('NFKC') }))
+  const tokenOf = new Map<string, string>()
+  const norm = menus.map((m) => ({ ...m, n: ebi(m.name) }))
   const fullNames = new Set(norm.map((m) => m.n))
   const mask = (at: number, len: number) => {
     t = t.slice(0, at) + '\uE000'.repeat(len) + t.slice(at + len)
@@ -330,6 +334,7 @@ export function parseReservationText(
     const at = t.indexOf(m.n)
     if (at < 0) continue
     found.push({ menu_id: m.id, name: m.name, qty: qtyAfter(t, at + m.n.length) })
+    tokenOf.set(m.id, m.n)
     done.add(m.id)
     mask(at, m.n.length)
   }
@@ -342,7 +347,24 @@ export function parseReservationText(
       const at = t.indexOf(tok)
       if (at < 0) continue
       found.push({ menu_id: m.id, name: m.name, qty: qtyAfter(t, at + tok.length) })
+      tokenOf.set(m.id, tok)
+      done.add(m.id)
       mask(at, tok.length)
+      break
+    }
+  }
+  // 3) 名前の終わりの部分（5文字以上。「アチャール」「海老アチャール」など）で書かれているもの。ほかのメニューの名前の終わりと重ならないときだけ
+  for (const m of norm) {
+    if (done.has(m.id)) continue
+    for (let len = m.n.length - 1; len >= 5; len--) {
+      const suf = m.n.slice(m.n.length - len)
+      if (norm.some((o) => o.id !== m.id && o.n.endsWith(suf))) break
+      const at = t.indexOf(suf)
+      if (at < 0) continue
+      found.push({ menu_id: m.id, name: m.name, qty: qtyAfter(t, at + suf.length) })
+      tokenOf.set(m.id, suf)
+      done.add(m.id)
+      mask(at, suf.length)
       break
     }
   }
@@ -355,8 +377,20 @@ export function parseReservationText(
   // 時間（12:00・12時）と、テイクアウトの希望も拾う
   const tm = orig.match(/(\d{1,2})\s*[:：]\s*(\d{2})/) ?? orig.match(/(\d{1,2})\s*時(半)?/)
   const time = tm ? `${String(Number(tm[1])).padStart(2, '0')}:${tm[2] === '半' || tm[0].endsWith('半') ? '30' : (tm[2] ?? '00').padStart(2, '0')}` : ''
-  const takeout = /テイクアウト|持ち帰り|持帰り/.test(orig)
-  return { items: found, handle, name, time, takeout }
+  const TO_RE = /(?<![A-Za-z])TO(?![A-Za-z])|テイクアウト|持ち帰り|持帰り/
+  const takeout = TO_RE.test(orig)
+  // 品ごとの店内/TO: 品の書いてある行に「TO」「テイクアウト」があれば、その品はTO。どの品の行にもなく、別の行に「テイクアウトで」とだけあれば、全部TO
+  const lineList = ebi(orig).split(/[\n。！!]/)
+  const lineTO = (tok: string | undefined) => !!tok && lineList.some((l) => l.includes(tok) && TO_RE.test(l))
+  const anyLineTO = found.some((f) => lineTO(tokenOf.get(f.menu_id as string)))
+  const withTO: ResItem[] = found.map((f) => {
+    const own = tokenOf.get(f.menu_id as string)
+    // 「テイクアウトを3名分」のように人数と一緒に書かれていれば、ビリヤニもTO
+    const headcountTO = isBiryani(f.name) && lineList.some((l) => TO_RE.test(l) && /\d+\s*(?:名|人)/.test(l))
+    const tk = takeout && (anyLineTO ? lineTO(own) || headcountTO || (!own && isBiryani(f.name)) : true)
+    return tk ? { ...f, takeout: true } : f
+  })
+  return { items: withTO, handle, name, time, takeout }
 }
 
 // ---------- DMの文面から名前を探す ----------
@@ -399,6 +433,15 @@ export function extractName(text: string): string {
     if (by) {
       const v = honorific(by[1])
       if (okName(v)) return v
+    }
+  }
+  // 「押尾でビリヤニ(通常)とアチャール…」のように、名前のあとに「で」と、メニューや盛りの言葉が続くもの
+  for (const seg0 of clauses) {
+    const seg = seg0.replace(GREETING, '').trim()
+    const by2 = seg.match(/^([^\s、,。\d]{1,8})で(?:ビリヤニ|ビリヤーニ|エビ|海老|大盛|通常|普通|テイクアウト|TO|イートイン)/)
+    if (by2) {
+      const v = honorific(by2[1])
+      if (v && okName(v)) return v
     }
   }
   // 「廣井 智 1食お願いします」「山田2名で」のように、名前のすぐあとに食数・人数・盛りの言葉が続くもの
@@ -659,6 +702,9 @@ function addBiryaniFromWords(orig: string, menus: { id: string; name: string }[]
   if (hc == null && !regularWord && !bigMention && !generic) return
   const bigN = bigMention ? (bigMention[1] ? Number(bigMention[1]) : hc ?? 1) : 0
   if (big && bigN > 0) addTo(big, bigN)
-  const regN = hc != null ? Math.max(0, hc - (big ? bigN : 0)) : regularWord || generic || !bigMention ? 1 : 0
+  // 人数がなく「ビリヤニ1」「ビリヤニTO×3」のように書かれていれば、その数
+  const gm = /ビリヤニ|ビリヤーニ/.exec(orig)
+  const wordQty = gm ? qtyAfter(orig, gm.index + gm[0].length) : 1
+  const regN = hc != null ? Math.max(0, hc - (big ? bigN : 0)) : regularWord || generic || !bigMention ? (generic && !regularWord ? wordQty : 1) : 0
   if (!(bigMention && !bigMention[1] && !regularWord)) addTo(base, regN)
 }

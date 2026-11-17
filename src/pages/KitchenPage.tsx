@@ -7,7 +7,7 @@ import { useGuests } from '../lib/guests'
 import { PENDING_TONE } from '../lib/ticketTone'
 import { GuestChip } from '../components/GuestChip'
 import { NoteBanner } from '../components/NoteBanner'
-import { ExtraChip } from '../components/DishList'
+import { ExtraChip, groupNames } from '../components/DishList'
 import { extraNames } from '../lib/dishOrder'
 import { dishCount } from '../lib/reservations'
 import { useAttachableIds } from '../lib/settings'
@@ -309,7 +309,7 @@ export default function KitchenPage() {
                           <li key={k} className="flex flex-wrap items-center gap-1.5 text-base text-amber-950">
                             <span className="text-amber-950">{k + 1}皿目</span>
                             {d.to && <span className="rounded px-2 py-0.5 text-base font-bold" style={{ background: '#1d4ed8', color: '#fff' }}>持ち帰り</span>}
-                            {d.extras.length === 0 ? <span className="text-sm text-amber-950">なし</span> : d.extras.map((n, j) => <ExtraChip key={j} name={n} big />)}
+                            {d.extras.length === 0 ? <span className="text-sm text-amber-950">なし</span> : groupNames(d.extras).map((g, j) => <ExtraChip key={j} name={g.name} n={g.n} big />)}
                             {d.note && <span className="rounded px-2 py-0.5 text-base font-bold" style={{ background: '#b91c1c', color: '#fff' }}>※ {d.note}</span>}
                           </li>
                         ))}

@@ -3,7 +3,18 @@ import { dishesOf, extraNames } from '../lib/dishOrder'
 import type { TicketItem } from '../lib/tickets'
 
 // 付け合わせの小さなラベル(色は、取り置きの一覧と同じ)
-export function ExtraChip({ name, big }: { name: string; big?: boolean }) {
+/** 同じ付け合わせを1皿に複数付けたときは、ラベルを1つにまとめる(川海老×2) */
+export function groupNames(names: string[]): { name: string; n: number }[] {
+  const out: { name: string; n: number }[] = []
+  for (const name of names) {
+    const ex = out.find((x) => x.name === name)
+    if (ex) ex.n += 1
+    else out.push({ name, n: 1 })
+  }
+  return out
+}
+
+export function ExtraChip({ name, big, n = 1 }: { name: string; big?: boolean; n?: number }) {
   const sh = shortName(name)
   const c = CHIP[sh.kind] ?? CHIP['他']
   return (
@@ -12,6 +23,7 @@ export function ExtraChip({ name, big }: { name: string; big?: boolean }) {
       style={{ background: c.bg, color: c.fg, boxShadow: c.border ? `inset 0 0 0 1px ${c.border}` : undefined }}
     >
       {sh.label}
+      {n > 1 && `×${n}`}
     </span>
   )
 }
@@ -27,7 +39,7 @@ export function DishList({ items }: { items: TicketItem[] }) {
           <span className="font-semibold">{d.n}皿目</span>
           {d.to && <span className="rounded px-1.5 text-xs font-bold" style={{ background: '#1d4ed8', color: '#fff' }}>持ち帰り</span>}
           <span className="text-stone-500">{shortName(d.item.name).label === '大' ? '大盛り' : d.item.name}</span>
-          {d.extras.length === 0 ? <span className="text-xs text-stone-400">付け合わせなし</span> : extraNames(items, d.extras).map((n, k) => <ExtraChip key={k} name={n} />)}
+          {d.extras.length === 0 ? <span className="text-xs text-stone-400">付け合わせなし</span> : groupNames(extraNames(items, d.extras)).map((g, k) => <ExtraChip key={k} name={g.name} n={g.n} />)}
           {d.note.trim() && <span className="rounded px-1.5 text-sm font-bold" style={{ background: '#b91c1c', color: '#fff' }}>※ {d.note.trim()}</span>}
         </li>
       ))}

@@ -15,12 +15,15 @@ export function FloorPlan({
   pick = false,
   allowEdit = false,
   startEditing = false,
+  queue,
 }: {
   tickets: Ticket[]
   onPick: (n: number) => void
   pick?: boolean
   allowEdit?: boolean
   startEditing?: boolean
+  /** 注文を伺う順(席の番号 → 何番目か)。案内した順に 1, 2, 3 …と席に出す */
+  queue?: Record<number, number>
 }) {
   const layout = useFloorPlan()
   const heldIds = useHeldIds()
@@ -101,6 +104,15 @@ export function FloorPlan({
                 {!busy && !editing && isTakeoutCard(sp.n) && <span className="text-xs mt-0.5">持ち帰り</span>}
                 {min != null && <span className={`absolute top-0.5 right-1 text-xs font-bold ${t && !waitingOrder ? (hasPending(t.items) ? 'text-amber-950' : 'text-stone-300') : waitTone(min)}`}>{min}分</span>}
                 {t && !editing && heldIds.includes(t.id) && <span className="absolute top-0.5 left-1 text-xs font-extrabold bg-[#b91c1c] border border-white text-white rounded px-1 leading-5" style={{ color: "#fff", background: "#b91c1c" }}>未確定</span>}
+                {t && !editing && queue?.[sp.n] != null && (
+                  <span
+                    className="absolute -bottom-1.5 -right-1.5 min-w-7 h-7 px-1.5 rounded-full text-base font-extrabold flex items-center justify-center shadow ring-2 ring-white"
+                    style={{ background: queue[sp.n] === 1 ? '#b91c1c' : '#1d4ed8', color: '#fff' }}
+                    aria-label={`${queue[sp.n]}番目に注文を伺う`}
+                  >
+                    {queue[sp.n]}
+                  </span>
+                )}
                 {t && !editing && stickerCount(t.items) > 0 && <span className="absolute bottom-0.5 left-1 text-[10px] font-bold bg-pink-200 border border-pink-500 text-pink-950 rounded px-1 leading-4">ステ</span>}
               </button>
             )

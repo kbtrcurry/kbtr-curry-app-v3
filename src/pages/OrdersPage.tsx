@@ -84,7 +84,12 @@ export default function OrdersPage() {
     await actions.setNote(current.id, noteText)
   }
   // 席に案内したけれど、まだ注文を聞いていないテーブル(案内した順)
-  const waitingOrder = useMemo(() => tickets.filter((t) => t.items.length === 0).sort((a, b) => a.created_at.localeCompare(b.created_at)), [tickets])
+  // 注文を伺う順: 案内したけれど注文をまだ聞いていない席と、聞いたけれど「注文を確定」をまだ押していない(未確定)席。案内した順(同時刻なら席の番号順)
+  const visitQueue = useMemo(
+    () => tickets.filter((t) => t.items.length === 0 || heldIds.includes(t.id)).sort((a, b) => a.created_at.localeCompare(b.created_at) || a.card_no - b.card_no),
+    [tickets, heldIds],
+  )
+  const queueNo = useMemo(() => Object.fromEntries(visitQueue.map((t, i) => [t.card_no, i + 1])) as Record<number, number>, [visitQueue])
 
   // 一度リストに載ったメニューは、「−」で0にしても、このテーブルを開いている間は0のまま残す(押し間違いで、何を頼まれたか分からなくならないように)
   // ※ フックは、ログイン待ちなどの早期 return より前に置く(後ろに置くと、ログイン状態が揺れたときに画面ごと落ちる)
@@ -290,14 +295,22 @@ export default function OrdersPage() {
           </p>
         )}
 
-        {waitingOrder.length > 0 && (
+        {visitQueue.length > 0 && (
           <div className="rounded-xl bg-sky-50 border border-sky-200 p-2.5 space-y-1.5">
-            <p className="text-sm font-bold text-sky-900">注文を聞く（案内した順）</p>
+            <p className="text-sm font-bold text-sky-900">注文を伺う順（案内した順・上から）</p>
             <div className="flex flex-wrap gap-2">
-              {waitingOrder.map((t) => (
-                <button key={t.id} onClick={() => pickCard(t.card_no)} className="h-12 min-w-[4.5rem] px-3 rounded-xl bg-white border-2 border-sky-400 text-sky-900 font-bold active:scale-95">
+              {visitQueue.map((t, i) => (
+                <button
+                  key={t.id}
+                  onClick={() => pickCard(t.card_no)}
+                  className={`h-14 min-w-[5rem] px-3 rounded-xl bg-white border-2 text-sky-900 font-bold active:scale-95 flex items-center gap-2 ${i === 0 ? 'border-red-600 ring-2 ring-red-300' : 'border-sky-400'}`}
+                >
+                  <span className="w-7 h-7 rounded-full text-base font-extrabold flex items-center justify-center shrink-0" style={{ background: i === 0 ? '#b91c1c' : '#1d4ed8', color: '#fff' }}>
+                    {i + 1}
+                  </span>
                   <span className="text-xl">{t.card_no}</span>
-                  {t.label && <span className="ml-1.5 text-sm font-semibold">{t.label}</span>}
+                  {t.label && <span className="text-sm font-semibold max-w-[6rem] truncate">{t.label}</span>}
+                  {i === 0 && <span className="text-xs font-bold text-red-700">次</span>}
                 </button>
               ))}
             </div>
@@ -305,7 +318,7 @@ export default function OrdersPage() {
         )}
 
         <p className="text-sm text-stone-600">テーブルを押してください</p>
-        <FloorPlan tickets={tickets} onPick={pickCard} />
+        <FloorPlan tickets={tickets} onPick={pickCard} queue={queueNo} />
 
         {free.length === 0 && <p className="text-sm text-stone-500">空いているテーブルがありません</p>}
       </div>

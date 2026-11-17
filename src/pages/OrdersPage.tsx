@@ -301,7 +301,7 @@ export default function OrdersPage() {
         </div>
       </div>
       {error && <p className="text-sm text-red-600">{error}</p>}
-      {held && <p className="sticky top-2 z-30 shadow-lg rounded-xl bg-[#b91c1c] text-white text-base font-bold px-3 py-2.5 text-center">まだ調理場に送っていません（未確定）。下の「注文を確定して調理場へ送る」を押してください</p>}
+      {held && <p className="sticky top-2 z-30 shadow-lg rounded-xl text-base font-bold px-3 py-2.5 text-center" style={{ background: '#b91c1c', color: '#ffffff' }}>まだ調理場に送っていません（未確定）。下の「注文を確定して調理場へ送る」を押してください</p>}
 
       <div className="bg-stone-50 rounded-xl p-3 space-y-1.5">
         {items.length === 0 && ghosts.length === 0 && <p className="text-base text-stone-500">まだ注文がありません。下のメニューを押してください</p>}

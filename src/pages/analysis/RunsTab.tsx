@@ -100,8 +100,8 @@ export default function RunsTab({ stats, lines }: RunsTabProps) {
               </p>
               {menus.length > 0 && (
                 <p className="text-xs text-stone-600 mt-1.5 leading-relaxed">
-                  {menus.slice(0, 6).map(([name, v]) => `${name}×${v.qty}`).join('　')}
-                  {menus.length > 6 && `　ほか${menus.length - 6}品`}
+                  {menus.slice(0, 6).map(([name, v]) => `${name}×${v.qty}`).join(' / ')}
+                  {menus.length > 6 && ` ほか${menus.length - 6}品`}
                 </p>
               )}
             </li>

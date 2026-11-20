@@ -1,11 +1,11 @@
 import type { GuestBadge } from '../lib/guests'
 
-/** 特典なしの黄色いラベル(フリーのお客さん・早期取り置き特典が付いていない取り置き)。調理場のカードに出す */
+/** 特典なしの青いラベル(フリーのお客さん・早期取り置き特典が付いていない取り置き)。調理場のカードに出す */
 export function NoBonusChip({ big }: { big?: boolean }) {
   return (
     <span
       className={`inline-flex items-center rounded font-extrabold whitespace-nowrap ${big ? 'text-sm px-2 py-0.5' : 'text-[11px] px-1.5 py-[1px]'}`}
-      style={{ background: '#facc15', color: '#1c1917', boxShadow: 'inset 0 0 0 1px #a16207' }}
+      style={{ background: '#1d4ed8', color: '#ffffff', boxShadow: 'inset 0 0 0 1px #ffffff' }}
     >
       特典なし
     </span>

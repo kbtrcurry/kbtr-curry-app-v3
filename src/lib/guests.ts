@@ -2,16 +2,19 @@
 import { useMemo } from 'react'
 import { customerKey, customerStats, identityOf, useCustomerNotes, useReservations, visitCount, type CustomerStat, type Reservation } from './reservations'
 
-export type GuestBadge = { name: string; /** 取り置きのときに入れたメモ(特記事項) */ memo: string; isNew: boolean; /** 何回目の取り置きか(新規は1) */ nth: number }
+export type GuestBadge = { name: string; /** 早期取り置き特典が付いているか */ uzura: boolean; /** 取り置きのときに入れたメモ(特記事項) */ memo: string; isNew: boolean; /** 何回目の取り置きか(新規は1) */ nth: number }
 
 /** 取り置き1件の「新規 / ◯回目」。メモに「◯回目」があればそれ、なければ台帳の履歴(この1件を除く)から数える */
-export function guestBadge(r: Pick<Reservation, 'name' | 'is_new' | 'visit_no' | 'platform' | 'handle'> & { note?: string }, stat: CustomerStat | undefined): GuestBadge {
+export function guestBadge(r: Pick<Reservation, 'name' | 'is_new' | 'visit_no' | 'platform' | 'handle'> & { note?: string; uzura?: boolean }, stat: CustomerStat | undefined): GuestBadge {
   let nth: number
   if (r.visit_no) nth = r.visit_no
   else if (stat) nth = visitCount({ reservations: Math.max(0, stat.reservations - 1), visitNo: stat.visitNo }) + 1
   else nth = 1
-  return { name: r.name, memo: (r.note ?? '').trim(), isNew: nth <= 1 || (r.is_new && !r.visit_no && !stat), nth }
+  return { name: r.name, uzura: r.uzura !== false, memo: (r.note ?? '').trim(), isNew: nth <= 1 || (r.is_new && !r.visit_no && !stat), nth }
 }
+
+/** 特典がないお客さんか。フリー(取り置きなし)と、早期取り置き特典なしの取り置き。取り置きが見つからないときは、出さない */
+export const hasNoBonus = (t: { reservation_id?: string | null }, g: GuestBadge | null): boolean => (!t.reservation_id ? true : g ? !g.uzura : false)
 
 /** 伝票(reservation_id 付き)から、お客さんの情報を引く。フリーの伝票・取り置きが見つからない伝票は null */
 export function useGuests(): (t: { reservation_id?: string | null }) => GuestBadge | null {

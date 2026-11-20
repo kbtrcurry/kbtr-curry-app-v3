@@ -3,9 +3,9 @@ import { ChefHat } from 'lucide-react'
 import { useAuth } from '../lib/auth'
 import { Spinner } from '../components/Spinner'
 import { todayStr } from '../lib/accounting'
-import { useGuests } from '../lib/guests'
+import { hasNoBonus, useGuests } from '../lib/guests'
 import { PENDING_TONE } from '../lib/ticketTone'
-import { GuestChip } from '../components/GuestChip'
+import { GuestChip, NoBonusChip } from '../components/GuestChip'
 import { NoteBanner } from '../components/NoteBanner'
 import { ExtraChip, groupNames } from '../components/DishList'
 import { extraNames } from '../lib/dishOrder'
@@ -282,6 +282,7 @@ export default function KitchenPage() {
                 {isFollowUp(t) && <span className="text-xs font-bold text-sky-950 bg-sky-200 border border-sky-500 rounded px-1.5 py-0.5">追加</span>}
                 {t.label && <span className="text-base font-bold text-amber-950">{t.label}</span>}
                 <GuestChip g={guestOf(t)} big />
+                {hasNoBonus(t, guestOf(t)) && <NoBonusChip big />}
                 <span className={`ml-auto text-lg font-bold rounded px-1.5 ${min >= 15 ? 'bg-red-200 border border-red-500 text-red-900' : min >= 10 ? 'bg-amber-200 border border-amber-500 text-amber-950' : 'text-amber-950'}`}>{min}分</span>
               </div>
               <p className="text-xs text-amber-950 mt-0.5">
@@ -346,6 +347,7 @@ export default function KitchenPage() {
                     <span className="text-2xl font-bold text-white leading-none">{t.card_no}</span>
                     {t.label && <span className="text-sm text-stone-100">{t.label}</span>}
                     <GuestChip g={guestOf(t)} />
+                    {hasNoBonus(t, guestOf(t)) && <NoBonusChip />}
                     <span className="ml-auto text-xs text-stone-300">{t.served_at ? `${elapsedMinutes(t.served_at, now)}分前に提供` : ''}</span>
                   </div>
                   <div className="mt-1"><NoteBanner note={t.note} memo={guestOf(t)?.memo} size="base" /></div>
